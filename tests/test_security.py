@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +9,9 @@ from starlette.websockets import WebSocketDisconnect
 
 import app.database as database
 import app.main as main
+
+
+TEST_UPLOAD_TOKEN = "test-owner-token-" + ("a" * 48)
 
 
 @pytest.fixture(autouse=True)
@@ -28,8 +32,9 @@ def isolated_state(tmp_path, monkeypatch):
 def request_headers(filename="project.gxw", nickname="Ronaldo"):
     return {
         "origin": "http://testserver",
-        "X-Chat-Nickname": nickname,
+        "X-Chat-Nickname": quote(nickname, safe=""),
         "X-File-Name": filename,
+        "X-Upload-Token": TEST_UPLOAD_TOKEN,
         "Content-Type": "application/octet-stream",
     }
 
@@ -111,17 +116,17 @@ def test_public_chat_includes_id_partial_ip_markdown_and_reply(monkeypatch):
     assert "192.168.72.50" not in json.dumps(message)
 
 
-def test_gxw_upload_can_be_claimed_and_downloaded(monkeypatch):
+def test_gxw_upload_with_unicode_nickname_can_be_claimed_and_downloaded(monkeypatch):
     monkeypatch.setattr(main, "get_client_ip", lambda _connection: "192.168.72.50")
     payload = b"GX Works2 classroom project"
     with TestClient(main.app) as client:
         with client.websocket_connect(
-            "/ws?nickname=Ronaldo",
+            f"/ws?nickname={quote('호날두')}",
             headers={"origin": "http://testserver"},
         ) as websocket:
             websocket.receive_json()
             websocket.receive_json()
-            upload = client.post("/api/files", headers=request_headers(), content=payload)
+            upload = client.post("/api/files", headers=request_headers(nickname="호날두"), content=payload)
             assert upload.status_code == 201
             attachment = upload.json()
             assert attachment["name"] == "project.gxw"
@@ -215,12 +220,199 @@ def test_unclaimed_attachment_can_be_discarded(monkeypatch):
             headers={
                 "origin": "http://testserver",
                 "X-Chat-Nickname": "Ronaldo",
+                "X-Upload-Token": TEST_UPLOAD_TOKEN,
             },
         )
         missing = client.get(attachment["url"])
     assert response.status_code == 204
     assert missing.status_code == 404
 
+
+def test_sent_attachment_owner_can_delete_without_removing_message(monkeypatch):
+    client_ip = "192.168.72.50"
+    monkeypatch.setattr(main, "get_client_ip", lambda _connection: client_ip)
+    with TestClient(main.app) as client:
+        with client.websocket_connect(
+            "/ws?nickname=Ronaldo",
+            headers={"origin": "http://testserver"},
+        ) as websocket:
+            websocket.receive_json()
+            websocket.receive_json()
+            upload = client.post(
+                "/api/files",
+                headers=request_headers(),
+                content=b"owned project",
+            )
+            attachment = upload.json()
+            websocket.send_json({
+                "type": "chat",
+                "content": "Keep this message",
+                "attachment_id": attachment["id"],
+            })
+            sent = websocket.receive_json()
+            assert sent["attachment_removed"] is False
+            assert database.get_upload_usage(client_ip)[0] == len(b"owned project")
+
+            denied = client.delete(
+                attachment["url"],
+                headers={
+                    "origin": "http://testserver",
+                    "X-Chat-Nickname": "Ronaldo",
+                    "X-Upload-Token": "x" * 64,
+                },
+            )
+            assert denied.status_code == 404
+            assert client.get(attachment["url"]).status_code == 200
+
+            deleted = client.delete(
+                attachment["url"],
+                headers={
+                    "origin": "http://testserver",
+                    "X-Chat-Nickname": "Ronaldo",
+                    "X-Upload-Token": TEST_UPLOAD_TOKEN,
+                },
+            )
+            event = websocket.receive_json()
+            assert deleted.status_code == 204
+            assert event == {
+                "type": "attachment_deleted",
+                "attachment_id": attachment["id"],
+            }
+
+        messages = database.get_recent_messages()
+        assert messages[0]["content"] == "Keep this message"
+        assert messages[0]["attachment"] is None
+        assert messages[0]["attachment_removed"] is True
+        assert database.get_upload_usage(client_ip)[0] == 0
+        assert client.get(attachment["url"]).status_code == 404
+
+
+
+def test_multi_file_message_preserves_order_and_allows_partial_deletion(monkeypatch):
+    client_ip = "192.168.72.50"
+    monkeypatch.setattr(main, "get_client_ip", lambda _connection: client_ip)
+    first_payload = b"first ladder project"
+    second_payload = b"lecture handout"
+
+    with TestClient(main.app) as client:
+        with client.websocket_connect(
+            "/ws?nickname=Ronaldo",
+            headers={"origin": "http://testserver"},
+        ) as websocket:
+            websocket.receive_json()
+            websocket.receive_json()
+            first = client.post(
+                "/api/files",
+                headers=request_headers("machine.gwx"),
+                content=first_payload,
+            ).json()
+            second = client.post(
+                "/api/files",
+                headers=request_headers("lecture.pdf"),
+                content=second_payload,
+            ).json()
+
+            websocket.send_json({
+                "type": "chat",
+                "content": "Two class files",
+                "attachment_ids": [first["id"], second["id"]],
+            })
+            sent = websocket.receive_json()
+            assert [item["id"] for item in sent["attachments"]] == [first["id"], second["id"]]
+            assert sent["attachment"]["id"] == first["id"]
+            assert sent["attachment_removed"] is False
+
+            deleted = client.delete(
+                first["url"],
+                headers={
+                    "origin": "http://testserver",
+                    "X-Chat-Nickname": "Ronaldo",
+                    "X-Upload-Token": TEST_UPLOAD_TOKEN,
+                },
+            )
+            assert deleted.status_code == 204
+            assert websocket.receive_json() == {
+                "type": "attachment_deleted",
+                "attachment_id": first["id"],
+            }
+
+        messages = database.get_recent_messages()
+        message = messages[0]
+        assert message["content"] == "Two class files"
+        assert message["attachments"][0] == {
+            "id": first["id"],
+            "name": "machine.gwx",
+            "removed": True,
+        }
+        assert message["attachments"][1]["id"] == second["id"]
+        assert message["attachments"][1]["removed"] is False
+        assert message["attachment"]["id"] == second["id"]
+        assert message["attachment_removed"] is False
+        assert database.get_upload_usage(client_ip)[0] == len(second_payload)
+        assert client.get(first["url"]).status_code == 404
+        assert client.get(second["url"]).content == second_payload
+
+
+def test_multi_file_claim_is_atomic_when_one_id_is_invalid(monkeypatch):
+    client_ip = "192.168.72.50"
+    monkeypatch.setattr(main, "get_client_ip", lambda _connection: client_ip)
+
+    with TestClient(main.app) as client:
+        with client.websocket_connect(
+            "/ws?nickname=Ronaldo",
+            headers={"origin": "http://testserver"},
+        ) as websocket:
+            websocket.receive_json()
+            websocket.receive_json()
+            attachment = client.post(
+                "/api/files",
+                headers=request_headers("recoverable.gwx"),
+                content=b"recoverable",
+            ).json()
+
+            websocket.send_json({
+                "type": "chat",
+                "content": "must fail together",
+                "attachment_ids": [attachment["id"], "missing-file-id"],
+            })
+            error = websocket.receive_json()
+            assert error["type"] == "error"
+            assert database.get_attachment_record(attachment["id"])["claimed"] == 0
+
+            websocket.send_json({
+                "type": "chat",
+                "content": "valid retry",
+                "attachment_ids": [attachment["id"]],
+            })
+            sent = websocket.receive_json()
+            assert sent["attachment"]["id"] == attachment["id"]
+            assert database.get_attachment_record(attachment["id"])["claimed"] == 1
+
+
+def test_message_rejects_more_than_five_attachment_ids_without_claiming(monkeypatch):
+    client_ip = "192.168.72.50"
+    monkeypatch.setattr(main, "get_client_ip", lambda _connection: client_ip)
+
+    with TestClient(main.app) as client:
+        with client.websocket_connect(
+            "/ws?nickname=Ronaldo",
+            headers={"origin": "http://testserver"},
+        ) as websocket:
+            websocket.receive_json()
+            websocket.receive_json()
+            attachment = client.post(
+                "/api/files",
+                headers=request_headers("still-pending.gwx"),
+                content=b"pending",
+            ).json()
+            websocket.send_json({
+                "type": "chat",
+                "content": "too many",
+                "attachment_ids": [attachment["id"], "2", "3", "4", "5", "6"],
+            })
+            error = websocket.receive_json()
+            assert error["type"] == "error"
+            assert database.get_attachment_record(attachment["id"])["claimed"] == 0
 
 def test_cleanup_removes_expired_attachment_file():
     database.init_db()

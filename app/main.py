@@ -23,9 +23,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.database import (
-    claim_attachment,
+    claim_attachments,
     delete_expired_records,
-    delete_unclaimed_attachment,
+    delete_owned_attachment,
     get_attachment_record,
     get_ip_suffix,
     get_recent_messages,
@@ -39,6 +39,7 @@ from app.database import (
 SERVICE_NAME = "인텔7기 대나무숲"
 MAX_NICKNAME_LEN = 30
 MAX_CONTENT_LEN = 2000
+MAX_ATTACHMENTS_PER_MESSAGE = 5
 MAX_REPLY_CONTENT_LEN = 180
 CLEANUP_INTERVAL_SECONDS = 3600
 MAX_RAW_MESSAGE_LEN = 8192
@@ -194,6 +195,17 @@ def clean_reply(value) -> Optional[dict]:
     return {"nickname": nickname, "content": content}
 
 
+def owner_token_hash(owner_token: str) -> str:
+    token = owner_token.strip()
+    valid_chars = all(char.isalnum() or char in {"-", "_"} for char in token)
+    if not (32 <= len(token) <= 128 and token.isascii() and valid_chars):
+        raise HTTPException(
+            status_code=400,
+            detail="유효한 파일 소유 토큰이 필요합니다.",
+        )
+    return hashlib.sha256(token.encode("ascii")).hexdigest()
+
+
 def clean_original_filename(encoded_name: str) -> str:
     try:
         decoded = unquote(encoded_name)
@@ -340,6 +352,7 @@ async def index(request: Request):
             "service_name": SERVICE_NAME,
             "max_message_len": MAX_CONTENT_LEN,
             "max_file_mb": MAX_UPLOAD_BYTES // (1024 * 1024),
+            "max_files": MAX_ATTACHMENTS_PER_MESSAGE,
         },
     )
 
@@ -363,9 +376,10 @@ async def upload_file(
     request: Request,
     x_chat_nickname: str = Header("", alias="X-Chat-Nickname"),
     x_file_name: str = Header("", alias="X-File-Name"),
+    x_upload_token: str = Header("", alias="X-Upload-Token"),
 ):
     client_ip = get_client_ip(request)
-    nickname = x_chat_nickname.strip()
+    nickname = unquote(x_chat_nickname).strip()
     if not request_origin_is_allowed(request):
         raise HTTPException(status_code=403, detail="허용되지 않은 업로드 origin입니다.")
     if not active_client_matches(nickname, client_ip):
@@ -373,6 +387,7 @@ async def upload_file(
     if not upload_rate_allowed(client_ip):
         raise HTTPException(status_code=429, detail="업로드가 너무 빠릅니다. 잠시 후 다시 시도하세요.")
 
+    token_hash = owner_token_hash(x_upload_token)
     original_name = clean_original_filename(x_file_name)
     if upload_is_blocked(original_name):
         raise HTTPException(status_code=415, detail="실행 파일 또는 활성 웹 파일은 공유할 수 없습니다.")
@@ -423,6 +438,7 @@ async def upload_file(
                 "previewable": bool(preview_type),
                 "uploader_nickname": nickname,
                 "ip": client_ip,
+                "owner_token_hash": token_hash,
             })
         except Exception:
             destination.unlink(missing_ok=True)
@@ -437,15 +453,23 @@ async def discard_file(
     attachment_id: str,
     request: Request,
     x_chat_nickname: str = Header("", alias="X-Chat-Nickname"),
+    x_upload_token: str = Header("", alias="X-Upload-Token"),
 ):
     client_ip = get_client_ip(request)
-    nickname = x_chat_nickname.strip()
+    nickname = unquote(x_chat_nickname).strip()
     if not request_origin_is_allowed(request):
         raise HTTPException(status_code=403, detail="허용되지 않은 요청 origin입니다.")
-    stored_name = delete_unclaimed_attachment(attachment_id, nickname, client_ip)
-    if not stored_name:
-        raise HTTPException(status_code=404, detail="삭제할 대기 파일이 없습니다.")
-    remove_stored_file(stored_name)
+    if not active_client_matches(nickname, client_ip):
+        raise HTTPException(status_code=403, detail="활성 채팅 연결이 필요합니다.")
+    deleted = delete_owned_attachment(attachment_id, owner_token_hash(x_upload_token))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="삭제할 수 있는 파일이 없습니다.")
+    remove_stored_file(deleted["stored_name"])
+    await broadcast({
+        "type": "attachment_deleted",
+        "attachment_id": attachment_id,
+    })
+    logger.info("Deleted attachment id=%s nickname=%r ip=%s", attachment_id, nickname, client_ip)
 
 
 @app.get("/api/files/{attachment_id}")
@@ -533,9 +557,26 @@ async def websocket_endpoint(ws: WebSocket, nickname: str = Query("")):
 
             msg_type = data.get("type")
             content = str(data.get("content", "")).strip()
-            attachment_id = str(data.get("attachment_id", "")).strip() or None
+            raw_attachment_ids = data.get("attachment_ids")
+            if raw_attachment_ids is None:
+                legacy_id = str(data.get("attachment_id", "")).strip()
+                attachment_ids = [legacy_id] if legacy_id else []
+            elif isinstance(raw_attachment_ids, list):
+                attachment_ids = []
+                for value in raw_attachment_ids:
+                    attachment_id = str(value).strip()
+                    if attachment_id and attachment_id not in attachment_ids:
+                        attachment_ids.append(attachment_id)
+            else:
+                attachment_ids = []
             reply = clean_reply(data.get("reply"))
-            if not content and not attachment_id:
+            if len(attachment_ids) > MAX_ATTACHMENTS_PER_MESSAGE:
+                await ws.send_text(json.dumps({
+                    "type": "error",
+                    "message": f"파일은 메시지당 최대 {MAX_ATTACHMENTS_PER_MESSAGE}개까지 첨부할 수 있습니다.",
+                }, ensure_ascii=False))
+                continue
+            if not content and not attachment_ids:
                 continue
             if len(content) > MAX_CONTENT_LEN:
                 await ws.send_text(json.dumps({
@@ -545,21 +586,19 @@ async def websocket_endpoint(ws: WebSocket, nickname: str = Query("")):
                 continue
 
             if msg_type == "chat":
-                attachment = None
-                if attachment_id:
-                    attachment = claim_attachment(attachment_id, nickname, client_ip)
-                    if not attachment:
-                        await ws.send_text(json.dumps({
-                            "type": "error",
-                            "message": "첨부 파일이 만료되었거나 이미 사용되었습니다.",
-                        }, ensure_ascii=False))
-                        continue
+                attachments = claim_attachments(attachment_ids, nickname, client_ip)
+                if attachments is None:
+                    await ws.send_text(json.dumps({
+                        "type": "error",
+                        "message": "첨부 파일 중 하나가 만료되었거나 이미 사용되었습니다.",
+                    }, ensure_ascii=False))
+                    continue
                 saved = save_message(
                     nickname,
                     content,
                     ip=client_ip,
                     reply=reply,
-                    attachment_id=attachment["id"] if attachment else None,
+                    attachment_ids=[attachment["id"] for attachment in attachments],
                 )
                 saved.pop("ip", None)
                 await broadcast({"type": "chat", **saved})
@@ -573,15 +612,13 @@ async def websocket_endpoint(ws: WebSocket, nickname: str = Query("")):
                         "message": f"'{to_nick}'님이 오프라인 상태입니다.",
                     }, ensure_ascii=False))
                     continue
-                attachment = None
-                if attachment_id:
-                    attachment = claim_attachment(attachment_id, nickname, client_ip)
-                    if not attachment:
-                        await ws.send_text(json.dumps({
-                            "type": "error",
-                            "message": "첨부 파일이 만료되었거나 이미 사용되었습니다.",
-                        }, ensure_ascii=False))
-                        continue
+                attachments = claim_attachments(attachment_ids, nickname, client_ip)
+                if attachments is None:
+                    await ws.send_text(json.dumps({
+                        "type": "error",
+                        "message": "첨부 파일 중 하나가 만료되었거나 이미 사용되었습니다.",
+                    }, ensure_ascii=False))
+                    continue
                 target_info = connected_clients.get(target_ws)
                 payload = {
                     "type": "dm",
@@ -593,7 +630,9 @@ async def websocket_endpoint(ws: WebSocket, nickname: str = Query("")):
                     "content": content,
                     "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "reply": reply,
-                    "attachment": attachment,
+                    "attachment": attachments[0] if attachments else None,
+                    "attachments": attachments,
+                    "attachment_removed": False,
                 }
                 encoded = json.dumps(payload, ensure_ascii=False)
                 try:

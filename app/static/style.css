@@ -680,6 +680,8 @@ input:focus-visible {
 }
 .message-actions button:hover,
 .code-copy-btn:hover { color: var(--text); background: var(--surface3); }
+.message-actions button.danger { color: #ff9b9b; }
+.message-actions button.danger:hover { background: rgba(210, 54, 54, .16); color: #ffc0c0; }
 
 .dm-time {
   color: var(--text-muted);
@@ -754,6 +756,18 @@ input:focus-visible {
   white-space: nowrap;
 }
 
+.message-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.attachment-entry {
+  align-items: center;
+  display: flex;
+  gap: 5px;
+  max-width: 390px;
+}
 .attachment-card {
   align-items: center;
   background: rgba(0, 0, 0, .2);
@@ -762,11 +776,28 @@ input:focus-visible {
   color: var(--text);
   display: flex;
   gap: 9px;
-  margin-top: 8px;
+  margin-top: 0;
   max-width: 360px;
   min-width: 210px;
   padding: 9px 10px;
   text-decoration: none;
+}
+.attachment-entry .attachment-card,
+.attachment-entry .attachment-removed { flex: 1; min-width: 0; }
+.attachment-delete-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: .7rem;
+  padding: 5px 6px;
+}
+.attachment-delete-btn:hover {
+  background: rgba(210, 54, 54, .16);
+  border-color: rgba(255, 120, 120, .25);
+  color: #ffc0c0;
 }
 .attachment-card:hover { border-color: var(--accent); background: rgba(0, 0, 0, .28); }
 .attachment-icon { font-size: 1.35rem; }
@@ -781,6 +812,16 @@ input:focus-visible {
   max-width: 100%;
   object-fit: contain;
 }
+.attachment-removed {
+  background: rgba(255, 255, 255, .04);
+  border: 1px dashed rgba(255, 255, 255, .13);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: .76rem;
+  margin-top: 8px;
+  padding: 9px 10px;
+}
+
 .image-attachment .attachment-icon { display: none; }
 
 .composer {
@@ -852,23 +893,34 @@ kbd {
 .char-count.near-limit { color: var(--danger); }
 
 .composer-preview {
-  align-items: center;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 9px;
+  margin-bottom: 6px;
+  padding: 6px;
+}
+.attachment-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.attachment-queue-item {
+  align-items: center;
+  border-radius: 7px;
   display: flex;
   gap: 9px;
-  margin-bottom: 6px;
-  padding: 7px 10px;
+  padding: 5px 4px;
 }
-.composer-preview > div:not(.attachment-preview-icon) {
+.attachment-queue-item.error { background: rgba(210, 54, 54, .1); }
+.attachment-queue-item > div:not(.attachment-preview-icon) {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
 }
-.composer-preview strong { color: var(--accent); font-size: .76rem; }
-.composer-preview span {
+.attachment-queue-item strong { color: var(--accent); font-size: .76rem; }
+.attachment-queue-item.error strong { color: #ff9b9b; }
+.attachment-queue-item span {
   color: var(--text-muted);
   font-size: .73rem;
   overflow: hidden;

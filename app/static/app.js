@@ -5,6 +5,8 @@
 
 const STORAGE_KEY = 'classroom_chat_nickname';
 const DRAFTS_KEY = 'classroom_chat_drafts_v1';
+const UPLOAD_OWNER_TOKEN_KEY = 'classroom_chat_upload_owner_v1';
+const OWNED_ATTACHMENTS_KEY = 'classroom_chat_owned_attachments_v1';
 const MAX_NICK_LEN = 30;
 const RECONNECT_DELAY = 3000;
 const GLOBAL_ID = 'global';
@@ -34,16 +36,14 @@ const replyPreviewName = document.getElementById('reply-preview-name');
 const replyPreviewText = document.getElementById('reply-preview-text');
 const replyCancel = document.getElementById('reply-cancel');
 const attachmentPreview = document.getElementById('attachment-preview');
-const attachmentPreviewName = document.getElementById('attachment-preview-name');
-const attachmentPreviewMeta = document.getElementById('attachment-preview-meta');
-const attachmentRemove = document.getElementById('attachment-remove');
-const uploadProgressTrack = document.getElementById('upload-progress-track');
-const uploadProgressBar = document.getElementById('upload-progress-bar');
+const attachmentList = document.getElementById('attachment-list');
 const dropOverlay = document.getElementById('drop-overlay');
 const toastRegion = document.getElementById('toast-region');
 const chatArea = document.querySelector('.chat-area');
 const MAX_MSG_LEN = msgInput.maxLength;
 const MAX_FILE_MB = Number(fileInput.dataset.maxFileMb || 50);
+const MAX_FILES = Number(fileInput.dataset.maxFiles || 5);
+const MAX_PARALLEL_UPLOADS = 2;
 
 const conversations = new Map();
 const replyTargets = new Map();
@@ -54,8 +54,54 @@ let myNickname = '';
 let ws = null;
 let reconnectTimer = null;
 let nicknameRejected = false;
+function getOrCreateUploadOwnerToken() {
+  try {
+    const stored = localStorage.getItem(UPLOAD_OWNER_TOKEN_KEY) || '';
+    if (/^[A-Za-z0-9_-]{32,128}$/.test(stored)) return stored;
+  } catch { /* storage unavailable */ }
+
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const token = [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
+  try { localStorage.setItem(UPLOAD_OWNER_TOKEN_KEY, token); } catch { /* storage unavailable */ }
+  return token;
+}
+
+function loadOwnedAttachmentIds() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(OWNED_ATTACHMENTS_KEY) || '[]');
+    if (!Array.isArray(stored)) return new Set();
+    return new Set(stored.filter(value => typeof value === 'string').slice(-200));
+  } catch {
+    return new Set();
+  }
+}
+
+const uploadOwnerToken = getOrCreateUploadOwnerToken();
+const ownedAttachmentIds = loadOwnedAttachmentIds();
+
+function persistOwnedAttachmentIds() {
+  try {
+    localStorage.setItem(
+      OWNED_ATTACHMENTS_KEY,
+      JSON.stringify([...ownedAttachmentIds].slice(-200)),
+    );
+  } catch { /* storage unavailable */ }
+}
+
+function rememberOwnedAttachment(attachmentId) {
+  ownedAttachmentIds.add(attachmentId);
+  persistOwnedAttachmentIds();
+}
+
+function forgetOwnedAttachment(attachmentId) {
+  ownedAttachmentIds.delete(attachmentId);
+  persistOwnedAttachmentIds();
+}
+
 let lastNicknameError = '';
 let dragDepth = 0;
+let attachmentSequence = 0;
 
 function loadDrafts() {
   try {
@@ -424,8 +470,29 @@ function createReplyQuote(reply) {
   return quote;
 }
 
-function createAttachmentCard(attachment) {
-  if (!attachment) return null;
+function normaliseMessageAttachments(msg) {
+  if (Array.isArray(msg.attachments)) return msg.attachments;
+  if (msg.attachment) return [msg.attachment];
+  if (msg.attachment_removed) return [{ id: 'removed', name: '파일', removed: true }];
+  return [];
+}
+
+function createAttachmentRemovedNotice(attachment) {
+  const notice = document.createElement('div');
+  notice.className = 'attachment-removed';
+  notice.setAttribute('role', 'status');
+  notice.textContent = `🗑️ ${attachment.name || '파일'} · 업로더가 삭제함`;
+  return notice;
+}
+
+function createAttachmentEntry(attachment) {
+  const entry = document.createElement('div');
+  entry.className = 'attachment-entry';
+  if (attachment.removed) {
+    entry.appendChild(createAttachmentRemovedNotice(attachment));
+    return entry;
+  }
+
   const card = document.createElement('a');
   card.className = `attachment-card${attachment.previewable ? ' image-attachment' : ''}`;
   card.href = attachment.url;
@@ -450,7 +517,18 @@ function createAttachmentCard(attachment) {
   meta.textContent = `${formatBytes(attachment.size)} · SHA-256 ${attachment.sha256.slice(0, 12)}…`;
   info.append(name, meta);
   card.append(icon, info);
-  return card;
+  entry.appendChild(card);
+
+  if (ownedAttachmentIds.has(attachment.id)) {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'attachment-delete-btn';
+    remove.textContent = '파일 삭제';
+    remove.setAttribute('aria-label', `${attachment.name} 삭제`);
+    remove.addEventListener('click', () => deleteOwnedAttachment(attachment.id));
+    entry.appendChild(remove);
+  }
+  return entry;
 }
 
 function messageAuthor(msg) {
@@ -459,10 +537,58 @@ function messageAuthor(msg) {
 }
 
 function replySummary(msg) {
+  const firstAttachment = normaliseMessageAttachments(msg)[0];
   return {
     nickname: messageAuthor(msg) || '메시지',
-    content: (msg.content || msg.attachment?.name || '첨부 파일').slice(0, 180),
+    content: (msg.content || firstAttachment?.name || '첨부 파일').slice(0, 180),
   };
+}
+
+function applyAttachmentDeleted(attachmentId) {
+  let changed = false;
+  for (const conversation of conversations.values()) {
+    for (const message of conversation.messages) {
+      const attachments = normaliseMessageAttachments(message);
+      const target = attachments.find(attachment => attachment.id === attachmentId);
+      if (!target || target.removed) continue;
+      target.removed = true;
+      delete target.url;
+      delete target.size;
+      delete target.sha256;
+      delete target.content_type;
+      delete target.previewable;
+      message.attachments = attachments;
+      message.attachment = attachments.find(attachment => !attachment.removed) || null;
+      message.attachment_removed = attachments.length > 0 && !message.attachment;
+      changed = true;
+    }
+  }
+  forgetOwnedAttachment(attachmentId);
+  if (changed) renderMessages();
+}
+
+async function deleteOwnedAttachment(attachmentId) {
+  if (!ownedAttachmentIds.has(attachmentId)) return;
+  if (!window.confirm('파일만 삭제할까요? 채팅 메시지는 그대로 유지됩니다.')) return;
+
+  try {
+    const response = await fetch(`/api/files/${encodeURIComponent(attachmentId)}`, {
+      method: 'DELETE',
+      headers: {
+        'X-Chat-Nickname': encodeURIComponent(myNickname),
+        'X-Upload-Token': uploadOwnerToken,
+      },
+    });
+    if (!response.ok) {
+      let detail = '';
+      try { detail = (await response.json()).detail || ''; } catch { /* non-JSON error */ }
+      throw new Error(detail || `파일 삭제 실패 (${response.status})`);
+    }
+    applyAttachmentDeleted(attachmentId);
+    showToast('파일을 삭제해 업로드 용량을 확보했습니다.', 'success');
+  } catch (error) {
+    showToast(error.message || '파일을 삭제하지 못했습니다.', 'error');
+  }
 }
 
 function createMessageActions(msg) {
@@ -537,8 +663,13 @@ function appendMessageNode(msg) {
     renderMarkdown(markdown, msg.content);
     bubble.appendChild(markdown);
   }
-  const attachment = createAttachmentCard(msg.attachment);
-  if (attachment) bubble.appendChild(attachment);
+  const attachments = normaliseMessageAttachments(msg);
+  if (attachments.length) {
+    const group = document.createElement('div');
+    group.className = 'message-attachments';
+    attachments.forEach(attachment => group.appendChild(createAttachmentEntry(attachment)));
+    bubble.appendChild(group);
+  }
   shell.append(bubble, createMessageActions(msg));
   row.appendChild(shell);
   messageListEl.appendChild(row);
@@ -586,6 +717,10 @@ function updateCharCount() {
   charCount.classList.toggle('near-limit', msgInput.value.length > MAX_MSG_LEN * 0.9);
 }
 
+function getPendingAttachments(convId) {
+  return pendingAttachments.get(convId) || [];
+}
+
 function renderComposerPreviews() {
   const reply = replyTargets.get(activeConvId);
   replyPreview.classList.toggle('hidden', !reply);
@@ -594,24 +729,46 @@ function renderComposerPreviews() {
     replyPreviewText.textContent = reply.content;
   }
 
-  const state = pendingAttachments.get(activeConvId);
-  attachmentPreview.classList.toggle('hidden', !state);
-  if (state) {
-    attachmentPreviewName.textContent = state.name;
+  const states = getPendingAttachments(activeConvId);
+  attachmentPreview.classList.toggle('hidden', states.length === 0);
+  attachmentList.replaceChildren();
+  for (const state of states) {
+    const row = document.createElement('div');
+    row.className = `attachment-queue-item ${state.status}`;
+    row.setAttribute('role', 'listitem');
+    const icon = document.createElement('span');
+    icon.className = 'attachment-preview-icon';
+    icon.textContent = '📎';
+    const info = document.createElement('div');
+    info.className = 'attachment-preview-info';
+    const name = document.createElement('strong');
+    name.textContent = state.name;
+    const meta = document.createElement('span');
+    if (state.status === 'queued') meta.textContent = '대기 중';
+    if (state.status === 'uploading') meta.textContent = `업로드 중 · ${Math.round(state.progress || 0)}%`;
+    if (state.status === 'ready') meta.textContent = `${formatBytes(state.meta.size)} · 준비됨`;
+    if (state.status === 'error') meta.textContent = state.error || '업로드 실패';
+    info.append(name, meta);
     if (state.status === 'uploading') {
-      attachmentPreviewMeta.textContent = `업로드 중 · ${Math.round(state.progress || 0)}%`;
-      uploadProgressTrack.classList.remove('hidden');
-      uploadProgressBar.style.width = `${state.progress || 0}%`;
-    } else if (state.status === 'ready') {
-      attachmentPreviewMeta.textContent = `${formatBytes(state.meta.size)} · 준비됨`;
-      uploadProgressTrack.classList.add('hidden');
-    } else {
-      attachmentPreviewMeta.textContent = state.error || '업로드 실패';
-      uploadProgressTrack.classList.add('hidden');
+      const track = document.createElement('div');
+      track.className = 'upload-progress-track';
+      const bar = document.createElement('div');
+      bar.className = 'upload-progress-bar';
+      bar.style.width = `${state.progress || 0}%`;
+      track.appendChild(bar);
+      info.appendChild(track);
     }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'preview-remove';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', `${state.name} 첨부 제거`);
+    remove.addEventListener('click', () => clearPendingAttachment(activeConvId, state.clientId));
+    row.append(icon, info, remove);
+    attachmentList.appendChild(row);
   }
-  const uploading = state?.status === 'uploading';
-  sendBtn.disabled = !isConnected() || uploading;
+  const busy = states.some(state => ['queued', 'uploading'].includes(state.status));
+  sendBtn.disabled = !isConnected() || busy;
 }
 
 function isConnected() {
@@ -620,16 +777,17 @@ function isConnected() {
 
 function sendMessage() {
   const content = msgInput.value.trim();
-  const attachmentState = pendingAttachments.get(activeConvId);
-  if (attachmentState?.status === 'uploading') {
-    showToast('파일 업로드가 끝날 때까지 기다려 주세요.', 'warning');
+  const states = getPendingAttachments(activeConvId);
+  if (states.some(state => ['queued', 'uploading'].includes(state.status))) {
+    showToast('모든 파일 업로드가 끝날 때까지 기다려 주세요.', 'warning');
     return;
   }
-  if (attachmentState?.status === 'error') {
+  if (states.some(state => state.status === 'error')) {
     showToast('실패한 첨부 파일을 제거해 주세요.', 'error');
     return;
   }
-  if (!content && !attachmentState?.meta) return;
+  const readyAttachments = states.filter(state => state.status === 'ready' && state.meta);
+  if (!content && readyAttachments.length === 0) return;
   if (content.length > MAX_MSG_LEN) {
     showToast(`메시지는 ${MAX_MSG_LEN}자 이하여야 합니다.`, 'error');
     return;
@@ -644,7 +802,7 @@ function sendMessage() {
     content,
   };
   if (activeConvId !== GLOBAL_ID) payload.to = activeConvId;
-  if (attachmentState?.meta) payload.attachment_id = attachmentState.meta.id;
+  if (readyAttachments.length) payload.attachment_ids = readyAttachments.map(state => state.meta.id);
   const reply = replyTargets.get(activeConvId);
   if (reply) payload.reply = reply;
   ws.send(JSON.stringify(payload));
@@ -680,25 +838,71 @@ replyCancel.addEventListener('click', () => {
   msgInput.focus();
 });
 
-function chooseFile(file) {
-  if (!file) return;
-  if (file.size > MAX_FILE_MB * 1024 * 1024) {
-    showToast(`파일은 ${MAX_FILE_MB}MB 이하여야 합니다.`, 'error');
+function chooseFiles(fileList) {
+  const incoming = [...(fileList || [])];
+  if (!incoming.length) return;
+  const states = getPendingAttachments(activeConvId);
+  if (states.length >= MAX_FILES) {
+    showToast(`파일은 메시지당 최대 ${MAX_FILES}개까지 첨부할 수 있습니다.`, 'warning');
     return;
   }
-  clearPendingAttachment(activeConvId, true);
-  uploadAttachment(activeConvId, file);
+  let skippedForLimit = 0;
+  for (const file of incoming) {
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      showToast(`${file.name}: ${MAX_FILE_MB}MB를 초과했습니다.`, 'error');
+      continue;
+    }
+    if (states.length >= MAX_FILES) {
+      skippedForLimit += 1;
+      continue;
+    }
+    states.push({
+      clientId: ++attachmentSequence,
+      status: 'queued',
+      name: file.name,
+      file,
+      progress: 0,
+      xhr: null,
+      meta: null,
+    });
+  }
+  if (skippedForLimit) {
+    showToast(`${skippedForLimit}개 파일은 제외했습니다. 메시지당 최대 ${MAX_FILES}개입니다.`, 'warning');
+  }
+  if (states.length) pendingAttachments.set(activeConvId, states);
+  renderComposerPreviews();
+  processUploadQueue();
 }
 
-function uploadAttachment(convId, file) {
-  const state = { status: 'uploading', name: file.name, progress: 0, xhr: null, meta: null };
-  pendingAttachments.set(convId, state);
-  renderComposerPreviews();
+function activeUploadCount() {
+  let count = 0;
+  for (const states of pendingAttachments.values()) {
+    count += states.filter(state => state.status === 'uploading').length;
+  }
+  return count;
+}
+
+function processUploadQueue() {
+  let available = MAX_PARALLEL_UPLOADS - activeUploadCount();
+  if (available <= 0) return;
+  for (const [convId, states] of pendingAttachments) {
+    for (const state of states) {
+      if (available <= 0) return;
+      if (state.status !== 'queued') continue;
+      startAttachmentUpload(convId, state);
+      available -= 1;
+    }
+  }
+}
+
+function startAttachmentUpload(convId, state) {
+  state.status = 'uploading';
   const xhr = new XMLHttpRequest();
   state.xhr = xhr;
   xhr.open('POST', '/api/files');
-  xhr.setRequestHeader('X-Chat-Nickname', myNickname);
-  xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+  xhr.setRequestHeader('X-Chat-Nickname', encodeURIComponent(myNickname));
+  xhr.setRequestHeader('X-File-Name', encodeURIComponent(state.file.name));
+  xhr.setRequestHeader('X-Upload-Token', uploadOwnerToken);
   xhr.setRequestHeader('Content-Type', 'application/octet-stream');
   xhr.upload.addEventListener('progress', event => {
     if (!event.lengthComputable) return;
@@ -712,47 +916,66 @@ function uploadAttachment(convId, file) {
       state.status = 'ready';
       state.progress = 100;
       state.meta = response;
+      state.file = null;
+      rememberOwnedAttachment(response.id);
     } else {
       state.status = 'error';
       state.error = response.detail || `업로드 실패 (${xhr.status})`;
-      showToast(state.error, 'error');
+      showToast(`${state.name}: ${state.error}`, 'error');
     }
     if (activeConvId === convId) renderComposerPreviews();
+    processUploadQueue();
   });
   xhr.addEventListener('error', () => {
     state.status = 'error';
     state.error = '네트워크 오류로 업로드하지 못했습니다.';
     if (activeConvId === convId) renderComposerPreviews();
+    processUploadQueue();
   });
   xhr.addEventListener('abort', () => {
-    if (pendingAttachments.get(convId) === state) pendingAttachments.delete(convId);
     if (activeConvId === convId) renderComposerPreviews();
+    processUploadQueue();
   });
-  xhr.send(file);
-}
-
-async function clearPendingAttachment(convId, discardRemote = true) {
-  const state = pendingAttachments.get(convId);
-  if (!state) return;
-  pendingAttachments.delete(convId);
-  if (state.status === 'uploading' && state.xhr) state.xhr.abort();
-  if (discardRemote && state.status === 'ready' && state.meta?.id) {
-    try {
-      await fetch(`/api/files/${encodeURIComponent(state.meta.id)}`, {
-        method: 'DELETE',
-        headers: { 'X-Chat-Nickname': myNickname },
-      });
-    } catch { /* automatic expiry is the fallback */ }
+  try {
+    xhr.send(state.file);
+  } catch {
+    state.status = 'error';
+    state.error = '파일 업로드 요청을 시작하지 못했습니다.';
+    showToast(`${state.name}: ${state.error}`, 'error');
+    if (activeConvId === convId) renderComposerPreviews();
+    processUploadQueue();
   }
   if (activeConvId === convId) renderComposerPreviews();
 }
 
+async function clearPendingAttachment(convId, clientId, discardRemote = true) {
+  const states = getPendingAttachments(convId);
+  const index = states.findIndex(state => state.clientId === clientId);
+  if (index < 0) return;
+  const [state] = states.splice(index, 1);
+  if (!states.length) pendingAttachments.delete(convId);
+  if (state.status === 'uploading' && state.xhr) state.xhr.abort();
+  if (discardRemote && state.status === 'ready' && state.meta?.id) {
+    try {
+      const response = await fetch(`/api/files/${encodeURIComponent(state.meta.id)}`, {
+        method: 'DELETE',
+        headers: {
+          'X-Chat-Nickname': encodeURIComponent(myNickname),
+          'X-Upload-Token': uploadOwnerToken,
+        },
+      });
+      if (response.ok) forgetOwnedAttachment(state.meta.id);
+    } catch { /* automatic expiry is the fallback */ }
+  }
+  if (activeConvId === convId) renderComposerPreviews();
+  processUploadQueue();
+}
+
 attachBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {
-  chooseFile(fileInput.files?.[0]);
+  chooseFiles(fileInput.files);
   fileInput.value = '';
 });
-attachmentRemove.addEventListener('click', () => clearPendingAttachment(activeConvId));
 
 chatArea.addEventListener('dragenter', event => {
   if (!event.dataTransfer?.types.includes('Files')) return;
@@ -772,13 +995,13 @@ chatArea.addEventListener('drop', event => {
   event.preventDefault();
   dragDepth = 0;
   dropOverlay.classList.add('hidden');
-  chooseFile(event.dataTransfer?.files?.[0]);
+  chooseFiles(event.dataTransfer?.files);
 });
 msgInput.addEventListener('paste', event => {
-  const file = [...(event.clipboardData?.files || [])][0];
-  if (file) {
+  const files = [...(event.clipboardData?.files || [])];
+  if (files.length) {
     event.preventDefault();
-    chooseFile(file);
+    chooseFiles(files);
   }
 });
 
@@ -847,6 +1070,8 @@ function initWebSocket() {
           created_at: data.created_at,
           reply: data.reply || null,
           attachment: data.attachment || null,
+          attachments: Array.isArray(data.attachments) ? data.attachments : null,
+          attachment_removed: Boolean(data.attachment_removed),
         });
         break;
       case 'dm': {
@@ -867,9 +1092,14 @@ function initWebSocket() {
           created_at: data.created_at,
           reply: data.reply || null,
           attachment: data.attachment || null,
+          attachments: Array.isArray(data.attachments) ? data.attachments : null,
+          attachment_removed: Boolean(data.attachment_removed),
         });
         break;
       }
+      case 'attachment_deleted':
+        applyAttachmentDeleted(data.attachment_id);
+        break;
       case 'presence':
         break;
       case 'users':

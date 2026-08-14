@@ -59,7 +59,7 @@
         </div>
         <main id="message-list" class="message-list" role="log" aria-live="polite" aria-relevant="additions"></main>
         <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true">
-          <div>파일을 놓아서 첨부하세요</div>
+          <div>📂 파일 첨부</div>
         </div>
 
         <footer class="composer">
@@ -72,20 +72,19 @@
           </div>
 
           <div id="attachment-preview" class="composer-preview attachment-preview hidden">
-            <div class="attachment-preview-icon">📎</div>
-            <div class="attachment-preview-info">
-              <strong id="attachment-preview-name"></strong>
-              <span id="attachment-preview-meta"></span>
-              <div id="upload-progress-track" class="upload-progress-track hidden">
-                <div id="upload-progress-bar" class="upload-progress-bar"></div>
-              </div>
-            </div>
-            <button id="attachment-remove" class="preview-remove" type="button" aria-label="첨부 제거">×</button>
+            <div id="attachment-list" class="attachment-queue" role="list"></div>
           </div>
 
           <div class="composer-row">
-            <input id="file-input" type="file" class="hidden" data-max-file-mb="{{ max_file_mb }}" />
-            <button id="attach-btn" class="composer-icon-btn" type="button" aria-label="파일 첨부" title="파일 첨부 (최대 {{ max_file_mb }}MB)">＋</button>
+            <input
+              id="file-input"
+              type="file"
+              class="hidden"
+              multiple
+              data-max-file-mb="{{ max_file_mb }}"
+              data-max-files="{{ max_files }}"
+            />
+            <button id="attach-btn" class="composer-icon-btn" type="button" aria-label="파일 첨부" title="파일 첨부 (파일당 {{ max_file_mb }}MB, 최대 {{ max_files }}개)">＋</button>
             <label class="sr-only" for="msg-input">메시지</label>
             <textarea
               id="msg-input"

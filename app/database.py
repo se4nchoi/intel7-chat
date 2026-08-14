@@ -79,13 +79,46 @@ def init_db() -> None:
                 previewable       INTEGER NOT NULL DEFAULT 0,
                 uploader_nickname TEXT NOT NULL,
                 ip                TEXT NOT NULL,
+                owner_token_hash  TEXT NOT NULL DEFAULT '',
                 created_at        TEXT NOT NULL,
                 claimed           INTEGER NOT NULL DEFAULT 0
             )
             """
         )
+        _add_column_if_missing(
+            conn,
+            "attachments",
+            "owner_token_hash",
+            "TEXT NOT NULL DEFAULT ''",
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS message_attachments (
+                message_id    INTEGER NOT NULL,
+                attachment_id TEXT NOT NULL,
+                original_name TEXT NOT NULL,
+                position      INTEGER NOT NULL,
+                PRIMARY KEY (message_id, attachment_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO message_attachments (
+                message_id, attachment_id, original_name, position
+            )
+            SELECT m.id, m.attachment_id, COALESCE(a.original_name, '파일'), 0
+            FROM messages m
+            LEFT JOIN attachments a ON a.id = m.attachment_id
+            WHERE m.attachment_id IS NOT NULL AND m.attachment_id != ''
+            """
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_created_at ON attachments(created_at)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_message_attachments_message "
+            "ON message_attachments(message_id, position)"
+        )
         conn.commit()
 
 
@@ -101,10 +134,66 @@ def _attachment_from_row(row: sqlite3.Row, prefix: str = "") -> Optional[Dict[st
         "content_type": row[f"{prefix}content_type"],
         "previewable": bool(row[f"{prefix}previewable"]),
         "url": f"/api/files/{attachment_id}",
+        "removed": False,
     }
 
 
-def _message_from_row(row: sqlite3.Row, include_ip: bool = False) -> Dict[str, Any]:
+def _get_message_attachments(
+    conn: sqlite3.Connection,
+    message_ids: List[int],
+) -> Dict[int, List[Dict[str, Any]]]:
+    result: Dict[int, List[Dict[str, Any]]] = {message_id: [] for message_id in message_ids}
+    if not message_ids:
+        return result
+    placeholders = ",".join("?" for _ in message_ids)
+    rows = conn.execute(
+        f"""
+        SELECT ma.message_id, ma.attachment_id, ma.original_name AS saved_original_name,
+               ma.position, a.id AS live_attachment_id,
+               a.original_name, a.size, a.sha256, a.content_type, a.previewable
+        FROM message_attachments ma
+        LEFT JOIN attachments a ON a.id = ma.attachment_id
+        WHERE ma.message_id IN ({placeholders})
+        ORDER BY ma.message_id, ma.position
+        """,
+        message_ids,
+    ).fetchall()
+    for row in rows:
+        if row["live_attachment_id"]:
+            attachment = {
+                "id": row["attachment_id"],
+                "name": row["original_name"],
+                "size": row["size"],
+                "sha256": row["sha256"],
+                "content_type": row["content_type"],
+                "previewable": bool(row["previewable"]),
+                "url": f"/api/files/{row['attachment_id']}",
+                "removed": False,
+            }
+        else:
+            attachment = {
+                "id": row["attachment_id"],
+                "name": row["saved_original_name"],
+                "removed": True,
+            }
+        result[row["message_id"]].append(attachment)
+    return result
+
+
+def _message_from_row(
+    row: sqlite3.Row,
+    include_ip: bool = False,
+    attachments: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    if attachments is None:
+        legacy = _attachment_from_row(row, "a_")
+        attachments = [legacy] if legacy else []
+        if row["attachment_id"] and not legacy:
+            attachments = [{"id": row["attachment_id"], "name": "파일", "removed": True}]
+    live_attachment = next(
+        (attachment for attachment in attachments if not attachment.get("removed")),
+        None,
+    )
     reply = None
     if row["reply_nickname"] or row["reply_content"]:
         reply = {
@@ -118,7 +207,9 @@ def _message_from_row(row: sqlite3.Row, include_ip: bool = False) -> Dict[str, A
         "created_at": row["created_at"],
         "ip_suffix": get_ip_suffix(row["ip"]),
         "reply": reply,
-        "attachment": _attachment_from_row(row, "a_"),
+        "attachment": live_attachment,
+        "attachments": attachments,
+        "attachment_removed": bool(attachments and not live_attachment),
     }
     if include_ip:
         result["ip"] = row["ip"]
@@ -131,7 +222,10 @@ def save_message(
     ip: str = "",
     reply: Optional[Dict[str, str]] = None,
     attachment_id: Optional[str] = None,
+    attachment_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    selected_ids = list(dict.fromkeys(attachment_ids or ([] if not attachment_id else [attachment_id])))
+    legacy_attachment_id = selected_ids[0] if selected_ids else None
     now = utc_now()
     reply_nickname = reply.get("nickname", "") if reply else None
     reply_content = reply.get("content", "") if reply else None
@@ -142,9 +236,35 @@ def save_message(
                 nickname, content, created_at, ip, reply_nickname, reply_content, attachment_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (nickname, content, now, ip, reply_nickname, reply_content, attachment_id),
+            (
+                nickname,
+                content,
+                now,
+                ip,
+                reply_nickname,
+                reply_content,
+                legacy_attachment_id,
+            ),
         )
         row_id = cursor.lastrowid
+        if selected_ids:
+            placeholders = ",".join("?" for _ in selected_ids)
+            name_rows = conn.execute(
+                f"SELECT id, original_name FROM attachments WHERE id IN ({placeholders})",
+                selected_ids,
+            ).fetchall()
+            names = {name_row["id"]: name_row["original_name"] for name_row in name_rows}
+            conn.executemany(
+                """
+                INSERT INTO message_attachments (
+                    message_id, attachment_id, original_name, position
+                ) VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (row_id, item_id, names.get(item_id, "파일"), position)
+                    for position, item_id in enumerate(selected_ids)
+                ],
+            )
         row = conn.execute(
             """
             SELECT m.*, a.id AS a_attachment_id, a.original_name AS a_original_name,
@@ -156,8 +276,13 @@ def save_message(
             """,
             (row_id,),
         ).fetchone()
+        attachment_map = _get_message_attachments(conn, [row_id])
         conn.commit()
-    return _message_from_row(row, include_ip=True)
+    return _message_from_row(
+        row,
+        include_ip=True,
+        attachments=attachment_map.get(row_id, []),
+    )
 
 
 def get_recent_messages(limit: int = 100) -> List[Dict[str, Any]]:
@@ -178,7 +303,11 @@ def get_recent_messages(limit: int = 100) -> List[Dict[str, Any]]:
             """,
             (retention_cutoff(), limit),
         ).fetchall()
-    return [_message_from_row(row) for row in rows]
+        attachment_map = _get_message_attachments(conn, [row["id"] for row in rows])
+    return [
+        _message_from_row(row, attachments=attachment_map.get(row["id"], []))
+        for row in rows
+    ]
 
 
 def save_attachment(metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -187,8 +316,8 @@ def save_attachment(metadata: Dict[str, Any]) -> Dict[str, Any]:
             """
             INSERT INTO attachments (
                 id, original_name, stored_name, size, sha256, content_type,
-                previewable, uploader_nickname, ip, created_at, claimed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                previewable, uploader_nickname, ip, owner_token_hash, created_at, claimed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 metadata["id"],
@@ -200,6 +329,7 @@ def save_attachment(metadata: Dict[str, Any]) -> Dict[str, Any]:
                 int(metadata["previewable"]),
                 metadata["uploader_nickname"],
                 metadata["ip"],
+                metadata.get("owner_token_hash", ""),
                 metadata.get("created_at", utc_now()),
             ),
         )
@@ -226,42 +356,69 @@ def get_attachment_public(attachment_id: str) -> Optional[Dict[str, Any]]:
     return _attachment_from_row(row) if row else None
 
 
+def claim_attachments(
+    attachment_ids: List[str],
+    nickname: str,
+    ip: str,
+) -> Optional[List[Dict[str, Any]]]:
+    """Atomically claim an ordered batch of uploaded files from one active client."""
+    selected_ids = list(dict.fromkeys(attachment_ids))
+    if not selected_ids:
+        return []
+    placeholders = ",".join("?" for _ in selected_ids)
+    with get_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute(
+            f"""
+            SELECT * FROM attachments
+            WHERE id IN ({placeholders}) AND uploader_nickname = ? AND ip = ?
+              AND claimed = 0 AND created_at >= ?
+            """,
+            [*selected_ids, nickname, ip, retention_cutoff()],
+        ).fetchall()
+        if len(rows) != len(selected_ids):
+            conn.rollback()
+            return None
+        by_id = {row["id"]: row for row in rows}
+        if any(attachment_id not in by_id for attachment_id in selected_ids):
+            conn.rollback()
+            return None
+        conn.executemany(
+            "UPDATE attachments SET claimed = 1 WHERE id = ? AND claimed = 0",
+            [(attachment_id,) for attachment_id in selected_ids],
+        )
+        conn.commit()
+    return [_attachment_from_row(by_id[attachment_id]) for attachment_id in selected_ids]
+
+
 def claim_attachment(
     attachment_id: str,
     nickname: str,
     ip: str,
 ) -> Optional[Dict[str, Any]]:
-    """Claim an uploaded file once, for a message from the same active client."""
+    """Backward-compatible single-file claim helper."""
+    claimed = claim_attachments([attachment_id], nickname, ip)
+    return claimed[0] if claimed else None
+
+
+def delete_owned_attachment(
+    attachment_id: str,
+    owner_token_hash: str,
+) -> Optional[Dict[str, Any]]:
+    """Delete a pending or sent attachment using its private browser ownership token."""
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT * FROM attachments
-            WHERE id = ? AND uploader_nickname = ? AND ip = ? AND claimed = 0
-              AND created_at >= ?
+            SELECT stored_name, claimed FROM attachments
+            WHERE id = ? AND owner_token_hash = ? AND created_at >= ?
             """,
-            (attachment_id, nickname, ip, retention_cutoff()),
-        ).fetchone()
-        if not row:
-            return None
-        conn.execute("UPDATE attachments SET claimed = 1 WHERE id = ?", (attachment_id,))
-        conn.commit()
-    return get_attachment_public(attachment_id)
-
-
-def delete_unclaimed_attachment(attachment_id: str, nickname: str, ip: str) -> Optional[str]:
-    with get_connection() as conn:
-        row = conn.execute(
-            """
-            SELECT stored_name FROM attachments
-            WHERE id = ? AND uploader_nickname = ? AND ip = ? AND claimed = 0
-            """,
-            (attachment_id, nickname, ip),
+            (attachment_id, owner_token_hash, retention_cutoff()),
         ).fetchone()
         if not row:
             return None
         conn.execute("DELETE FROM attachments WHERE id = ?", (attachment_id,))
         conn.commit()
-    return row["stored_name"]
+    return dict(row)
 
 
 def get_upload_usage(ip: str) -> Tuple[int, int]:
@@ -282,6 +439,9 @@ def delete_expired_records() -> Tuple[int, List[str]]:
     cutoff = retention_cutoff()
     with get_connection() as conn:
         message_cursor = conn.execute("DELETE FROM messages WHERE created_at < ?", (cutoff,))
+        conn.execute(
+            "DELETE FROM message_attachments WHERE message_id NOT IN (SELECT id FROM messages)"
+        )
         expired = conn.execute(
             "SELECT stored_name FROM attachments WHERE created_at < ?", (cutoff,)
         ).fetchall()
