@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# SQLite DB (서버가 자동 생성)
+data/chat.db
+data/uploads/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ service_name }}</title>
+  <meta name="description" content="교실 내부 LAN 전용 실시간 채팅 서비스" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="icon" type="image/png" href="/static/stealth-chat-logo.png" />
+</head>
+<body>
+  <div id="nickname-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="nickname-title">
+    <div class="modal-box">
+      <div class="modal-logo-container">
+        <img src="/static/stealth-chat-logo.png" alt="" class="modal-logo" />
+      </div>
+      <h2 id="nickname-title">{{ service_name }}</h2>
+      <p class="modal-warning">⚠️ 공개 메시지, 파일, 서버 IP 기록은 10시간 후 삭제됩니다.</p>
+      <p class="modal-desc">파일은 최대 {{ max_file_mb }}MB 까지 업로드 가능합니다.</p>
+      <label class="sr-only" for="nickname-input">닉네임</label>
+      <input id="nickname-input" type="text" maxlength="30" placeholder="닉네임" autocomplete="off" autofocus />
+      <p id="nickname-error" class="error-msg" aria-live="polite"></p>
+      <button id="nickname-submit" type="button">입장</button>
+    </div>
+  </div>
+
+  <div id="chat-app" class="hidden">
+    <header class="app-header">
+      <button id="sidebar-toggle" class="icon-btn sidebar-toggle-btn" type="button" aria-label="사이드바 열기" aria-expanded="false">&#9776;</button>
+      <div class="header-logo-container">
+        <img src="/static/stealth-chat-logo.png" alt="" class="header-logo" />
+        <h1 class="service-name">{{ service_name }}</h1>
+      </div>
+      <div class="header-right">
+        <span id="my-nick-badge" class="my-nick-badge"></span>
+        <span id="conn-status" class="conn-status disconnected" role="status">연결 끊김</span>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <aside id="sidebar" class="sidebar" aria-label="대화와 접속자">
+        <div class="sidebar-section sidebar-convs">
+          <div class="sidebar-section-title">💬 대화</div>
+          <ul id="conv-list" class="conv-list"></ul>
+        </div>
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-section sidebar-online">
+          <div class="sidebar-section-title">🟢 접속 중 <span id="online-count">0</span>명</div>
+          <ul id="online-list" class="online-list"></ul>
+        </div>
+      </aside>
+
+      <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
+
+      <section class="chat-area" aria-labelledby="chat-area-title">
+        <div class="chat-area-header">
+          <span id="chat-area-title" class="chat-area-title">전체 채팅</span>
+          <span class="retention-note">모든 기록은 오늘 10시간 이후 소멸됩니다!</span>
+        </div>
+        <main id="message-list" class="message-list" role="log" aria-live="polite" aria-relevant="additions"></main>
+        <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true">
+          <div>파일을 놓아서 첨부하세요</div>
+        </div>
+
+        <footer class="composer">
+          <div id="reply-preview" class="composer-preview reply-preview hidden">
+            <div>
+              <strong id="reply-preview-name"></strong>
+              <span id="reply-preview-text"></span>
+            </div>
+            <button id="reply-cancel" class="preview-remove" type="button" aria-label="답장 취소">×</button>
+          </div>
+
+          <div id="attachment-preview" class="composer-preview attachment-preview hidden">
+            <div class="attachment-preview-icon">📎</div>
+            <div class="attachment-preview-info">
+              <strong id="attachment-preview-name"></strong>
+              <span id="attachment-preview-meta"></span>
+              <div id="upload-progress-track" class="upload-progress-track hidden">
+                <div id="upload-progress-bar" class="upload-progress-bar"></div>
+              </div>
+            </div>
+            <button id="attachment-remove" class="preview-remove" type="button" aria-label="첨부 제거">×</button>
+          </div>
+
+          <div class="composer-row">
+            <input id="file-input" type="file" class="hidden" data-max-file-mb="{{ max_file_mb }}" />
+            <button id="attach-btn" class="composer-icon-btn" type="button" aria-label="파일 첨부" title="파일 첨부 (최대 {{ max_file_mb }}MB)">＋</button>
+            <label class="sr-only" for="msg-input">메시지</label>
+            <textarea
+              id="msg-input"
+              rows="1"
+              maxlength="{{ max_message_len }}"
+              placeholder="메시지를 입력하세요"
+              autocomplete="off"
+            ></textarea>
+            <button id="send-btn" type="button" aria-label="메시지 전송">전송</button>
+          </div>
+          <div class="composer-footer">
+            <span class="composer-hint"><kbd>Enter</kbd> 전송 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 · Markdown 지원</span>
+            <span id="char-count" class="char-count">0 / {{ max_message_len }}</span>
+          </div>
+        </footer>
+      </section>
+    </div>
+  </div>
+
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
