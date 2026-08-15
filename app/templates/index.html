@@ -3,24 +3,35 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{{ service_name }}</title>
+  <title>[인텔7기] 대나무숲 - {{ service_name }}</title>
   <meta name="description" content="교실 내부 LAN 전용 실시간 채팅 서비스" />
   <link rel="stylesheet" href="/static/style.css" />
   <link rel="icon" type="image/png" href="/static/bamboochat-logo.png" />
 </head>
 <body>
-  <div id="nickname-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="nickname-title">
+  <div id="auth-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="auth-title">
     <div class="modal-box">
-      <div class="modal-logo-container">
-        <img src="/static/bamboochat-logo.png" alt="" class="modal-logo" />
-      </div>
-      <h2 id="nickname-title">{{ service_name }}</h2>
-      <p class="modal-warning">⚠️ 공개 메시지, 파일, 서버 IP 기록은 10시간 후 삭제됩니다.</p>
-      <p class="modal-desc">파일은 최대 {{ max_file_mb }}MB 까지 업로드 가능합니다.</p>
-      <label class="sr-only" for="nickname-input">닉네임</label>
-      <input id="nickname-input" type="text" maxlength="30" placeholder="닉네임" autocomplete="off" autofocus />
-      <p id="nickname-error" class="error-msg" aria-live="polite"></p>
-      <button id="nickname-submit" type="button">입장</button>
+      <div class="modal-logo-container"><img src="/static/bamboochat-logo.png" alt="" class="modal-logo" /></div>
+      <h2 id="auth-title">{{ service_name }}</h2>
+      <p class="modal-warning">⚠️ 보내는 모든 메세지는 암호화되지 않습니다!</p>
+      <p class="modal-desc">비밀번호나 민감정보를 입력·공유하지 마세요.</p>
+      <form id="auth-form">
+        <label class="sr-only" for="username-input">아이디</label>
+        <input id="username-input" type="text" maxlength="30" minlength="2" placeholder="아이디" autocomplete="username" required autofocus />
+        <label class="sr-only" for="password-input">비밀번호</label>
+        <input id="password-input" type="password" minlength="5" placeholder="비밀번호 (5자 이상)" autocomplete="current-password" required />
+        <div id="register-fields" class="hidden">
+          <label class="sr-only" for="password-confirm-input">비밀번호 확인</label>
+          <input id="password-confirm-input" type="password" minlength="5" placeholder="비밀번호 확인" autocomplete="new-password" />
+          <label class="sr-only" for="enrollment-input">가입 코드</label>
+          <input id="enrollment-input" type="text" maxlength="128" placeholder="교실 가입 코드" autocomplete="off" />
+        </div>
+        <p id="auth-error" class="error-msg" aria-live="polite"></p>
+        <button id="auth-submit" type="submit">로그인</button>
+      </form>
+      {% if registration_enabled %}
+      <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">처음인가요? 계정 만들기</button>
+      {% endif %}
     </div>
   </div>
 
@@ -34,73 +45,101 @@
       <div class="header-right">
         <span id="my-nick-badge" class="my-nick-badge"></span>
         <span id="conn-status" class="conn-status disconnected" role="status">연결 끊김</span>
+        <button id="admin-btn" class="admin-btn hidden" type="button">관리</button>
+        <button id="logout-btn" class="logout-btn" type="button">로그아웃</button>
+        <button id="help-btn" class="help-btn" type="button" aria-label="기능 도움말" title="기능 도움말">?</button>
       </div>
     </header>
-
     <div class="app-body">
       <aside id="sidebar" class="sidebar" aria-label="대화와 접속자">
-        <div class="sidebar-section sidebar-convs">
-          <div class="sidebar-section-title">💬 대화</div>
-          <ul id="conv-list" class="conv-list"></ul>
-        </div>
+        <div class="sidebar-section sidebar-convs"><div class="sidebar-section-title">💬 대화</div><ul id="conv-list" class="conv-list"></ul></div>
         <div class="sidebar-divider"></div>
-        <div class="sidebar-section sidebar-online">
-          <div class="sidebar-section-title">🟢 접속 중 <span id="online-count">0</span>명</div>
-          <ul id="online-list" class="online-list"></ul>
-        </div>
+        <div class="sidebar-section sidebar-online"><div class="sidebar-section-title">👥 접속 <span id="online-count">0</span>/<span id="user-count">0</span> 명</div><ul id="online-list" class="online-list"></ul></div>
       </aside>
-
       <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
-
       <section class="chat-area" aria-labelledby="chat-area-title">
         <div class="chat-area-header">
           <span id="chat-area-title" class="chat-area-title">전체 채팅</span>
-          <span class="retention-note">모든 기록은 오늘 10시간 이후 소멸됩니다!</span>
+          <span id="retention-note" class="retention-note">⚠️ HTTP LAN · 암호화되지 않음 · 민감정보 공유 금지</span>
         </div>
+        <button id="load-older-btn" class="load-older-btn hidden" type="button">↑ 이전 메시지 더 불러오기</button>
         <main id="message-list" class="message-list" role="log" aria-live="polite" aria-relevant="additions"></main>
-        <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true">
-          <div>📂 파일 첨부</div>
-        </div>
-
+        <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true"><div>파일 첨부</div></div>
         <footer class="composer">
-          <div id="reply-preview" class="composer-preview reply-preview hidden">
-            <div>
-              <strong id="reply-preview-name"></strong>
-              <span id="reply-preview-text"></span>
-            </div>
-            <button id="reply-cancel" class="preview-remove" type="button" aria-label="답장 취소">×</button>
+          <div id="reply-preview" class="composer-preview reply-preview hidden"><div><strong id="reply-preview-name"></strong><span id="reply-preview-text"></span></div><button id="reply-cancel" class="preview-remove" type="button" aria-label="답장 취소">×</button></div>
+          <div id="attachment-preview" class="composer-preview attachment-preview hidden"><div id="attachment-list" class="attachment-queue" role="list"></div></div>
+          <div id="markdown-toolbar" class="markdown-toolbar" role="toolbar" aria-label="Markdown 서식">
+            <button type="button" data-markdown="bold" aria-label="굵게" title="굵게 (Ctrl+B)"><strong>B</strong></button>
+            <button type="button" data-markdown="italic" aria-label="기울임" title="기울임 (Ctrl+I)"><em>I</em></button>
+            <button type="button" data-markdown="strike" aria-label="취소선" title="취소선 (Ctrl+Shift+X)"><s>S</s></button>
+            <button type="button" data-markdown="code" aria-label="인라인 코드" title="인라인 코드"><code>&lt;/&gt;</code></button>
+            <button type="button" data-markdown="link" aria-label="링크" title="링크 (Ctrl+K)">🔗</button>
+            <button type="button" data-markdown="quote" aria-label="인용문" title="인용문">❯</button>
+            <button type="button" data-markdown="bullet" aria-label="글머리 목록" title="글머리 목록">•</button>
+            <button type="button" data-markdown="codeblock" aria-label="코드 블록" title="코드 블록">{ }</button>
           </div>
-
-          <div id="attachment-preview" class="composer-preview attachment-preview hidden">
-            <div id="attachment-list" class="attachment-queue" role="list"></div>
-          </div>
-
+          <div id="mention-menu" class="mention-menu hidden" role="listbox" aria-label="멘션할 사용자"></div>
           <div class="composer-row">
-            <input
-              id="file-input"
-              type="file"
-              class="hidden"
-              multiple
-              data-max-file-mb="{{ max_file_mb }}"
-              data-max-files="{{ max_files }}"
-            />
+            <input id="file-input" type="file" class="hidden" multiple data-max-file-mb="{{ max_file_mb }}" data-max-files="{{ max_files }}" />
             <button id="attach-btn" class="composer-icon-btn" type="button" aria-label="파일 첨부" title="파일 첨부 (파일당 {{ max_file_mb }}MB, 최대 {{ max_files }}개)">＋</button>
             <label class="sr-only" for="msg-input">메시지</label>
-            <textarea
-              id="msg-input"
-              rows="1"
-              maxlength="{{ max_message_len }}"
-              placeholder="메시지를 입력하세요"
-              autocomplete="off"
-            ></textarea>
+            <textarea id="msg-input" rows="1" maxlength="{{ max_message_len }}" placeholder="메시지를 입력하세요" autocomplete="off"></textarea>
             <button id="send-btn" type="button" aria-label="메시지 전송">전송</button>
           </div>
-          <div class="composer-footer">
-            <span class="composer-hint"><kbd>Enter</kbd> 전송 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 · Markdown 지원</span>
-            <span id="char-count" class="char-count">0 / {{ max_message_len }}</span>
-          </div>
+          <div class="composer-footer"><span class="composer-hint"><kbd>Enter</kbd> 전송 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 · Markdown 지원</span><span id="char-count" class="char-count">0 / {{ max_message_len }}</span></div>
         </footer>
       </section>
+    </div>
+  </div>
+  <div id="help-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="modal-box help-panel">
+      <div class="admin-panel-header">
+        <div>
+          <h2 id="help-title">기능 도움말</h2>
+          <p class="modal-desc">대나무숲에서 사용할 수 있는 기능입니다.</p>
+        </div>
+        <button id="help-close" class="admin-close" type="button" aria-label="도움말 닫기">×</button>
+      </div>
+      <div class="help-list">
+        <section><h3>@멘션</h3><p>전체 채팅에서 <code>@</code>를 입력하고 사용자 목록을 방향키와 Enter로 선택하세요. 해당 사용자에게 메시지 강조와 토스트 알림이 표시됩니다.</p></section>
+        <section><h3>DM</h3><p>접속자 목록의 DM 버튼을 누르면 해당 사용자와 비공개 대화를 시작합니다.</p><p class="help-warning">⚠️ DM 메시지는 서버에 영구 저장되며 발신자와 수신자만 볼 수 있습니다. 저장 데이터는 암호화되지 않으므로 민감정보는 공유하지 마세요.</p></section>
+        <section><h3>답장과 Markdown</h3><p>입력창 위 툴바로 굵게, 기울임, 취소선, 코드, 링크, 인용문과 목록을 적용할 수 있습니다. <code>Ctrl+B</code>, <code>Ctrl+I</code>, <code>Ctrl+Shift+X</code>, <code>Ctrl+K</code> 단축키도 지원합니다. 줄 시작에서 <code>-</code>와 Space를 누르면 bullet로 바뀌고, <code>Shift+Enter</code>로 다음 항목을 이어갑니다.</p></section>
+        <section><h3>파일</h3><p>입력창 왼쪽의 ＋ 버튼이나 드래그 앤 드롭으로 파일을 첨부할 수 있습니다.</p></section>
+        <section><h3>명령어</h3><p><code>!도움</code>을 입력하면 이 도움말을 다시 열 수 있습니다.</p></section>
+      </div>
+    </div>
+  </div>
+  <div id="admin-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="admin-title">
+    <div class="modal-box admin-panel">
+      <div class="admin-panel-header">
+        <div>
+          <h2 id="admin-title">관리자 설정</h2>
+          <p class="modal-desc">계정과 교실 가입 설정을 관리합니다.</p>
+        </div>
+        <button id="admin-close" class="admin-close" type="button" aria-label="관리자 설정 닫기">×</button>
+      </div>
+      <section class="admin-section" aria-labelledby="admin-storage-title">
+        <h3 id="admin-storage-title">저장 공간</h3>
+        <div id="admin-storage" class="admin-storage">확인 중…</div>
+      </section>
+      <section class="admin-section" aria-labelledby="admin-registration-title">
+        <h3 id="admin-registration-title">학생 가입</h3>
+        <div class="admin-inline">
+          <label><input id="admin-registration-enabled" type="checkbox" /> 신규 가입 허용</label>
+          <button id="admin-registration-save" type="button">적용</button>
+        </div>
+        <div class="admin-inline">
+          <label class="sr-only" for="admin-enrollment-code">새 교실 가입 코드</label>
+          <input id="admin-enrollment-code" type="text" minlength="5" placeholder="새 교실 가입 코드 (5자 이상)" autocomplete="off" />
+          <button id="admin-enrollment-save" type="button">코드 변경</button>
+        </div>
+      </section>
+      <section class="admin-section admin-users-section" aria-labelledby="admin-users-title">
+        <h3 id="admin-users-title">사용자</h3>
+        <p class="admin-help">역할, 활성 상태 또는 비밀번호를 바꾸면 주황색 테두리로 표시됩니다. “변경 적용”을 눌러 저장하세요. 현재 로그인한 관리자 계정은 잠금 방지를 위해 역할과 활성 상태를 변경할 수 없으며, 비활성화한 계정의 기존 기록은 유지됩니다.</p>
+        <div id="admin-users" class="admin-users"></div>
+      </section>
+      <p id="admin-error" class="error-msg" aria-live="polite"></p>
     </div>
   </div>
 

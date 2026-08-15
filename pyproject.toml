@@ -1,0 +1,22 @@
+[project]
+name = "intel7-chat"
+version = "0.1.0"
+description = "LAN-only classroom chat with Markdown and file sharing"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "argon2-cffi==25.1.0",
+    "fastapi==0.141.1",
+    "jinja2==3.1.6",
+    "uvicorn[standard]==0.52.3",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2==2.10.0",
+    "pip-audit==2.10.1",
+    "pytest==9.1.1",
+]
+
+[tool.uv]
+package = false

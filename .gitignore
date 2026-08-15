@@ -10,6 +10,7 @@ env/
 # SQLite DB (서버가 자동 생성)
 data/chat.db
 data/uploads/
+bamboochat.json
 
 # IDE
 .vscode/
