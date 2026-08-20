@@ -83,6 +83,19 @@ const fileInput = document.getElementById('file-input');
 const chatAreaTitle = document.getElementById('chat-area-title');
 const chatAreaDesc = document.getElementById('chat-area-desc');
 const convMuteBtn = document.getElementById('conv-mute-btn');
+const muteHintPopover = document.getElementById('mute-hint-popover');
+const muteHintClose = document.getElementById('mute-hint-close');
+const muteHintTitle = document.getElementById('mute-hint-title');
+const muteHintDesc = document.getElementById('mute-hint-desc');
+const muteHintIcon = document.getElementById('mute-hint-icon');
+const notificationModal = document.getElementById('notification-modal');
+const notificationModalClose = document.getElementById('notification-modal-close');
+const notificationModalCancel = document.getElementById('notification-modal-cancel');
+const notificationModalDesc = document.getElementById('notification-modal-desc');
+const notificationStatusIcon = document.getElementById('notification-status-icon');
+const notificationStatusTitle = document.getElementById('notification-status-title');
+const notificationStatusDesc = document.getElementById('notification-status-desc');
+const notificationToggleBtn = document.getElementById('notification-toggle-btn');
 const retentionNote = document.getElementById('retention-note');
 const connStatus = document.getElementById('conn-status');
 const myNickBadge = document.getElementById('my-nick-badge');
@@ -171,6 +184,7 @@ function getOrCreateChannel(chan) {
       hasOlder: false,
       loadingOlder: false,
       loaded: Number(chan.id) === 1,
+      lastActivityTime: chan.created_at ? new Date(chan.created_at).getTime() : 0,
     });
   } else {
     const conv = conversations.get(convId);
@@ -225,6 +239,7 @@ function getOrCreateDm(nick) {
     conversations.set(nick, {
       id: nick, name: nick, type: 'dm', messages: [],
       messageIds: new Set(), unread: 0, hasOlder: false, loadingOlder: false,
+      lastActivityTime: 0,
     });
   }
   return conversations.get(nick);
@@ -1185,13 +1200,77 @@ function updateMuteButtonUI() {
   const state = userConversationStates.get(activeConvId);
   const isMuted = Boolean(state?.muted);
   convMuteBtn.textContent = isMuted ? '🔕' : '🔔';
-  convMuteBtn.title = isMuted ? '알림 켜기' : '알림 끄기 (음소거)';
-  convMuteBtn.setAttribute('aria-label', isMuted ? '알림 켜기' : '알림 끄기');
+  convMuteBtn.title = isMuted ? '알림 설정 (음소거됨)' : '알림 설정 (켜짐)';
+  convMuteBtn.setAttribute('aria-label', isMuted ? '알림 설정 (음소거됨)' : '알림 설정 (켜짐)');
   convMuteBtn.classList.toggle('is-muted', isMuted);
 }
 
+function openNotificationModal() {
+  hideMuteHint();
+  const conv = conversations.get(activeConvId);
+  if (!conv || !currentUser) return;
+  const isMuted = Boolean(userConversationStates.get(activeConvId)?.muted);
+  const displayName = conv.type === 'channel' ? `#${conv.displayName || conv.name}` : `${displayNickname(conv.name)}`;
+
+  if (notificationModalDesc) notificationModalDesc.textContent = `${displayName}의 알림 및 음소거 설정입니다.`;
+  if (notificationStatusIcon) notificationStatusIcon.textContent = isMuted ? '🔕' : '🔔';
+  if (notificationStatusTitle) notificationStatusTitle.textContent = isMuted ? '현재 상태: 알림 음소거됨 (🔕)' : '현재 상태: 알림 켜짐 (🔔)';
+  if (notificationStatusDesc) notificationStatusDesc.textContent = isMuted
+    ? '이 대화방의 새 메시지 도착 시 토스트 알림이 표시되지 않습니다.'
+    : '이 대화방에 새 메시지가 도착하면 알림이 정상적으로 표시됩니다.';
+  if (notificationToggleBtn) {
+    notificationToggleBtn.textContent = isMuted ? '알림 켜기 (음소거 해제)' : '알림 끄기 (음소거)';
+    notificationToggleBtn.className = isMuted ? 'primary-btn' : 'caution-btn';
+  }
+
+  if (notificationModal) notificationModal.classList.remove('hidden');
+}
+
+function closeNotificationModal() {
+  if (notificationModal) notificationModal.classList.add('hidden');
+  if (currentUser) msgInput.focus();
+}
+
+function hideMuteHint() {
+  if (muteHintPopover) muteHintPopover.classList.add('hidden');
+}
+
+function showMuteHint() {
+  if (!muteHintPopover) return;
+  const isMuted = Boolean(userConversationStates.get(activeConvId)?.muted);
+  if (muteHintIcon) muteHintIcon.textContent = isMuted ? '🔕' : '🔔';
+  if (muteHintTitle) muteHintTitle.textContent = isMuted ? '알림 음소거됨' : '대화방 알림 설정';
+  if (muteHintDesc) muteHintDesc.textContent = isMuted ? '클릭하여 음소거를 해제하고 알림을 켭니다.' : '클릭하여 이 대화방의 알림을 음소거합니다.';
+  muteHintPopover.classList.remove('hidden');
+}
+
 if (convMuteBtn) {
-  convMuteBtn.addEventListener('click', toggleActiveConvMute);
+  convMuteBtn.addEventListener('click', openNotificationModal);
+}
+if (notificationToggleBtn) {
+  notificationToggleBtn.addEventListener('click', async () => {
+    await toggleActiveConvMute();
+    openNotificationModal();
+  });
+}
+if (notificationModalClose) notificationModalClose.addEventListener('click', closeNotificationModal);
+if (notificationModalCancel) notificationModalCancel.addEventListener('click', closeNotificationModal);
+if (notificationModal) {
+  notificationModal.addEventListener('click', event => {
+    if (event.target === notificationModal) closeNotificationModal();
+  });
+}
+if (muteHintClose) {
+  muteHintClose.addEventListener('click', event => {
+    event.stopPropagation();
+    hideMuteHint();
+  });
+}
+if (muteHintPopover) {
+  muteHintPopover.addEventListener('click', () => {
+    hideMuteHint();
+    openNotificationModal();
+  });
 }
 
 const COLLAPSED_SECTIONS_KEY = 'bamboochat_collapsed_sections';
@@ -1246,7 +1325,8 @@ sidebarToggle.addEventListener('click', () => {
 sidebarBackdrop.addEventListener('click', closeSidebar);
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
-    if (channelEditModal && !channelEditModal.classList.contains('hidden')) closeChannelEditModal();
+    if (notificationModal && !notificationModal.classList.contains('hidden')) closeNotificationModal();
+    else if (channelEditModal && !channelEditModal.classList.contains('hidden')) closeChannelEditModal();
     else if (!channelModal.classList.contains('hidden')) closeChannelModal();
     else if (!nicknameModal.classList.contains('hidden')) closeNicknameModal();
     else if (!helpModal.classList.contains('hidden')) closeHelpModal();
@@ -1364,10 +1444,19 @@ function renderConversationList() {
   if (dmListEl) dmListEl.replaceChildren();
   if (convListEl && !channelListEl) convListEl.replaceChildren();
 
-  // 1. Render Channels
+  // 1. Render Channels: default channel pinned at top, other channels sorted by recent message activity
   const channelConvs = [...conversations.values()]
     .filter(conv => conv.type === 'channel')
-    .sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault)) || a.channelId - b.channelId);
+    .sort((a, b) => {
+      const isDefA = Boolean(a.isDefault) || a.channelId === 1;
+      const isDefB = Boolean(b.isDefault) || b.channelId === 1;
+      if (isDefA && !isDefB) return -1;
+      if (!isDefA && isDefB) return 1;
+      const timeA = a.lastActivityTime || 0;
+      const timeB = b.lastActivityTime || 0;
+      if (timeB !== timeA) return timeB - timeA;
+      return a.channelId - b.channelId;
+    });
 
   for (const conv of channelConvs) {
     const item = document.createElement('li');
@@ -1404,8 +1493,15 @@ function renderConversationList() {
     else if (convListEl) convListEl.appendChild(item);
   }
 
-  // 2. Render DMs
-  const dmConvs = [...conversations.values()].filter(conv => conv.type === 'dm');
+  // 2. Render DMs: sorted by recent message activity
+  const dmConvs = [...conversations.values()]
+    .filter(conv => conv.type === 'dm')
+    .sort((a, b) => {
+      const timeA = a.lastActivityTime || 0;
+      const timeB = b.lastActivityTime || 0;
+      if (timeB !== timeA) return timeB - timeA;
+      return String(a.name).localeCompare(String(b.name));
+    });
   for (const conv of dmConvs) {
     const item = document.createElement('li');
     item.className = `conv-item dm-item${conv.id === activeConvId ? ' active' : ''}`;
@@ -2081,10 +2177,14 @@ function appendMessageNode(msg, previousMsg = null) {
   messageListEl.appendChild(row);
 }
 
-function renderMessages() {
+function renderMessages(options = {}) {
   messageListEl.replaceChildren();
   const conv = conversations.get(activeConvId);
   if (!conv) return;
+
+  if (conv.hasOlder) {
+    messageListEl.appendChild(loadOlderBtn);
+  }
 
   const state = userConversationStates.get(activeConvId);
   const lastReadId = state?.last_read_message_id || 0;
@@ -2103,7 +2203,9 @@ function renderMessages() {
     }
     appendMessageNode(message, index > 0 ? conv.messages[index - 1] : null);
   });
-  scrollBottom();
+  if (!options.preserveScroll) {
+    scrollBottom();
+  }
   ackActiveConversationRead();
 }
 
@@ -2180,11 +2282,14 @@ async function loadOlderMessages() {
     const messages = (Array.isArray(data.messages) ? data.messages : []).map(item =>
       conv.type === 'channel' ? publicMessageFromData(item) : directMessageFromData(item)
     );
+    const prevScrollHeight = messageListEl.scrollHeight;
+    const prevScrollTop = messageListEl.scrollTop;
     prependMessages(conv, messages);
     conv.hasOlder = Boolean(data.has_more);
     if (conv.id === activeConvId) {
-      renderMessages();
-      messageListEl.scrollTop = 0;
+      renderMessages({ preserveScroll: true });
+      const newScrollHeight = messageListEl.scrollHeight;
+      messageListEl.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
     }
   } catch (error) {
     showToast(error.message || '이전 메시지를 불러오지 못했습니다.', 'error');
@@ -2201,6 +2306,12 @@ function addMessage(convId, msg, { markUnread = true } = {}) {
   if (msg.message_id) conv.messageIds.add(msg.message_id);
   const previousMsg = conv.messages.length ? conv.messages[conv.messages.length - 1] : null;
   conv.messages.push(msg);
+
+  const msgTime = msg.created_at ? new Date(msg.created_at).getTime() : Date.now();
+  if (msgTime && (!conv.lastActivityTime || msgTime > conv.lastActivityTime)) {
+    conv.lastActivityTime = msgTime;
+  }
+
   if (convId === activeConvId) {
     appendMessageNode(msg, previousMsg);
     scrollBottom();
@@ -2856,8 +2967,12 @@ function initWebSocket() {
           toConv.messages.push(publicMessageFromData(movedMsg));
         }
 
-        if (activeConvId === fromConvId || activeConvId === toConvId) {
-          renderMessages();
+        if (activeConvId === fromConvId) {
+          const row = messageListEl.querySelector(`.msg-row[data-message-id="${movedMsg.message_id}"]`);
+          if (row) row.remove();
+        } else if (activeConvId === toConvId) {
+          const wasAtBottom = (messageListEl.scrollHeight - messageListEl.scrollTop - messageListEl.clientHeight) < 50;
+          renderMessages({ preserveScroll: !wasAtBottom });
         }
         break;
       }

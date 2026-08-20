@@ -2101,9 +2101,78 @@ kbd {
   opacity: 0.9;
 }
 
+.conv-mute-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mute-hint-popover {
+  top: calc(100% + 9px);
+  left: 0;
+  transform: none;
+}
+.mute-hint-popover .hint-arrow {
+  left: 14px;
+  transform: none;
+}
+
 .conv-item .conv-mute-indicator {
   font-size: 0.72rem;
   opacity: 0.6;
   margin-left: 4px;
   flex-shrink: 0;
+}
+
+.load-older-btn {
+  display: block;
+  margin: 8px auto 16px auto;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+  text-align: center;
+}
+.load-older-btn:hover {
+  background: var(--surface3);
+  color: var(--text);
+  border-color: var(--accent);
+}
+.load-older-btn.hidden {
+  display: none !important;
+}
+
+.notification-modal-body {
+  padding: 16px 20px 20px 20px;
+}
+.notification-status-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.notification-status-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.notification-status-card strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 2px;
+}
+.notification-status-card p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
 }
