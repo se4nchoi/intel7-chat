@@ -1913,3 +1913,100 @@ kbd {
   opacity: .5;
   cursor: not-allowed;
 }
+
+/* ============================================================
+   메시지 수정, 숨김 및 채널 이동 스타일
+   ============================================================ */
+.inline-edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  width: 100%;
+}
+.inline-edit-input {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+.inline-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.inline-edit-save {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 5px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.inline-edit-save:hover {
+  background: var(--accent-dark);
+}
+.inline-edit-cancel {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.inline-edit-cancel:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.msg-edited-badge {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-left: 6px;
+  font-weight: normal;
+  user-select: none;
+}
+.msg-moved-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(79, 142, 247, 0.15);
+  color: var(--accent);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.msg-hidden-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.msg-hidden-notice {
+  font-style: italic;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  padding: 4px 0;
+}
+.msg-row.hidden-msg {
+  opacity: 0.75;
+}

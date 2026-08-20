@@ -291,6 +291,25 @@
     </div>
   </div>
 
+  <div id="move-message-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="move-message-modal-title">
+    <div class="modal-box channel-panel">
+      <div class="admin-panel-header">
+        <div>
+          <h2 id="move-message-modal-title">메시지 채널 이동</h2>
+          <p class="modal-desc">선택한 메시지를 다른 채널로 이동합니다.</p>
+        </div>
+        <button id="move-message-modal-close" class="admin-close" type="button" aria-label="닫기">×</button>
+      </div>
+      <form id="move-message-form" class="channel-form">
+        <input id="move-message-id" type="hidden" />
+        <label for="move-message-channel-select">이동할 대상 채널</label>
+        <select id="move-message-channel-select" class="form-select" required></select>
+        <p id="move-message-error" class="error-msg" aria-live="polite"></p>
+        <button id="move-message-submit" type="submit">이동하기</button>
+      </form>
+    </div>
+  </div>
+
   <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
   <script src="/static/app.js"></script>
 </body>

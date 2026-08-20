@@ -75,6 +75,9 @@ def init_db() -> None:
             ("reply_content", "TEXT"),
             ("attachment_id", "TEXT"),
             ("user_id", "INTEGER"),
+            ("edited_at", "TEXT"),
+            ("is_hidden", "INTEGER NOT NULL DEFAULT 0"),
+            ("moved_from_channel_id", "INTEGER"),
         ):
             _add_column_if_missing(conn, "messages", column, definition)
         conn.execute("""CREATE TABLE IF NOT EXISTS attachments (
@@ -459,11 +462,58 @@ def _message_public(row: sqlite3.Row, attachments: List[Dict[str, Any]]) -> Dict
     if row["reply_nickname"] or row["reply_content"]:
         reply = {"nickname": row["reply_nickname"] or "", "content": row["reply_content"] or ""}
     live = next((item for item in attachments if not item.get("removed")), None)
-    channel_id = row["channel_id"] if "channel_id" in row.keys() else 1
+    keys = row.keys() if hasattr(row, 'keys') else row
+    channel_id = row["channel_id"] if "channel_id" in keys else 1
+    edited_at = row["edited_at"] if "edited_at" in keys else None
+    is_hidden = bool(row["is_hidden"]) if "is_hidden" in keys else False
+    moved_from = row["moved_from_channel_id"] if "moved_from_channel_id" in keys else None
     return {"message_id": f"public:{row['id']}", "nickname": row["nickname"],
             "author_id": row["user_id"], "channel_id": channel_id, "content": row["content"],
-            "created_at": row["created_at"], "reply": reply, "attachment": live,
+            "created_at": row["created_at"], "edited_at": edited_at, "is_hidden": is_hidden,
+            "moved_from_channel_id": moved_from, "reply": reply, "attachment": live,
             "attachments": attachments, "attachment_removed": bool(attachments and not live)}
+
+def get_message_by_id(message_id: int) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not row:
+            return None
+        attachments = _message_attachments(conn, [message_id]).get(message_id, [])
+        return _message_public(row, attachments)
+
+def update_message_content(message_id: int, new_content: str, user_id: int, is_admin: bool = False) -> Optional[Dict[str, Any]]:
+    now = utc_now()
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not row:
+            return None
+        if not is_admin and row["user_id"] != user_id:
+            raise PermissionError("본인이 작성한 메시지만 수정할 수 있습니다.")
+        conn.execute("UPDATE messages SET content=?, edited_at=? WHERE id=?",
+                     (new_content, now, message_id))
+        conn.commit()
+    return get_message_by_id(message_id)
+
+def set_message_hidden(message_id: int, is_hidden: bool) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not row:
+            return None
+        conn.execute("UPDATE messages SET is_hidden=? WHERE id=?",
+                     (1 if is_hidden else 0, message_id))
+        conn.commit()
+    return get_message_by_id(message_id)
+
+def move_message_channel(message_id: int, to_channel_id: int) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not row:
+            return None
+        from_channel_id = row["channel_id"] if "channel_id" in row.keys() else 1
+        conn.execute("UPDATE messages SET channel_id=?, moved_from_channel_id=? WHERE id=?",
+                     (to_channel_id, from_channel_id, message_id))
+        conn.commit()
+    return get_message_by_id(message_id)
 
 def save_message(nickname: str, content: str, ip: str = "", reply: Optional[Dict[str,str]] = None,
                  attachment_id: Optional[str] = None, attachment_ids: Optional[List[str]] = None,

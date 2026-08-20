@@ -678,3 +678,155 @@ class TestAdminChannelManagement:
         assert database.get_channel_by_id(chan["id"]) is None
 
 
+class TestMessageEditHideMove:
+    def test_author_can_edit_message(self):
+        client_alice, user_alice = session_client("alice")
+        client_bob, user_bob = session_client("bob")
+
+        msg = database.save_message("alice", "수정 전 원본 메시지", user_id=user_alice["id"], channel_id=1)
+        raw_id = int(msg["message_id"].replace("public:", ""))
+
+        with client_bob.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                evt = ws.receive_json()
+                if evt.get("type") == "history_ready":
+                    break
+
+            resp = client_alice.patch(f"/api/messages/{raw_id}", headers=ORIGIN, json={
+                "content": "수정 후 새 메시지"
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["content"] == "수정 후 새 메시지"
+            assert data["edited_at"] is not None
+
+            event = ws.receive_json()
+            assert event["type"] == "message_edited"
+            assert event["message"]["content"] == "수정 후 새 메시지"
+            assert event["message"]["edited_at"] is not None
+
+    def test_non_author_non_admin_cannot_edit_message(self):
+        client_alice, user_alice = session_client("alice")
+        client_bob, user_bob = session_client("bob")
+
+        msg = database.save_message("alice", "앨리스의 메시지", user_id=user_alice["id"], channel_id=1)
+        raw_id = int(msg["message_id"].replace("public:", ""))
+
+        resp = client_bob.patch(f"/api/messages/{raw_id}", headers=ORIGIN, json={
+            "content": "밥이 수정을 시도함"
+        })
+        assert resp.status_code == 403
+        assert "본인이 작성한 메시지만" in resp.json()["detail"]
+
+    def test_admin_can_edit_any_message(self):
+        client_alice, user_alice = session_client("alice")
+        client_admin, user_admin = session_client("admin", role="admin")
+
+        msg = database.save_message("alice", "학생 메시지", user_id=user_alice["id"], channel_id=1)
+        raw_id = int(msg["message_id"].replace("public:", ""))
+
+        resp = client_admin.patch(f"/api/messages/{raw_id}", headers=ORIGIN, json={
+            "content": "관리자가 수정한 내용"
+        })
+        assert resp.status_code == 200
+        assert resp.json()["content"] == "관리자가 수정한 내용"
+
+    def test_admin_can_hide_and_unhide_message(self):
+        client_alice, user_alice = session_client("alice")
+        client_admin, user_admin = session_client("admin", role="admin")
+
+        msg = database.save_message("alice", "부적절한 내용", user_id=user_alice["id"], channel_id=1)
+        raw_id = int(msg["message_id"].replace("public:", ""))
+
+        with client_alice.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                evt = ws.receive_json()
+                if evt.get("type") == "history_ready":
+                    break
+
+            # 1. Admin hides message
+            resp = client_admin.post(f"/api/messages/{raw_id}/hide", headers=ORIGIN, json={"hidden": True})
+            assert resp.status_code == 200
+            assert resp.json()["is_hidden"] is True
+
+            event = ws.receive_json()
+            assert event["type"] == "message_hidden"
+            assert event["is_hidden"] is True
+
+            # 2. Admin unhides message
+            resp = client_admin.post(f"/api/messages/{raw_id}/hide", headers=ORIGIN, json={"hidden": False})
+            assert resp.status_code == 200
+            assert resp.json()["is_hidden"] is False
+
+            event = ws.receive_json()
+            assert event["type"] == "message_hidden"
+            assert event["is_hidden"] is False
+
+    def test_non_admin_cannot_hide_message(self):
+        client_alice, user_alice = session_client("alice")
+        client_bob, user_bob = session_client("bob")
+
+        msg = database.save_message("alice", "메시지", user_id=user_alice["id"], channel_id=1)
+        raw_id = int(msg["message_id"].replace("public:", ""))
+
+        resp = client_bob.post(f"/api/messages/{raw_id}/hide", headers=ORIGIN, json={"hidden": True})
+        assert resp.status_code == 403
+        assert "관리자 권한" in resp.json()["detail"]
+
+    def test_admin_can_move_message_to_different_channel(self):
+        client_alice, user_alice = session_client("alice")
+        client_admin, user_admin = session_client("admin", role="admin")
+
+        chan_dest = database.create_channel("homework-dest", "과제 제출방")
+        msg = database.save_message("alice", "과제 채널로 이동되어야 할 메시지", user_id=user_alice["id"], channel_id=1)
+        raw_id = int(msg["message_id"].replace("public:", ""))
+
+        with client_alice.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                evt = ws.receive_json()
+                if evt.get("type") == "history_ready":
+                    break
+
+            resp = client_admin.post(f"/api/messages/{raw_id}/move", headers=ORIGIN, json={
+                "to_channel_id": chan_dest["id"]
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["channel_id"] == chan_dest["id"]
+            assert data["moved_from_channel_id"] == 1
+
+            event = ws.receive_json()
+            assert event["type"] == "message_moved"
+            assert event["from_channel_id"] == 1
+            assert event["to_channel_id"] == chan_dest["id"]
+            assert event["message"]["channel_id"] == chan_dest["id"]
+
+    def test_move_message_validations(self):
+        client_alice, user_alice = session_client("alice")
+        client_admin, user_admin = session_client("admin", role="admin")
+
+        chan_archived = database.create_channel("archived-chan", "보관 채널")
+        database.archive_channel(chan_archived["id"])
+
+        msg = database.save_message("alice", "메시지", user_id=user_alice["id"], channel_id=1)
+        raw_id = int(msg["message_id"].replace("public:", ""))
+
+        # Non-admin rejected
+        resp = client_alice.post(f"/api/messages/{raw_id}/move", headers=ORIGIN, json={"to_channel_id": 1})
+        assert resp.status_code == 403
+
+        # Non-existent target channel
+        resp = client_admin.post(f"/api/messages/{raw_id}/move", headers=ORIGIN, json={"to_channel_id": 9999})
+        assert resp.status_code == 404
+
+        # Archived target channel
+        resp = client_admin.post(f"/api/messages/{raw_id}/move", headers=ORIGIN, json={"to_channel_id": chan_archived["id"]})
+        assert resp.status_code == 400
+        assert "보관된 채널" in resp.json()["detail"]
+
+        # Same channel
+        resp = client_admin.post(f"/api/messages/{raw_id}/move", headers=ORIGIN, json={"to_channel_id": 1})
+        assert resp.status_code == 400
+        assert "이미 해당 채널" in resp.json()["detail"]
+
+

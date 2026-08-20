@@ -35,7 +35,9 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     get_storage_status, get_upload_usage, get_user_by_id, get_user_by_username, init_db,
     list_channels, list_mentionable_users, list_users, prune_expired_sessions, save_attachment,
     save_direct_message, save_message, set_user_active,
-    set_user_role, update_channel, archive_channel, delete_channel, update_display_name, update_password_hash)
+    set_user_role, update_channel, archive_channel, delete_channel,
+    get_message_by_id, update_message_content, set_message_hidden, move_message_channel,
+    update_display_name, update_password_hash)
 
 CONFIG = load_config()
 configure_storage(CONFIG.data_path, CONFIG.database_limit_bytes)
@@ -550,6 +552,81 @@ async def channel_message_history(channel_id: int, request: Request, before_id: 
     users = list_mentionable_users()
     return {"messages": [with_mentions(message, users) for message in messages],
             "has_more": has_more}
+
+@app.patch("/api/messages/{message_id}")
+async def api_update_message(message_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    data = await read_json_body(request)
+    content = str(data.get("content", "")).strip()
+    if not content:
+        raise HTTPException(400, "메시지 내용을 입력하세요.")
+    if len(content) > MAX_CONTENT_LEN:
+        raise HTTPException(400, f"메시지는 {MAX_CONTENT_LEN}자 이하여야 합니다.")
+    try:
+        updated = update_message_content(message_id, content, user["id"], is_admin=user["role"] == "admin")
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    if not updated:
+        raise HTTPException(404, "메시지를 찾을 수 없습니다.")
+    users = list_mentionable_users()
+    enriched = with_mentions(updated, users)
+    await broadcast({"type": "message_edited", "message": enriched})
+    return enriched
+
+@app.post("/api/messages/{message_id}/hide")
+async def api_hide_message(message_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    require_admin(request)
+    data = await read_json_body(request) if request.headers.get("content-type", "").startswith("application/json") else {}
+    hidden = bool(data.get("hidden", True))
+    updated = set_message_hidden(message_id, hidden)
+    if not updated:
+        raise HTTPException(404, "메시지를 찾을 수 없습니다.")
+    users = list_mentionable_users()
+    enriched = with_mentions(updated, users)
+    await broadcast({"type": "message_hidden", "message": enriched, "is_hidden": hidden})
+    return enriched
+
+@app.post("/api/messages/{message_id}/move")
+async def api_move_message(message_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    require_admin(request)
+    data = await read_json_body(request)
+    to_channel_id = data.get("to_channel_id")
+    if not to_channel_id:
+        raise HTTPException(400, "이동할 채널을 지정하세요.")
+    try:
+        to_channel_id = int(to_channel_id)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "유효한 채널 ID가 아닙니다.")
+    target_chan = get_channel_by_id(to_channel_id)
+    if not target_chan:
+        raise HTTPException(404, "대상 채널을 찾을 수 없습니다.")
+    if target_chan.get("archived"):
+        raise HTTPException(400, "보관된 채널로는 메시지를 이동할 수 없습니다.")
+    current_msg = get_message_by_id(message_id)
+    if not current_msg:
+        raise HTTPException(404, "메시지를 찾을 수 없습니다.")
+    from_channel_id = current_msg["channel_id"]
+    if from_channel_id == to_channel_id:
+        raise HTTPException(400, "이미 해당 채널에 위치한 메시지입니다.")
+    updated = move_message_channel(message_id, to_channel_id)
+    if not updated:
+        raise HTTPException(404, "메시지를 찾을 수 없습니다.")
+    users = list_mentionable_users()
+    enriched = with_mentions(updated, users)
+    await broadcast({
+        "type": "message_moved",
+        "message_id": enriched["message_id"],
+        "from_channel_id": from_channel_id,
+        "to_channel_id": to_channel_id,
+        "message": enriched
+    })
+    return enriched
 
 @app.get("/api/messages")
 async def api_messages(request: Request):
