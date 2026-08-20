@@ -24,15 +24,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.auth import (hash_secret, new_session_token, normalize_username, secret_needs_rehash,
-                        token_hash, validate_display_name, validate_password,
+                        token_hash, validate_channel_description, validate_channel_display_name,
+                        validate_channel_name, validate_display_name, validate_password,
                         validate_username, verify_secret)
 from app.config import load_config, save_config
-from app.database import (attachment_is_visible_to_user, claim_attachments, configure_storage, count_active_admins,
-    create_session, create_user, delete_owned_attachment, delete_session,
-    delete_user_sessions, get_attachment_record, get_direct_messages_between,
-    get_recent_direct_messages, get_recent_messages, get_session_user,
+from app.database import (attachment_is_visible_to_user, channel_exists, claim_attachments, configure_storage, count_active_admins,
+    create_channel, create_session, create_user, delete_owned_attachment, delete_session,
+    delete_user_sessions, get_attachment_record, get_channel_by_id, get_channel_by_name,
+    get_direct_messages_between, get_recent_direct_messages, get_recent_messages, get_session_user,
     get_storage_status, get_upload_usage, get_user_by_id, get_user_by_username, init_db,
-    list_mentionable_users, list_users, prune_expired_sessions, save_attachment,
+    list_channels, list_mentionable_users, list_users, prune_expired_sessions, save_attachment,
     save_direct_message, save_message, set_user_active,
     set_user_role, update_display_name, update_password_hash)
 
@@ -420,6 +421,51 @@ async def change_display_name(request: Request):
     await broadcast_users()
     return public_user(updated)
 
+@app.get("/api/channels")
+async def api_channels_list(request: Request):
+    request_user(request)
+    return list_channels()
+
+@app.post("/api/channels", status_code=201)
+async def api_create_channel(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    data = await read_json_body(request)
+    name = str(data.get("name", ""))
+    display_name = str(data.get("display_name", ""))
+    description = str(data.get("description", ""))
+    try:
+        clean_name = validate_channel_name(name)
+        clean_display = validate_channel_display_name(display_name)
+        clean_desc = validate_channel_description(description)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if get_channel_by_name(clean_name):
+        raise HTTPException(409, "이미 존재하는 채널 이름입니다.")
+    channel = create_channel(clean_name, clean_display, clean_desc, user["id"])
+    return channel
+
+@app.get("/api/channels/{channel_id}")
+async def api_get_channel(channel_id: int, request: Request):
+    request_user(request)
+    channel = get_channel_by_id(channel_id)
+    if not channel:
+        raise HTTPException(404, "채널을 찾을 수 없습니다.")
+    return channel
+
+@app.get("/api/channels/{channel_id}/messages")
+async def channel_message_history(channel_id: int, request: Request, before_id: Optional[int] = None):
+    request_user(request)
+    if not channel_exists(channel_id):
+        raise HTTPException(404, "채널을 찾을 수 없습니다.")
+    messages = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1, before_id, channel_id=channel_id)
+    has_more = len(messages) > PUBLIC_HISTORY_PAGE_SIZE
+    messages = messages[-PUBLIC_HISTORY_PAGE_SIZE:]
+    users = list_mentionable_users()
+    return {"messages": [with_mentions(message, users) for message in messages],
+            "has_more": has_more}
+
 @app.get("/api/messages")
 async def api_messages(request: Request):
     request_user(request)
@@ -707,8 +753,17 @@ async def websocket_endpoint(ws: WebSocket):
                 await ws.send_text(json.dumps({"type":"error","message":"첨부 파일을 사용할 수 없거나 이미 전송했습니다."},ensure_ascii=False)); continue
             reply=clean_reply(data.get("reply"))
             if msg_type=="chat":
+                raw_channel_id = data.get("channel_id", 1)
+                try:
+                    channel_id = int(raw_channel_id)
+                except (ValueError, TypeError):
+                    channel_id = 1
+                if not channel_exists(channel_id):
+                    await ws.send_text(json.dumps({"type":"error","message":"채널을 찾을 수 없습니다."},ensure_ascii=False))
+                    continue
                 saved=save_message(info.username,content,ip=ip,reply=reply,
-                    attachment_ids=[a["id"] for a in attachments],user_id=info.user_id)
+                    attachment_ids=[a["id"] for a in attachments],user_id=info.user_id,
+                    channel_id=channel_id)
                 saved.pop("ip",None)
                 saved=with_mentions(saved)
                 await broadcast({"type":"chat",**saved})

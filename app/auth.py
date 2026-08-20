@@ -32,6 +32,40 @@ def validate_display_name(name: str) -> str:
         raise ValueError("닉네임에 제어 문자를 포함할 수 없습니다.")
     return display
 
+def validate_channel_name(name: str) -> str:
+    """Validate and normalise a channel identifier name (slug)."""
+    display = unicodedata.normalize("NFKC", name).strip().casefold()
+    if not 2 <= len(display) <= 30:
+        raise ValueError("채널 이름은 2~30자로 입력해 주세요.")
+    if " " in display:
+        raise ValueError("채널 이름에 공백을 포함할 수 없습니다.")
+    if not all(char.isalnum() or char in "._-" for char in display):
+        raise ValueError("채널 이름에는 문자, 숫자, ., _, -만 사용할 수 있습니다.")
+    return display
+
+def validate_channel_display_name(name: str) -> str:
+    """Validate and normalise a channel display name."""
+    display = unicodedata.normalize("NFKC", name).strip()
+    display = " ".join(display.split())
+    if not display:
+        raise ValueError("채널 표시 이름을 입력해 주세요.")
+    if len(display) > 30:
+        raise ValueError("채널 표시 이름은 30자 이하로 입력해 주세요.")
+    if any(unicodedata.category(ch).startswith("C") for ch in display):
+        raise ValueError("채널 표시 이름에 제어 문자를 포함할 수 없습니다.")
+    return display
+
+def validate_channel_description(desc: str) -> str:
+    """Validate and normalise an optional channel description."""
+    if not desc:
+        return ""
+    normalized = unicodedata.normalize("NFKC", desc).strip()
+    if len(normalized) > 200:
+        raise ValueError("채널 설명은 200자 이하로 입력해 주세요.")
+    if any(unicodedata.category(ch).startswith("C") and ch not in "\r\n\t" for ch in normalized):
+        raise ValueError("채널 설명에 제어 문자를 포함할 수 없습니다.")
+    return normalized
+
 def validate_password(password: str) -> None:
     if len(password) < 5:
         raise ValueError("비밀번호는 5자 이상으로 입력해 주세요.")
