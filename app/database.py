@@ -75,6 +75,9 @@ def init_db() -> None:
             ("reply_content", "TEXT"),
             ("attachment_id", "TEXT"),
             ("user_id", "INTEGER"),
+            ("edited_at", "TEXT"),
+            ("is_hidden", "INTEGER NOT NULL DEFAULT 0"),
+            ("moved_from_channel_id", "INTEGER"),
         ):
             _add_column_if_missing(conn, "messages", column, definition)
         conn.execute("""CREATE TABLE IF NOT EXISTS attachments (
@@ -167,22 +170,33 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
         uuid TEXT NOT NULL UNIQUE,
         created_by_user_id INTEGER,
         is_default INTEGER NOT NULL DEFAULT 0,
+        archived INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         FOREIGN KEY(created_by_user_id) REFERENCES users(id)
     )""")
+    _add_column_if_missing(conn, "channels", "archived", "INTEGER NOT NULL DEFAULT 0")
     now = utc_now()
     default_uuid = _uuid.uuid4().hex
     conn.execute("""INSERT OR IGNORE INTO channels
-        (id, name, display_name, description, uuid, is_default, created_at)
-        VALUES (1, 'general', '전체 채팅', '기본 전체 공개 대화방', ?, 1, ?)""",
+        (id, name, display_name, description, uuid, is_default, archived, created_at)
+        VALUES (1, 'general', '전체 채팅', '기본 전체 공개 대화방', ?, 1, 0, ?)""",
         (default_uuid, now))
     _add_column_if_missing(conn, "messages", "channel_id", "INTEGER NOT NULL DEFAULT 1")
     conn.execute("UPDATE messages SET channel_id = 1 WHERE channel_id IS NULL OR channel_id = 0")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_channel_created ON messages(channel_id, id)")
 
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    """Add archived column to channels; add edited_at, is_hidden, moved_from_channel_id to messages."""
+    _add_column_if_missing(conn, "channels", "archived", "INTEGER NOT NULL DEFAULT 0")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_channels_archived ON channels(archived)")
+    _add_column_if_missing(conn, "messages", "edited_at", "TEXT")
+    _add_column_if_missing(conn, "messages", "is_hidden", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "messages", "moved_from_channel_id", "INTEGER")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
+    _migrate_v3,
 ]
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -328,6 +342,7 @@ def get_channel_by_id(channel_id: int) -> Optional[Dict[str, Any]]:
         return None
     d = dict(row)
     d["is_default"] = bool(d.get("is_default"))
+    d["archived"] = bool(d.get("archived"))
     return d
 
 def get_channel_by_name(name: str) -> Optional[Dict[str, Any]]:
@@ -338,18 +353,22 @@ def get_channel_by_name(name: str) -> Optional[Dict[str, Any]]:
         return None
     d = dict(row)
     d["is_default"] = bool(d.get("is_default"))
+    d["archived"] = bool(d.get("archived"))
     return d
 
-def list_channels() -> List[Dict[str, Any]]:
+def list_channels(include_archived: bool = False) -> List[Dict[str, Any]]:
     with get_connection() as conn:
-        rows = conn.execute("""SELECT c.*,
+        where_clause = "" if include_archived else "WHERE c.archived = 0"
+        rows = conn.execute(f"""SELECT c.*,
             (SELECT COUNT(*) FROM messages m WHERE m.channel_id=c.id) AS message_count
             FROM channels c
+            {where_clause}
             ORDER BY c.is_default DESC, c.id ASC""").fetchall()
         result = []
         for r in rows:
             d = dict(r)
             d["is_default"] = bool(d.get("is_default"))
+            d["archived"] = bool(d.get("archived"))
             result.append(d)
         return result
 
@@ -376,17 +395,46 @@ def update_channel(channel_id: int, name: Optional[str] = None,
         conn.commit()
     return get_channel_by_id(channel_id)
 
-def delete_channel(channel_id: int) -> bool:
+def archive_channel(channel_id: int, unarchive: bool = False) -> Optional[Dict[str, Any]]:
     current = get_channel_by_id(channel_id)
     if not current:
-        return False
+        return None
+    if current.get("is_default") and not unarchive:
+        raise ValueError("기본 채널은 보관할 수 없습니다.")
+    val = 0 if unarchive else 1
+    with get_connection() as conn:
+        conn.execute("UPDATE channels SET archived=? WHERE id=?", (val, channel_id))
+        conn.commit()
+    return get_channel_by_id(channel_id)
+
+def delete_channel(channel_id: int) -> Optional[List[str]]:
+    current = get_channel_by_id(channel_id)
+    if not current:
+        return None
     if current.get("is_default"):
         raise ValueError("기본 채널은 삭제할 수 없습니다.")
+    stored_files_to_remove: List[str] = []
     with get_connection() as conn:
-        conn.execute("DELETE FROM messages WHERE channel_id=?", (channel_id,))
+        conn.execute("BEGIN IMMEDIATE")
+        msg_rows = conn.execute("SELECT id FROM messages WHERE channel_id=?", (channel_id,)).fetchall()
+        msg_ids = [r[0] for r in msg_rows]
+        if msg_ids:
+            marks = ",".join("?" for _ in msg_ids)
+            att_rows = conn.execute(f"SELECT DISTINCT attachment_id FROM message_attachments WHERE message_id IN ({marks})", msg_ids).fetchall()
+            att_ids = [r[0] for r in att_rows if r[0]]
+            conn.execute(f"DELETE FROM message_attachments WHERE message_id IN ({marks})", msg_ids)
+            for att_id in att_ids:
+                in_msgs = conn.execute("SELECT 1 FROM message_attachments WHERE attachment_id=?", (att_id,)).fetchone()
+                in_dms = conn.execute("SELECT 1 FROM direct_message_attachments WHERE attachment_id=?", (att_id,)).fetchone()
+                if not in_msgs and not in_dms:
+                    rec = conn.execute("SELECT stored_name FROM attachments WHERE id=?", (att_id,)).fetchone()
+                    if rec:
+                        stored_files_to_remove.append(rec["stored_name"])
+                        conn.execute("DELETE FROM attachments WHERE id=?", (att_id,))
+            conn.execute(f"DELETE FROM messages WHERE id IN ({marks})", msg_ids)
         conn.execute("DELETE FROM channels WHERE id=?", (channel_id,))
         conn.commit()
-    return True
+    return stored_files_to_remove
 
 def _attachment_public(row: sqlite3.Row | Dict[str, Any] | None) -> Optional[Dict[str, Any]]:
     if not row:
@@ -423,11 +471,58 @@ def _message_public(row: sqlite3.Row, attachments: List[Dict[str, Any]]) -> Dict
     if row["reply_nickname"] or row["reply_content"]:
         reply = {"nickname": row["reply_nickname"] or "", "content": row["reply_content"] or ""}
     live = next((item for item in attachments if not item.get("removed")), None)
-    channel_id = row["channel_id"] if "channel_id" in row.keys() else 1
+    keys = row.keys() if hasattr(row, 'keys') else row
+    channel_id = row["channel_id"] if "channel_id" in keys else 1
+    edited_at = row["edited_at"] if "edited_at" in keys else None
+    is_hidden = bool(row["is_hidden"]) if "is_hidden" in keys else False
+    moved_from = row["moved_from_channel_id"] if "moved_from_channel_id" in keys else None
     return {"message_id": f"public:{row['id']}", "nickname": row["nickname"],
             "author_id": row["user_id"], "channel_id": channel_id, "content": row["content"],
-            "created_at": row["created_at"], "reply": reply, "attachment": live,
+            "created_at": row["created_at"], "edited_at": edited_at, "is_hidden": is_hidden,
+            "moved_from_channel_id": moved_from, "reply": reply, "attachment": live,
             "attachments": attachments, "attachment_removed": bool(attachments and not live)}
+
+def get_message_by_id(message_id: int) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not row:
+            return None
+        attachments = _message_attachments(conn, [message_id]).get(message_id, [])
+        return _message_public(row, attachments)
+
+def update_message_content(message_id: int, new_content: str, user_id: int, is_admin: bool = False) -> Optional[Dict[str, Any]]:
+    now = utc_now()
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not row:
+            return None
+        if not is_admin and row["user_id"] != user_id:
+            raise PermissionError("본인이 작성한 메시지만 수정할 수 있습니다.")
+        conn.execute("UPDATE messages SET content=?, edited_at=? WHERE id=?",
+                     (new_content, now, message_id))
+        conn.commit()
+    return get_message_by_id(message_id)
+
+def set_message_hidden(message_id: int, is_hidden: bool) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not row:
+            return None
+        conn.execute("UPDATE messages SET is_hidden=? WHERE id=?",
+                     (1 if is_hidden else 0, message_id))
+        conn.commit()
+    return get_message_by_id(message_id)
+
+def move_message_channel(message_id: int, to_channel_id: int) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not row:
+            return None
+        from_channel_id = row["channel_id"] if "channel_id" in row.keys() else 1
+        conn.execute("UPDATE messages SET channel_id=?, moved_from_channel_id=? WHERE id=?",
+                     (to_channel_id, from_channel_id, message_id))
+        conn.commit()
+    return get_message_by_id(message_id)
 
 def save_message(nickname: str, content: str, ip: str = "", reply: Optional[Dict[str,str]] = None,
                  attachment_id: Optional[str] = None, attachment_ids: Optional[List[str]] = None,

@@ -60,7 +60,15 @@ const channelEditNameInput = document.getElementById('channel-edit-name-input');
 const channelEditDescInput = document.getElementById('channel-edit-desc-input');
 const channelEditError = document.getElementById('channel-edit-error');
 const channelEditSubmit = document.getElementById('channel-edit-submit');
+const channelArchiveBtn = document.getElementById('channel-archive-btn');
 const channelDeleteBtn = document.getElementById('channel-delete-btn');
+const moveMessageModal = document.getElementById('move-message-modal');
+const moveMessageModalClose = document.getElementById('move-message-modal-close');
+const moveMessageForm = document.getElementById('move-message-form');
+const moveMessageId = document.getElementById('move-message-id');
+const moveMessageChannelSelect = document.getElementById('move-message-channel-select');
+const moveMessageError = document.getElementById('move-message-error');
+const moveMessageSubmit = document.getElementById('move-message-submit');
 const onlineListEl = document.getElementById('online-list');
 const onlineCountEl = document.getElementById('online-count');
 const userCountEl = document.getElementById('user-count');
@@ -746,8 +754,13 @@ function openChannelEditModal(chan) {
   channelEditDescInput.value = chan.description || '';
   channelEditError.textContent = '';
   channelEditSubmit.disabled = false;
+  const isDefault = Boolean(chan.is_default) || Number(chan.id) === 1;
+  if (channelArchiveBtn) {
+    channelArchiveBtn.classList.toggle('hidden', isDefault);
+    channelArchiveBtn.disabled = false;
+  }
   if (channelDeleteBtn) {
-    channelDeleteBtn.classList.toggle('hidden', Boolean(chan.is_default) || Number(chan.id) === 1);
+    channelDeleteBtn.classList.toggle('hidden', isDefault);
     channelDeleteBtn.disabled = false;
   }
   channelEditModal.classList.remove('hidden');
@@ -800,15 +813,48 @@ if (channelEditModal) {
     if (event.target === channelEditModal) closeChannelEditModal();
   });
 }
+if (channelArchiveBtn) {
+  channelArchiveBtn.addEventListener('click', async () => {
+    const chanId = Number(channelEditId.value);
+    if (!chanId || chanId === 1) return;
+    const chan = channelsDirectory.get(chanId);
+    const displayName = chan?.display_name || `채널 ${chanId}`;
+    if (!confirm(`'# ${displayName}' 채널을 보관하시겠습니까?\n채널 목록에서 숨겨지며 기존 대화 기록과 첨부파일은 안전하게 보존됩니다.`)) {
+      return;
+    }
+    channelArchiveBtn.disabled = true;
+    channelDeleteBtn.disabled = true;
+    channelEditSubmit.disabled = true;
+    try {
+      const response = await fetch(`/api/channels/${chanId}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unarchive: false }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || '채널을 보관하지 못했습니다.');
+      removeChannelData(chanId);
+      closeChannelEditModal();
+      showToast(`#${displayName} 채널이 보관되었습니다.`, 'info');
+    } catch (err) {
+      channelEditError.textContent = err.message || '채널을 보관하지 못했습니다.';
+    } finally {
+      channelArchiveBtn.disabled = false;
+      channelDeleteBtn.disabled = false;
+      channelEditSubmit.disabled = false;
+    }
+  });
+}
 if (channelDeleteBtn) {
   channelDeleteBtn.addEventListener('click', async () => {
     const chanId = Number(channelEditId.value);
     if (!chanId || chanId === 1) return;
     const chan = channelsDirectory.get(chanId);
     const displayName = chan?.display_name || `채널 ${chanId}`;
-    if (!confirm(`'# ${displayName}' 채널을 정말로 삭제하시겠습니까?\n채널 내 모든 메시지가 함께 삭제됩니다.`)) {
+    if (!confirm(`'# ${displayName}' 채널을 정말로 영구 삭제하시겠습니까?\n채널 내 모든 대화 및 첨부파일이 완전히 삭제되며 복구할 수 없습니다.`)) {
       return;
     }
+    channelArchiveBtn.disabled = true;
     channelDeleteBtn.disabled = true;
     channelEditSubmit.disabled = true;
     try {
@@ -817,10 +863,11 @@ if (channelDeleteBtn) {
       if (!response.ok) throw new Error(data.detail || '채널을 삭제하지 못했습니다.');
       removeChannelData(chanId);
       closeChannelEditModal();
-      showToast(`#${displayName} 채널이 삭제되었습니다.`, 'info');
+      showToast(`#${displayName} 채널이 영구 삭제되었습니다.`, 'info');
     } catch (err) {
       channelEditError.textContent = err.message || '채널을 삭제하지 못했습니다.';
     } finally {
+      channelArchiveBtn.disabled = false;
       channelDeleteBtn.disabled = false;
       channelEditSubmit.disabled = false;
     }
@@ -852,6 +899,179 @@ if (channelEditForm) {
       channelEditSubmit.disabled = false;
     }
   });
+}
+
+function openMoveMessageModal(msg) {
+  if (!moveMessageModal || !msg) return;
+  const rawId = String(msg.message_id || '').replace(/^public:/, '');
+  moveMessageId.value = rawId;
+  moveMessageError.textContent = '';
+  moveMessageChannelSelect.replaceChildren();
+  const currentChanId = Number(msg.channel_id || 1);
+  const eligible = Array.from(channelsDirectory.values())
+    .filter(chan => !chan.archived && Number(chan.id) !== currentChanId);
+  eligible.forEach(chan => {
+    const opt = document.createElement('option');
+    opt.value = String(chan.id);
+    opt.textContent = `# ${chan.display_name} (${chan.name})`;
+    moveMessageChannelSelect.appendChild(opt);
+  });
+  if (eligible.length === 0) {
+    showToast('이동할 수 있는 다른 활성 채널이 없습니다.', 'warning');
+    return;
+  }
+  moveMessageModal.classList.remove('hidden');
+}
+
+function closeMoveMessageModal() {
+  if (moveMessageModal) moveMessageModal.classList.add('hidden');
+}
+
+if (moveMessageModalClose) moveMessageModalClose.addEventListener('click', closeMoveMessageModal);
+if (moveMessageModal) {
+  moveMessageModal.addEventListener('click', event => {
+    if (event.target === moveMessageModal) closeMoveMessageModal();
+  });
+}
+if (moveMessageForm) {
+  moveMessageForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    moveMessageError.textContent = '';
+    moveMessageSubmit.disabled = true;
+    const rawId = moveMessageId.value;
+    const toChannelId = Number(moveMessageChannelSelect.value);
+    try {
+      const response = await fetch(`/api/messages/${rawId}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to_channel_id: toChannelId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || '메시지를 이동하지 못했습니다.');
+      const toChan = channelsDirectory.get(toChannelId);
+      closeMoveMessageModal();
+      showToast(`메시지를 '# ${toChan?.display_name || toChannelId}' 채널로 이동했습니다.`, 'success');
+    } catch (err) {
+      moveMessageError.textContent = err.message || '메시지를 이동하지 못했습니다.';
+    } finally {
+      moveMessageSubmit.disabled = false;
+    }
+  });
+}
+
+async function toggleMessageHidden(messageId, hidden) {
+  const rawId = String(messageId).replace(/^public:/, '');
+  try {
+    const response = await fetch(`/api/messages/${rawId}/hide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || '메시지 숨김 상태를 변경하지 못했습니다.');
+    showToast(hidden ? '메시지를 숨김 처리했습니다.' : '메시지 숨김을 해제했습니다.', 'info');
+  } catch (err) {
+    showToast(err.message || '메시지 숨김 처리에 실패했습니다.', 'error');
+  }
+}
+
+async function saveEditedMessage(messageId, newContent) {
+  const rawId = String(messageId).replace(/^public:/, '');
+  try {
+    const response = await fetch(`/api/messages/${rawId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: newContent }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || '메시지를 수정하지 못했습니다.');
+    return true;
+  } catch (err) {
+    showToast(err.message || '메시지 수정에 실패했습니다.', 'error');
+    return false;
+  }
+}
+
+function enterInlineEditMode(row, msg) {
+  const bubble = row.querySelector('.msg-bubble');
+  if (!bubble || bubble.querySelector('.inline-edit-box')) return;
+  row.classList.add('is-editing');
+  const originalContent = msg.content || '';
+  const editBox = document.createElement('div');
+  editBox.className = 'inline-edit-box';
+  const textarea = document.createElement('textarea');
+  textarea.className = 'inline-edit-input';
+  textarea.value = originalContent;
+  textarea.maxLength = 1000;
+  
+  const adjustHeight = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(280, Math.max(80, textarea.scrollHeight + 4)) + 'px';
+  };
+  textarea.addEventListener('input', adjustHeight);
+
+  const actionsBox = document.createElement('div');
+  actionsBox.className = 'inline-edit-actions';
+
+  const hint = document.createElement('span');
+  hint.className = 'inline-edit-hint';
+  hint.textContent = 'Enter: 저장 · Shift+Enter: 줄바꿈 · Esc: 취소';
+
+  const btnGroup = document.createElement('div');
+  btnGroup.className = 'inline-edit-btn-group';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'inline-edit-save';
+  saveBtn.textContent = '저장';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'inline-edit-cancel';
+  cancelBtn.textContent = '취소';
+
+  const exitEdit = () => {
+    row.classList.remove('is-editing');
+    renderMessages();
+  };
+
+  saveBtn.addEventListener('click', async () => {
+    const newText = textarea.value.trim();
+    if (!newText) {
+      showToast('메시지 내용을 입력하세요.', 'warning');
+      return;
+    }
+    if (newText === originalContent) {
+      exitEdit();
+      return;
+    }
+    saveBtn.disabled = true;
+    const ok = await saveEditedMessage(msg.message_id, newText);
+    if (!ok) {
+      saveBtn.disabled = false;
+    } else {
+      row.classList.remove('is-editing');
+    }
+  });
+
+  cancelBtn.addEventListener('click', exitEdit);
+  textarea.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      exitEdit();
+    } else if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      saveBtn.click();
+    }
+  });
+
+  btnGroup.append(cancelBtn, saveBtn);
+  actionsBox.append(hint, btnGroup);
+  editBox.append(textarea, actionsBox);
+
+  bubble.replaceChildren(editBox);
+  adjustHeight();
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
 }
 
 const COLLAPSED_SECTIONS_KEY = 'bamboochat_collapsed_sections';
@@ -1530,6 +1750,35 @@ function createMessageActions(msg) {
   copyButton.textContent = '복사';
   copyButton.addEventListener('click', () => copyText(msg.content || msg.attachment?.name || '', '메시지를 복사했습니다.'));
   actions.append(replyButton, copyButton);
+
+  if (msg.msgType === 'chat' && msg.message_id) {
+    const isAuthor = (msg.author_id != null && Number(msg.author_id) === myUserId) || msg.nickname === myNickname;
+    const isAdmin = currentUser?.role === 'admin';
+    if ((isAuthor || isAdmin) && !msg.is_hidden) {
+      const editButton = document.createElement('button');
+      editButton.type = 'button';
+      editButton.textContent = '수정';
+      editButton.addEventListener('click', () => {
+        const row = document.querySelector(`.msg-row[data-message-id="${msg.message_id}"]`);
+        if (row) enterInlineEditMode(row, msg);
+      });
+      actions.appendChild(editButton);
+    }
+    if (isAdmin) {
+      const hideButton = document.createElement('button');
+      hideButton.type = 'button';
+      hideButton.textContent = msg.is_hidden ? '숨김 해제' : '숨김';
+      hideButton.addEventListener('click', () => toggleMessageHidden(msg.message_id, !msg.is_hidden));
+      actions.appendChild(hideButton);
+
+      const moveButton = document.createElement('button');
+      moveButton.type = 'button';
+      moveButton.textContent = '이동';
+      moveButton.addEventListener('click', () => openMoveMessageModal(msg));
+      actions.appendChild(moveButton);
+    }
+  }
+
   return actions;
 }
 
@@ -1587,6 +1836,7 @@ function appendMessageNode(msg, previousMsg = null) {
   const row = document.createElement('article');
   row.className = `msg-row ${isChat ? (isOwn ? 'own' : 'other') : (isOwn ? 'dm-own' : 'dm-recv')}${grouped ? ' grouped' : ''}`;
   if (messageNeedsMyAttention(msg)) row.classList.add('attention-for-me');
+  if (msg.is_hidden) row.classList.add('hidden-msg');
   if (msg.message_id) row.dataset.messageId = msg.message_id;
 
   if (isChat && !grouped) {
@@ -1603,6 +1853,19 @@ function appendMessageNode(msg, previousMsg = null) {
     time.dateTime = msg.created_at || '';
     time.textContent = formatTime(msg.created_at);
     meta.append(nick, time);
+    if (msg.is_hidden) {
+      const hiddenBadge = document.createElement('span');
+      hiddenBadge.className = 'msg-hidden-badge';
+      hiddenBadge.textContent = '숨김 처리됨';
+      meta.appendChild(hiddenBadge);
+    }
+    if (msg.moved_from_channel_id) {
+      const fromChan = channelsDirectory.get(Number(msg.moved_from_channel_id));
+      const movedBadge = document.createElement('span');
+      movedBadge.className = 'msg-moved-badge';
+      movedBadge.textContent = fromChan ? `#${fromChan.display_name}에서 이동됨` : '이동됨';
+      meta.appendChild(movedBadge);
+    }
     row.appendChild(meta);
   } else if (!isChat && !grouped) {
     const label = document.createElement('div');
@@ -1626,23 +1889,40 @@ function appendMessageNode(msg, previousMsg = null) {
   bubble.className = 'msg-bubble markdown-body';
   const reply = createReplyQuote(msg.reply);
   if (reply) bubble.appendChild(reply);
-  if (msg.content) {
-    const markdown = document.createElement('div');
-    renderMarkdown(markdown, msg.content);
-    highlightMentions(markdown, msg.mentions);
-    bubble.appendChild(markdown);
+
+  const isAdmin = currentUser?.role === 'admin';
+  if (msg.is_hidden && !isAdmin) {
+    const notice = document.createElement('div');
+    notice.className = 'msg-hidden-notice';
+    notice.textContent = '🔒 관리자에 의해 숨겨진 메시지입니다.';
+    bubble.appendChild(notice);
+  } else {
+    if (msg.content) {
+      const markdown = document.createElement('div');
+      renderMarkdown(markdown, msg.content);
+      highlightMentions(markdown, msg.mentions);
+      if (msg.edited_at) {
+        const editedBadge = document.createElement('span');
+        editedBadge.className = 'msg-edited-badge';
+        editedBadge.textContent = '(수정됨)';
+        editedBadge.title = `수정일시: ${formatTime(msg.edited_at)}`;
+        markdown.appendChild(editedBadge);
+      }
+      bubble.appendChild(markdown);
+    }
+    const attachments = normaliseMessageAttachments(msg);
+    if (attachments.length) {
+      const group = document.createElement('div');
+      group.className = 'message-attachments';
+      attachments.forEach(attachment => group.appendChild(createAttachmentEntry(attachment)));
+      bubble.appendChild(group);
+    }
   }
-  const attachments = normaliseMessageAttachments(msg);
-  if (attachments.length) {
-    const group = document.createElement('div');
-    group.className = 'message-attachments';
-    attachments.forEach(attachment => group.appendChild(createAttachmentEntry(attachment)));
-    bubble.appendChild(group);
-  }
+
   const actions = createMessageActions(msg);
   bubble.addEventListener('click', event => {
     if (!window.matchMedia('(hover: none), (max-width: 640px)').matches) return;
-    if (event.target.closest('a, button')) return;
+    if (event.target.closest('a, button, textarea, input')) return;
     if (window.getSelection()?.toString()) return;
     event.stopPropagation();
     const willOpen = !row.classList.contains('actions-open');
@@ -1673,8 +1953,12 @@ function publicMessageFromData(data) {
     message_id: data.message_id,
     nickname: data.nickname,
     author_id: data.author_id,
+    channel_id: Number(data.channel_id || 1),
     content: data.content || '',
     created_at: data.created_at,
+    edited_at: data.edited_at || null,
+    is_hidden: Boolean(data.is_hidden),
+    moved_from_channel_id: data.moved_from_channel_id || null,
     reply: data.reply || null,
     attachment: data.attachment || null,
     attachments: Array.isArray(data.attachments) ? data.attachments : null,
@@ -2330,12 +2614,91 @@ function initWebSocket() {
         }
         break;
       }
+      case 'channel_archived': {
+        const chanId = Number(data.channel_id);
+        const chan = channelsDirectory.get(chanId);
+        const displayName = chan?.display_name || `채널 ${chanId}`;
+        removeChannelData(chanId);
+        showToast(`'# ${displayName}' 채널이 보관되었습니다.`, 'info');
+        break;
+      }
+      case 'channel_unarchived': {
+        if (data.channel) {
+          channelsDirectory.set(data.channel.id, data.channel);
+          getOrCreateChannel(data.channel);
+          renderConversationList();
+          showToast(`'# ${data.channel.display_name}' 채널 보관이 해제되었습니다.`, 'info');
+        }
+        break;
+      }
       case 'channel_deleted': {
         const chanId = Number(data.channel_id);
         const chan = channelsDirectory.get(chanId);
         const displayName = chan?.display_name || `채널 ${chanId}`;
         removeChannelData(chanId);
-        showToast(`'# ${displayName}' 채널이 삭제되었습니다.`, 'info');
+        showToast(`'# ${displayName}' 채널이 영구 삭제되었습니다.`, 'info');
+        break;
+      }
+      case 'message_edited': {
+        if (data.message) {
+          const editedMsg = data.message;
+          const chanId = Number(editedMsg.channel_id || 1);
+          const targetConvId = 'channel:' + chanId;
+          const conv = conversations.get(targetConvId);
+          if (conv) {
+            const idx = conv.messages.findIndex(m => m.message_id === editedMsg.message_id);
+            if (idx >= 0) {
+              conv.messages[idx].content = editedMsg.content;
+              conv.messages[idx].edited_at = editedMsg.edited_at;
+              conv.messages[idx].mentions = editedMsg.mentions;
+              if (activeConvId === targetConvId) {
+                renderMessages();
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'message_hidden': {
+        if (data.message) {
+          const hiddenMsg = data.message;
+          const chanId = Number(hiddenMsg.channel_id || 1);
+          const targetConvId = 'channel:' + chanId;
+          const conv = conversations.get(targetConvId);
+          if (conv) {
+            const idx = conv.messages.findIndex(m => m.message_id === hiddenMsg.message_id);
+            if (idx >= 0) {
+              conv.messages[idx].is_hidden = Boolean(data.is_hidden ?? hiddenMsg.is_hidden);
+              if (activeConvId === targetConvId) {
+                renderMessages();
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'message_moved': {
+        const fromChanId = Number(data.from_channel_id || 1);
+        const toChanId = Number(data.to_channel_id || 1);
+        const movedMsg = data.message;
+        const fromConvId = 'channel:' + fromChanId;
+        const toConvId = 'channel:' + toChanId;
+        
+        const fromConv = conversations.get(fromConvId);
+        if (fromConv) {
+          fromConv.messages = fromConv.messages.filter(m => m.message_id !== movedMsg.message_id);
+          fromConv.messageIds.delete(movedMsg.message_id);
+        }
+        
+        const toConv = conversations.get(toConvId);
+        if (toConv && !toConv.messageIds.has(movedMsg.message_id)) {
+          toConv.messageIds.add(movedMsg.message_id);
+          toConv.messages.push(publicMessageFromData(movedMsg));
+        }
+
+        if (activeConvId === fromConvId || activeConvId === toConvId) {
+          renderMessages();
+        }
         break;
       }
       case 'chat': {
