@@ -166,7 +166,8 @@ def test_public_mentions_are_validated_and_restored_in_history():
         while message.get("type") != "chat":
             message = ws.receive_json()
     assert message["mentioned_user_ids"] == [target["id"]]
-    assert message["mentions"] == [{"user_id": target["id"], "username": "target-user"}]
+    assert message["mentions"] == [{"user_id": target["id"], "username": "target-user",
+                                     "display_name": "target-user"}]
     history = sender.get("/api/messages").json()
     assert history[-1]["mentioned_user_ids"] == [target["id"]]
     assert main.find_mentions("mail@target-user.invalid @target-user2", [target]) == []

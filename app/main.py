@@ -24,7 +24,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.auth import (hash_secret, new_session_token, normalize_username, secret_needs_rehash,
-                        token_hash, validate_password, validate_username, verify_secret)
+                        token_hash, validate_display_name, validate_password,
+                        validate_username, verify_secret)
 from app.config import load_config, save_config
 from app.database import (attachment_is_visible_to_user, claim_attachments, configure_storage, count_active_admins,
     create_session, create_user, delete_owned_attachment, delete_session,
@@ -33,7 +34,7 @@ from app.database import (attachment_is_visible_to_user, claim_attachments, conf
     get_storage_status, get_upload_usage, get_user_by_id, get_user_by_username, init_db,
     list_mentionable_users, list_users, prune_expired_sessions, save_attachment,
     save_direct_message, save_message, set_user_active,
-    set_user_role, update_password_hash)
+    set_user_role, update_display_name, update_password_hash)
 
 CONFIG = load_config()
 configure_storage(CONFIG.data_path, CONFIG.database_limit_bytes)
@@ -177,7 +178,9 @@ def request_user(request: Request) -> dict:
     return user
 
 def public_user(user: dict) -> dict:
-    return {"id":user["id"],"username":user["username"],"role":user["role"],
+    return {"id":user["id"],"username":user["username"],
+            "display_name":user.get("display_name") or user["username"],
+            "role":user["role"],
             "session_expires_at":user.get("session_expires_at")}
 
 def require_admin(request: Request) -> dict:
@@ -213,9 +216,19 @@ def find_mentions(content: str, users: Optional[list[dict]] = None,
         if exclude_user_id is not None and user["id"] == exclude_user_id:
             continue
         username = user["username"]
+        display_name = user.get("display_name") or username
+        # Match on @username
         pattern = rf"(?<![\w.@-])@{re.escape(username)}(?![\w.-])"
         if re.search(pattern, content, flags=re.IGNORECASE):
-            matches.append({"user_id": user["id"], "username": username})
+            matches.append({"user_id": user["id"], "username": username,
+                            "display_name": display_name})
+            continue
+        # Also match on @display_name if it differs from username
+        if display_name != username:
+            display_pattern = rf"(?<![\w.@-])@{re.escape(display_name)}(?![\w.-])"
+            if re.search(display_pattern, content, flags=re.IGNORECASE):
+                matches.append({"user_id": user["id"], "username": username,
+                                "display_name": display_name})
     return matches
 
 def with_mentions(message: dict, users: Optional[list[dict]] = None) -> dict:
@@ -226,7 +239,9 @@ def with_mentions(message: dict, users: Optional[list[dict]] = None) -> dict:
     return result
 
 def account_public(user: dict) -> dict:
-    return {"id": user["id"], "username": user["username"], "role": user["role"],
+    return {"id": user["id"], "username": user["username"],
+            "display_name": user.get("display_name") or user["username"],
+            "role": user["role"],
             "active": bool(user["active"]), "created_at": user["created_at"],
             "last_login": user.get("last_login"), "message_count": user.get("message_count", 0),
             "attachment_bytes": user.get("attachment_bytes", 0),
@@ -277,7 +292,9 @@ async def broadcast_users() -> None:
     ]
     await broadcast({
         "type":"users",
-        "list":[{"nickname":name} for name in sorted(user_registry)],
+        "list":[{"nickname":name, "display_name":
+                 next((u.get("display_name") or name for u in mention_list if u.get("username")==name), name)}
+                for name in sorted(user_registry)],
         "mention_list":mention_list,
     })
 
@@ -385,6 +402,23 @@ async def logout(request: Request):
 @app.get("/api/auth/me")
 async def auth_me(request: Request):
     return public_user(request_user(request))
+
+@app.post("/api/auth/display-name")
+async def change_display_name(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    data = await read_json_body(request)
+    raw_name = str(data.get("display_name", ""))
+    try:
+        display_name = validate_display_name(raw_name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    updated = update_display_name(user["id"], display_name)
+    if not updated:
+        raise HTTPException(404, "사용자를 찾을 수 없습니다.")
+    await broadcast_users()
+    return public_user(updated)
 
 @app.get("/api/messages")
 async def api_messages(request: Request):
@@ -512,6 +546,15 @@ async def admin_update_user(user_id: int, request: Request):
     if password_changed:
         update_password_hash(user_id, await asyncio.to_thread(hash_secret, str(new_password)))
         delete_user_sessions(user_id)
+
+    new_display_name = data.get("display_name")
+    if new_display_name is not None and str(new_display_name).strip():
+        try:
+            validated_name = validate_display_name(str(new_display_name))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        update_display_name(user_id, validated_name)
+
     if not requested_active or password_changed:
         await disconnect_user(user_id, "계정 설정이 변경되었습니다. 다시 로그인해 주세요.")
     if requested_active != bool(target["active"]):
