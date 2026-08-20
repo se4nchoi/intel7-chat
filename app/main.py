@@ -37,6 +37,7 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     save_direct_message, save_message, set_user_active,
     set_user_role, update_channel, archive_channel, delete_channel,
     get_message_by_id, update_message_content, set_message_hidden, move_message_channel,
+    get_user_conversation_states, update_user_read_state, set_conversation_muted, get_user_unread_counts,
     update_display_name, update_password_hash)
 
 CONFIG = load_config()
@@ -276,6 +277,18 @@ async def broadcast(payload: dict) -> None:
         try: await ws.send_text(encoded)
         except Exception: dead.add(ws)
     for ws in dead: _remove_client(ws)
+
+async def send_to_user_id(user_id: int, payload: dict) -> None:
+    encoded = json.dumps(payload, ensure_ascii=False)
+    dead = set()
+    for ws, info in list(connected_clients.items()):
+        if info.user_id == user_id:
+            try:
+                await ws.send_text(encoded)
+            except Exception:
+                dead.add(ws)
+    for ws in dead:
+        _remove_client(ws)
 
 def _remove_client(ws: WebSocket) -> None:
     info=connected_clients.pop(ws,None)
@@ -628,6 +641,59 @@ async def api_move_message(message_id: int, request: Request):
     })
     return enriched
 
+@app.get("/api/read-states")
+async def api_get_read_states(request: Request):
+    user = request_user(request)
+    states = get_user_conversation_states(user["id"])
+    unread_counts = get_user_unread_counts(user["id"])
+    return {"states": states, "unread_counts": unread_counts}
+
+@app.post("/api/read-states/ack")
+async def api_ack_read_state(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    data = await read_json_body(request)
+    conv_type = str(data.get("conversation_type", "")).strip()
+    conv_id = str(data.get("conversation_id", "")).strip()
+    last_read_id = data.get("last_read_message_id")
+    if conv_type not in ("channel", "dm") or not conv_id or last_read_id is None:
+        raise HTTPException(400, "유효한 대화 정보와 메시지 ID가 필요합니다.")
+    try:
+        last_read_id = int(last_read_id)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "유효한 메시지 ID가 아닙니다.")
+    
+    updated = update_user_read_state(user["id"], conv_type, conv_id, last_read_id)
+    unread_counts = get_user_unread_counts(user["id"])
+    payload = {
+        "type": "read_state_updated",
+        "state": updated,
+        "unread_counts": unread_counts
+    }
+    await send_to_user_id(user["id"], payload)
+    return {"state": updated, "unread_counts": unread_counts}
+
+@app.post("/api/read-states/mute")
+async def api_set_muted(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    data = await read_json_body(request)
+    conv_type = str(data.get("conversation_type", "")).strip()
+    conv_id = str(data.get("conversation_id", "")).strip()
+    muted = bool(data.get("muted", True))
+    if conv_type not in ("channel", "dm") or not conv_id:
+        raise HTTPException(400, "유효한 대화 정보가 필요합니다.")
+    
+    updated = set_conversation_muted(user["id"], conv_type, conv_id, muted)
+    payload = {
+        "type": "conversation_muted_updated",
+        "state": updated
+    }
+    await send_to_user_id(user["id"], payload)
+    return {"state": updated}
+
 @app.get("/api/messages")
 async def api_messages(request: Request):
     request_user(request)
@@ -870,11 +936,15 @@ async def websocket_endpoint(ws: WebSocket):
                   if message["message_id"] in selected_dm_ids]
     for message in dm_history:
         await ws.send_text(json.dumps({"type":"dm", "history":True, **message}, ensure_ascii=False))
+    states = get_user_conversation_states(info.user_id)
+    unread_counts = get_user_unread_counts(info.user_id)
     await ws.send_text(json.dumps({
         "type":"history_ready",
         "public_has_older":len(public_candidates) > PUBLIC_HISTORY_PAGE_SIZE,
         "dm_has_older":{partner: len(messages) > DM_HISTORY_PAGE_SIZE
                         for partner, messages in dm_groups.items()},
+        "read_states": states,
+        "unread_counts": unread_counts,
     },ensure_ascii=False))
     try:
         while True:

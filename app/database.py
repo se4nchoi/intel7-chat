@@ -193,10 +193,25 @@ def _migrate_v3(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "messages", "is_hidden", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(conn, "messages", "moved_from_channel_id", "INTEGER")
 
+def _migrate_v4(conn: sqlite3.Connection) -> None:
+    """Create user_conversation_state table for read tracking and notification muting."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS user_conversation_state (
+        user_id INTEGER NOT NULL,
+        conversation_type TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        last_read_message_id INTEGER NOT NULL DEFAULT 0,
+        muted INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, conversation_type, conversation_id),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ucs_user ON user_conversation_state(user_id)")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
     _migrate_v3,
+    _migrate_v4,
 ]
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -742,3 +757,120 @@ def get_storage_status() -> Dict[str, int]:
         attachment_bytes = int(conn.execute("SELECT COALESCE(SUM(size),0) FROM attachments").fetchone()[0])
     return {"database_bytes": db_bytes, "database_limit_bytes": DB_MAX_BYTES,
             "attachment_bytes": attachment_bytes}
+
+def get_user_conversation_states(user_id: int) -> Dict[str, Dict[str, Any]]:
+    """Returns mapping of 'type:id' -> {last_read_message_id, muted, updated_at}."""
+    with get_connection() as conn:
+        rows = conn.execute("""SELECT conversation_type, conversation_id, last_read_message_id, muted, updated_at
+            FROM user_conversation_state WHERE user_id = ?""", (user_id,)).fetchall()
+        states = {}
+        for row in rows:
+            key = f"{row[0]}:{row[1]}"
+            states[key] = {
+                "conversation_type": row[0],
+                "conversation_id": row[1],
+                "last_read_message_id": int(row[2]),
+                "muted": bool(row[3]),
+                "updated_at": row[4]
+            }
+        return states
+
+def update_user_read_state(user_id: int, conv_type: str, conv_id: str, last_read_id: int) -> Dict[str, Any]:
+    """Updates last_read_message_id for a conversation, advancing it forward."""
+    conv_id = str(conv_id)
+    last_read_id = int(last_read_id)
+    now = utc_now()
+    with get_connection() as conn:
+        row = conn.execute("""SELECT last_read_message_id, muted FROM user_conversation_state
+            WHERE user_id = ? AND conversation_type = ? AND conversation_id = ?""",
+            (user_id, conv_type, conv_id)).fetchone()
+        if row:
+            curr_last_read = int(row[0])
+            muted = int(row[1])
+            new_last_read = max(curr_last_read, last_read_id)
+            conn.execute("""UPDATE user_conversation_state
+                SET last_read_message_id = ?, updated_at = ?
+                WHERE user_id = ? AND conversation_type = ? AND conversation_id = ?""",
+                (new_last_read, now, user_id, conv_type, conv_id))
+            conn.commit()
+            return {
+                "conversation_type": conv_type,
+                "conversation_id": conv_id,
+                "last_read_message_id": new_last_read,
+                "muted": bool(muted),
+                "updated_at": now
+            }
+        else:
+            conn.execute("""INSERT INTO user_conversation_state
+                (user_id, conversation_type, conversation_id, last_read_message_id, muted, updated_at)
+                VALUES (?, ?, ?, ?, 0, ?)""",
+                (user_id, conv_type, conv_id, last_read_id, now))
+            conn.commit()
+            return {
+                "conversation_type": conv_type,
+                "conversation_id": conv_id,
+                "last_read_message_id": last_read_id,
+                "muted": False,
+                "updated_at": now
+            }
+
+def set_conversation_muted(user_id: int, conv_type: str, conv_id: str, muted: bool) -> Dict[str, Any]:
+    """Sets muted flag for a conversation."""
+    conv_id = str(conv_id)
+    muted_int = 1 if muted else 0
+    now = utc_now()
+    with get_connection() as conn:
+        row = conn.execute("""SELECT last_read_message_id FROM user_conversation_state
+            WHERE user_id = ? AND conversation_type = ? AND conversation_id = ?""",
+            (user_id, conv_type, conv_id)).fetchone()
+        if row:
+            last_read_id = int(row[0])
+            conn.execute("""UPDATE user_conversation_state
+                SET muted = ?, updated_at = ?
+                WHERE user_id = ? AND conversation_type = ? AND conversation_id = ?""",
+                (muted_int, now, user_id, conv_type, conv_id))
+        else:
+            last_read_id = 0
+            conn.execute("""INSERT INTO user_conversation_state
+                (user_id, conversation_type, conversation_id, last_read_message_id, muted, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (user_id, conv_type, conv_id, 0, muted_int, now))
+        conn.commit()
+        return {
+            "conversation_type": conv_type,
+            "conversation_id": conv_id,
+            "last_read_message_id": last_read_id,
+            "muted": bool(muted),
+            "updated_at": now
+        }
+
+def get_user_unread_counts(user_id: int) -> Dict[str, int]:
+    """Calculates unread message count for each channel and DM conversation of user."""
+    unread_counts = {}
+    with get_connection() as conn:
+        states = {}
+        for r in conn.execute("""SELECT conversation_type, conversation_id, last_read_message_id
+            FROM user_conversation_state WHERE user_id = ?""", (user_id,)).fetchall():
+            states[f"{r[0]}:{r[1]}"] = int(r[2])
+        
+        # Channels
+        chans = conn.execute("SELECT id FROM channels WHERE archived = 0").fetchall()
+        for chan in chans:
+            cid = chan[0]
+            key = f"channel:{cid}"
+            last_read = states.get(key, 0)
+            cnt = conn.execute("SELECT COUNT(*) FROM messages WHERE channel_id = ? AND id > ?", (cid, last_read)).fetchone()[0]
+            unread_counts[key] = cnt
+            
+        # DMs (conversations where this user is recipient and message is unread)
+        dm_rows = conn.execute("""SELECT sender_user_id, id FROM direct_messages
+            WHERE recipient_user_id = ? ORDER BY id ASC""", (user_id,)).fetchall()
+        
+        # Group by partner (sender)
+        for sender_id, msg_id in dm_rows:
+            key = f"dm:{sender_id}"
+            last_read = states.get(key, 0)
+            if msg_id > last_read:
+                unread_counts[key] = unread_counts.get(key, 0) + 1
+        
+    return unread_counts
