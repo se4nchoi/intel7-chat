@@ -43,7 +43,7 @@
         <h1 class="service-name">{{ service_name }}</h1>
       </div>
       <div class="header-right">
-        <span id="my-nick-badge" class="my-nick-badge"></span>
+        <button id="my-nick-badge" class="my-nick-badge" type="button" aria-label="닉네임 변경" title="닉네임 변경"></button>
         <span id="conn-status" class="conn-status disconnected" role="status">연결 끊김</span>
         <button id="admin-btn" class="admin-btn hidden" type="button">관리</button>
         <button id="logout-btn" class="logout-btn" type="button">로그아웃</button>
@@ -140,6 +140,31 @@
         <div id="admin-users" class="admin-users"></div>
       </section>
       <p id="admin-error" class="error-msg" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <div id="nickname-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="nickname-title">
+    <div class="modal-box nickname-panel">
+      <div class="admin-panel-header">
+        <div>
+          <h2 id="nickname-title">닉네임 변경</h2>
+          <p class="modal-desc">다른 사용자에게 표시되는 이름을 변경합니다.</p>
+        </div>
+        <button id="nickname-close" class="admin-close" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="nickname-body">
+        <div class="nickname-current">
+          <small>현재 닉네임</small>
+          <strong id="nickname-current-name"></strong>
+          <small id="nickname-username-label" class="nickname-username"></small>
+        </div>
+        <form id="nickname-form">
+          <label class="sr-only" for="nickname-input">새 닉네임</label>
+          <input id="nickname-input" type="text" maxlength="30" placeholder="새 닉네임 (1~30자)" autocomplete="off" required />
+          <p id="nickname-error" class="error-msg" aria-live="polite"></p>
+          <button id="nickname-submit" type="submit">변경</button>
+        </form>
+      </div>
     </div>
   </div>
 

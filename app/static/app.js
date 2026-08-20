@@ -52,6 +52,14 @@ const retentionNote = document.getElementById('retention-note');
 const connStatus = document.getElementById('conn-status');
 const myNickBadge = document.getElementById('my-nick-badge');
 const charCount = document.getElementById('char-count');
+const nicknameModal = document.getElementById('nickname-modal');
+const nicknameClose = document.getElementById('nickname-close');
+const nicknameForm = document.getElementById('nickname-form');
+const nicknameInput = document.getElementById('nickname-input');
+const nicknameError = document.getElementById('nickname-error');
+const nicknameSubmit = document.getElementById('nickname-submit');
+const nicknameCurrentName = document.getElementById('nickname-current-name');
+const nicknameUsernameLabel = document.getElementById('nickname-username-label');
 const replyPreview = document.getElementById('reply-preview');
 const replyPreviewName = document.getElementById('reply-preview-name');
 const replyPreviewText = document.getElementById('reply-preview-text');
@@ -69,10 +77,12 @@ const MAX_PARALLEL_UPLOADS = 2;
 const conversations = new Map();
 const replyTargets = new Map();
 const pendingAttachments = new Map();
+const userDirectory = new Map();
 let drafts = {};
 let activeConvId = GLOBAL_ID;
 let currentUser = null;
 let myNickname = '';
+let myDisplayName = '';
 let myUserId = null;
 let ws = null;
 let reconnectTimer = null;
@@ -112,7 +122,8 @@ function initConversations() {
 }
 
 function displayNickname(nick) {
-  return nick;
+  const entry = userDirectory.get(nick);
+  return entry?.display_name || nick;
 }
 
 function getOrCreateDm(nick) {
@@ -148,11 +159,19 @@ function hideAuthModal() {
   authModal.classList.add('hidden');
 }
 
+function updateNickBadge() {
+  const name = myDisplayName || myNickname;
+  const suffix = currentUser?.role === 'admin' ? ' · 관리자' : '';
+  myNickBadge.textContent = name + suffix;
+  myNickBadge.title = `${name} (@${myNickname}) — 닉네임 변경`;
+}
+
 async function enterChat(user) {
   currentUser = user;
   myUserId = Number(user.id);
   myNickname = user.username;
-  myNickBadge.textContent = user.role === 'admin' ? `${user.username} · 관리자` : user.username;
+  myDisplayName = user.display_name || user.username;
+  updateNickBadge();
   adminBtn.classList.toggle('hidden', user.role !== 'admin');
   drafts = loadDrafts();
   hideAuthModal();
@@ -211,14 +230,17 @@ async function logout() {
   currentUser = null;
   myUserId = null;
   myNickname = '';
+  myDisplayName = '';
   drafts = {};
   lastStorageWarning = 0;
   pendingAttachments.clear();
+  userDirectory.clear();
   mentionUsers = [];
   closeMentionMenu();
   adminBtn.classList.add('hidden');
   adminModal.classList.add('hidden');
   helpModal.classList.add('hidden');
+  nicknameModal.classList.add('hidden');
   messageListEl.replaceChildren();
   setConnected(false);
   setAuthMode('login');
@@ -424,6 +446,57 @@ adminClose.addEventListener('click', closeAdminPanel);
 adminModal.addEventListener('click', event => {
   if (event.target === adminModal) closeAdminPanel();
 });
+
+function openNicknameModal() {
+  nicknameCurrentName.textContent = myDisplayName || myNickname;
+  nicknameUsernameLabel.textContent = `@${myNickname}`;
+  nicknameInput.value = '';
+  nicknameError.textContent = '';
+  nicknameModal.classList.remove('hidden');
+  setTimeout(() => nicknameInput.focus(), 50);
+}
+
+function closeNicknameModal() {
+  nicknameModal.classList.add('hidden');
+  nicknameError.textContent = '';
+  if (currentUser) msgInput.focus();
+}
+
+async function submitNickname(event) {
+  event.preventDefault();
+  const name = nicknameInput.value.trim();
+  if (!name) {
+    nicknameError.textContent = '닉네임을 입력해 주세요.';
+    return;
+  }
+  nicknameSubmit.disabled = true;
+  nicknameError.textContent = '';
+  try {
+    const response = await fetch('/api/auth/display-name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: name }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || '닉네임을 변경하지 못했습니다.');
+    myDisplayName = data.display_name || name;
+    if (currentUser) currentUser.display_name = myDisplayName;
+    updateNickBadge();
+    closeNicknameModal();
+    showToast('닉네임을 변경했습니다.', 'success');
+  } catch (error) {
+    nicknameError.textContent = error.message || '닉네임을 변경하지 못했습니다.';
+  } finally {
+    nicknameSubmit.disabled = false;
+  }
+}
+
+myNickBadge.addEventListener('click', openNicknameModal);
+nicknameClose.addEventListener('click', closeNicknameModal);
+nicknameModal.addEventListener('click', event => {
+  if (event.target === nicknameModal) closeNicknameModal();
+});
+nicknameForm.addEventListener('submit', submitNickname);
 adminRegistrationSave.addEventListener('click', async () => {
   adminRegistrationSave.disabled = true;
   adminError.textContent = '';
@@ -465,7 +538,8 @@ sidebarToggle.addEventListener('click', () => {
 });
 sidebarBackdrop.addEventListener('click', closeSidebar);
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !helpModal.classList.contains('hidden')) closeHelpModal();
+  if (event.key === 'Escape' && !nicknameModal.classList.contains('hidden')) closeNicknameModal();
+  else if (event.key === 'Escape' && !helpModal.classList.contains('hidden')) closeHelpModal();
 });
 
 function closeSidebar() {
@@ -568,6 +642,7 @@ function renderOnlineList(users) {
   onlineListEl.replaceChildren();
   sortedUsers.forEach(user => {
     const nick = user.username || user.nickname;
+    const displayName = user.display_name || displayNickname(nick);
     const online = Boolean(user.online);
     const item = document.createElement('li');
     item.className = `online-item${online ? '' : ' offline'}`;
@@ -575,9 +650,9 @@ function renderOnlineList(users) {
     dot.className = `online-dot${online ? '' : ' offline'}`;
     const nickElement = document.createElement('span');
     nickElement.className = `online-nick${nick === myNickname ? ' is-me' : ''}`;
-    nickElement.textContent = displayNickname(nick) + (nick === myNickname ? ' (나)' : '');
-    item.setAttribute('aria-label', `${nick} ${online ? '온라인' : '오프라인'}`);
-    item.title = online ? '온라인' : '오프라인';
+    nickElement.textContent = displayName + (nick === myNickname ? ' (나)' : '');
+    item.setAttribute('aria-label', `${displayName} ${online ? '온라인' : '오프라인'}`);
+    item.title = `${displayName} (@${nick}) — ${online ? '온라인' : '오프라인'}`;
     item.append(dot, nickElement);
     if (nick !== myNickname && online) {
       const openDm = () => {
@@ -589,8 +664,8 @@ function renderOnlineList(users) {
       dmButton.type = 'button';
       dmButton.className = 'online-dm-btn';
       dmButton.textContent = 'DM →';
-      dmButton.title = `${nick}님과 DM 열기`;
-      dmButton.setAttribute('aria-label', `${nick}님과 DM 열기`);
+      dmButton.title = `${displayName}님과 DM 열기`;
+      dmButton.setAttribute('aria-label', `${displayName}님과 DM 열기`);
       dmButton.addEventListener('click', event => {
         event.stopPropagation();
         openDm();
@@ -652,10 +727,12 @@ function updateMentionMenu() {
   }
   const query = context.query.toLocaleLowerCase();
   mentionRange = context;
-  mentionMatches = mentionUsers.filter(user =>
-    Number(user.id) !== myUserId
-      && String(user.username || '').toLocaleLowerCase().startsWith(query)
-  );
+  mentionMatches = mentionUsers.filter(user => {
+    if (Number(user.id) === myUserId) return false;
+    const username = String(user.username || '').toLocaleLowerCase();
+    const displayName = String(user.display_name || '').toLocaleLowerCase();
+    return username.startsWith(query) || displayName.startsWith(query);
+  });
   if (!mentionMatches.length) {
     closeMentionMenu();
     return;
@@ -668,12 +745,15 @@ function updateMentionMenu() {
     option.className = `mention-option${index === mentionActiveIndex ? ' active' : ''}`;
     option.setAttribute('role', 'option');
     option.setAttribute('aria-selected', String(index === mentionActiveIndex));
-    const name = document.createElement('span');
-    name.textContent = `@${user.username}`;
+    const nameLabel = document.createElement('span');
+    const userDisplayName = user.display_name || user.username;
+    nameLabel.textContent = userDisplayName !== user.username
+      ? `${userDisplayName} (@${user.username})`
+      : `@${user.username}`;
     const presence = document.createElement('span');
     presence.className = `mention-presence${user.online ? ' online' : ''}`;
     presence.textContent = user.online ? '온라인' : '오프라인';
-    option.append(name, presence);
+    option.append(nameLabel, presence);
     option.addEventListener('mousedown', event => event.preventDefault());
     option.addEventListener('click', () => selectMention(user));
     mentionMenu.appendChild(option);
@@ -1740,11 +1820,12 @@ function initWebSocket() {
         const chatMessage = publicMessageFromData(data);
         const added = addMessage(GLOBAL_ID, chatMessage);
         if (!data.history && added && messageNeedsMyAttention(chatMessage)) {
+          const senderDisplay = displayNickname(data.nickname);
           const repliesToMe = data.reply && data.reply.nickname === myNickname;
           showToast(
             repliesToMe
-              ? `${data.nickname}님이 회원님의 메시지에 답장했습니다.`
-              : `${data.nickname}님이 전체 채팅에서 회원님을 멘션했습니다.`,
+              ? `${senderDisplay}님이 회원님의 메시지에 답장했습니다.`
+              : `${senderDisplay}님이 전체 채팅에서 회원님을 멘션했습니다.`,
             'mention',
           );
         }
@@ -1775,7 +1856,26 @@ function initWebSocket() {
         break;
       case 'users':
         mentionUsers = Array.isArray(data.mention_list) ? data.mention_list : [];
+        userDirectory.clear();
+        mentionUsers.forEach(user => {
+          userDirectory.set(user.username, {
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name || user.username,
+            online: Boolean(user.online),
+          });
+        });
+        // Update own display name if changed by another session or admin
+        if (myNickname) {
+          const me = userDirectory.get(myNickname);
+          if (me && me.display_name !== myDisplayName) {
+            myDisplayName = me.display_name;
+            if (currentUser) currentUser.display_name = myDisplayName;
+            updateNickBadge();
+          }
+        }
         renderOnlineList(mentionUsers);
+        renderConversationList();
         updateMentionMenu();
         break;
       case 'error':

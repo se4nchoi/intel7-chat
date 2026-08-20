@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import uuid as _uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -132,16 +133,54 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_dm_attachments_file ON direct_message_attachments(attachment_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_user ON attachments(uploader_user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)")
+        conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER NOT NULL
+        )""")
+        conn.commit()
+        _run_migrations(conn)
+
+def _get_schema_version(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+def _set_schema_version(conn: sqlite3.Connection, version: int) -> None:
+    conn.execute("DELETE FROM schema_version")
+    conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
+
+def _migrate_v1(conn: sqlite3.Connection) -> None:
+    """Add display_name and uuid columns to users."""
+    _add_column_if_missing(conn, "users", "display_name", "TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "users", "uuid", "TEXT NOT NULL DEFAULT ''")
+    conn.execute("UPDATE users SET display_name = username WHERE display_name = ''")
+    rows = conn.execute("SELECT id FROM users WHERE uuid = ''").fetchall()
+    for row in rows:
+        conn.execute("UPDATE users SET uuid = ? WHERE id = ?", (_uuid.uuid4().hex, row[0]))
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_uuid ON users(uuid)")
+
+_MIGRATIONS = [
+    _migrate_v1,
+]
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    current = _get_schema_version(conn)
+    for index, migrate in enumerate(_MIGRATIONS, start=1):
+        if index <= current:
+            continue
+        migrate(conn)
+        _set_schema_version(conn, index)
         conn.commit()
 
 def create_user(username: str, password_hash: str, role: str = "student") -> Dict[str, Any]:
     from app.auth import normalize_username
     now = utc_now()
+    user_uuid = _uuid.uuid4().hex
     with get_connection() as conn:
         cur = conn.execute("""INSERT INTO users
-            (username, normalized_username, password_hash, role, created_at)
-            VALUES (?, ?, ?, ?, ?)""",
-            (username, normalize_username(username), password_hash, role, now))
+            (username, normalized_username, password_hash, role, created_at,
+             display_name, uuid)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (username, normalize_username(username), password_hash, role, now,
+             username, user_uuid))
         conn.commit()
         return get_user_by_id(cur.lastrowid)
 
@@ -162,9 +201,16 @@ def update_password_hash(user_id: int, password_hash: str) -> None:
         conn.execute("UPDATE users SET password_hash=? WHERE id=?", (password_hash, user_id))
         conn.commit()
 
+def update_display_name(user_id: int, display_name: str) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        conn.execute("UPDATE users SET display_name=? WHERE id=?", (display_name, user_id))
+        conn.commit()
+    return get_user_by_id(user_id)
+
 def list_users() -> List[Dict[str, Any]]:
     with get_connection() as conn:
-        rows = conn.execute("""SELECT u.id, u.username, u.role, u.active, u.created_at, u.last_login,
+        rows = conn.execute("""SELECT u.id, u.username, u.display_name, u.uuid,
+            u.role, u.active, u.created_at, u.last_login,
             (SELECT COUNT(*) FROM messages m WHERE m.user_id=u.id) AS message_count,
             (SELECT COALESCE(SUM(a.size), 0) FROM attachments a
              WHERE a.uploader_user_id=u.id) AS attachment_bytes
@@ -175,7 +221,7 @@ def list_users() -> List[Dict[str, Any]]:
 def list_mentionable_users() -> List[Dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, username FROM users WHERE active=1 ORDER BY normalized_username"
+            "SELECT id, username, display_name FROM users WHERE active=1 ORDER BY normalized_username"
         ).fetchall()
         return [dict(row) for row in rows]
 

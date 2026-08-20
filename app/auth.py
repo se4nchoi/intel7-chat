@@ -19,6 +19,19 @@ def validate_username(username: str) -> str:
         raise ValueError("아이디에는 문자, 숫자, ., _, -만 사용할 수 있습니다.")
     return display
 
+def validate_display_name(name: str) -> str:
+    """Validate and normalise a user-facing display name."""
+    display = unicodedata.normalize("NFKC", name).strip()
+    # Collapse internal whitespace runs
+    display = " ".join(display.split())
+    if not display:
+        raise ValueError("닉네임을 입력해 주세요.")
+    if len(display) > 30:
+        raise ValueError("닉네임은 30자 이하로 입력해 주세요.")
+    if any(unicodedata.category(ch).startswith("C") for ch in display):
+        raise ValueError("닉네임에 제어 문자를 포함할 수 없습니다.")
+    return display
+
 def validate_password(password: str) -> None:
     if len(password) < 5:
         raise ValueError("비밀번호는 5자 이상으로 입력해 주세요.")

@@ -237,10 +237,21 @@ button {
   font-size: 0.78rem;
   color: var(--text-muted);
   font-weight: 600;
-  max-width: 100px;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.my-nick-badge:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--surface3);
 }
 
 .conn-status {
@@ -1446,4 +1457,67 @@ kbd {
   .modal-box .admin-user-controls input[type="password"] { grid-column: 1 / -1; }
   .admin-inline { align-items: stretch; flex-direction: column; }
   .admin-inline label { align-self: flex-start; }
+}
+
+/* ============================================================
+   닉네임 변경 모달
+   ============================================================ */
+.nickname-panel {
+  max-width: 380px;
+  width: 100%;
+}
+.nickname-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.nickname-current {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  background: var(--surface2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.nickname-current small { color: var(--text-dim); font-size: .72rem; }
+.nickname-current strong { color: var(--text); font-size: 1rem; }
+.nickname-username {
+  color: var(--text-muted) !important;
+  font-size: .76rem !important;
+}
+#nickname-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#nickname-form input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: .9rem;
+  outline: none;
+  transition: border-color .15s;
+}
+#nickname-form input:focus {
+  border-color: var(--accent);
+}
+#nickname-form button {
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+#nickname-form button:hover {
+  background: var(--accent-dark);
+}
+#nickname-form button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
 }
