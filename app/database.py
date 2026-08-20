@@ -358,6 +358,36 @@ def channel_exists(channel_id: int) -> bool:
         row = conn.execute("SELECT 1 FROM channels WHERE id=?", (channel_id,)).fetchone()
         return bool(row)
 
+def update_channel(channel_id: int, name: Optional[str] = None,
+                   display_name: Optional[str] = None,
+                   description: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    from app.auth import validate_channel_description, validate_channel_display_name, validate_channel_name
+    current = get_channel_by_id(channel_id)
+    if not current:
+        return None
+    new_name = validate_channel_name(name) if name is not None else current["name"]
+    new_display = validate_channel_display_name(display_name) if display_name is not None else current["display_name"]
+    new_desc = validate_channel_description(description) if description is not None else current["description"]
+    with get_connection() as conn:
+        conn.execute("""UPDATE channels
+            SET name=?, display_name=?, description=?
+            WHERE id=?""",
+            (new_name, new_display, new_desc, channel_id))
+        conn.commit()
+    return get_channel_by_id(channel_id)
+
+def delete_channel(channel_id: int) -> bool:
+    current = get_channel_by_id(channel_id)
+    if not current:
+        return False
+    if current.get("is_default"):
+        raise ValueError("기본 채널은 삭제할 수 없습니다.")
+    with get_connection() as conn:
+        conn.execute("DELETE FROM messages WHERE channel_id=?", (channel_id,))
+        conn.execute("DELETE FROM channels WHERE id=?", (channel_id,))
+        conn.commit()
+    return True
+
 def _attachment_public(row: sqlite3.Row | Dict[str, Any] | None) -> Optional[Dict[str, Any]]:
     if not row:
         return None

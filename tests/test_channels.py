@@ -398,6 +398,7 @@ class TestWebSocketChannelRouting:
             error_msg = ws.receive_json()
             assert error_msg["type"] == "error"
             assert "채널을 찾을 수 없습니다" in error_msg["message"]
+
     def test_channel_creation_broadcasts_channel_created_over_websocket(self):
         client_alice, user_alice = session_client("alice")
         client_bob, user_bob = session_client("bob")
@@ -421,4 +422,123 @@ class TestWebSocketChannelRouting:
             assert created_event["type"] == "channel_created"
             assert created_event["channel"]["name"] == "study-algo"
             assert created_event["channel"]["display_name"] == "알고리즘 스터디"
+
+
+# ==========================================================================
+# 6. Admin Channel Management
+# ==========================================================================
+
+class TestAdminChannelManagement:
+    def test_admin_can_update_channel_metadata(self):
+        admin_client, admin_user = session_client("admin_user", role="admin")
+        chan = database.create_channel("old-slug", "이전 이름", "이전 설명")
+
+        resp = admin_client.patch(f"/api/channels/{chan['id']}", headers=ORIGIN, json={
+            "name": "new-slug",
+            "display_name": "수정된 이름",
+            "description": "수정된 설명"
+        })
+        assert resp.status_code == 200
+        updated = resp.json()
+        assert updated["name"] == "new-slug"
+        assert updated["display_name"] == "수정된 이름"
+        assert updated["description"] == "수정된 설명"
+
+        # Verify persisted in database
+        db_chan = database.get_channel_by_id(chan["id"])
+        assert db_chan["name"] == "new-slug"
+        assert db_chan["display_name"] == "수정된 이름"
+        assert db_chan["description"] == "수정된 설명"
+
+    def test_non_admin_cannot_update_channel(self):
+        student_client, student_user = session_client("student_user", role="student")
+        chan = database.create_channel("student-chan", "학생 채널")
+
+        resp = student_client.patch(f"/api/channels/{chan['id']}", headers=ORIGIN, json={
+            "display_name": "해킹 시도"
+        })
+        assert resp.status_code == 403
+        assert "관리자 권한" in resp.json()["detail"]
+
+    def test_update_channel_duplicate_name_rejected(self):
+        admin_client, admin_user = session_client("admin_user", role="admin")
+        database.create_channel("existing-chan", "기존 채널")
+        chan2 = database.create_channel("second-chan", "두번째 채널")
+
+        resp = admin_client.patch(f"/api/channels/{chan2['id']}", headers=ORIGIN, json={
+            "name": "existing-chan"
+        })
+        assert resp.status_code == 409
+        assert "이미 존재하는 채널 이름" in resp.json()["detail"]
+
+    def test_update_channel_broadcasts_channel_updated_event(self):
+        admin_client, admin_user = session_client("admin_user", role="admin")
+        student_client, student_user = session_client("student_user")
+        chan = database.create_channel("project-alpha", "프로젝트 알파")
+
+        with student_client.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                msg = ws.receive_json()
+                if msg.get("type") == "history_ready":
+                    break
+
+            resp = admin_client.patch(f"/api/channels/{chan['id']}", headers=ORIGIN, json={
+                "display_name": "프로젝트 베타",
+                "description": "설명 추가됨"
+            })
+            assert resp.status_code == 200
+
+            event = ws.receive_json()
+            assert event["type"] == "channel_updated"
+            assert event["channel"]["id"] == chan["id"]
+            assert event["channel"]["display_name"] == "프로젝트 베타"
+            assert event["channel"]["description"] == "설명 추가됨"
+
+    def test_admin_can_delete_non_default_channel(self):
+        admin_client, admin_user = session_client("admin_user", role="admin")
+        chan = database.create_channel("to-delete", "삭제할 채널")
+        database.save_message("admin_user", "메시지", user_id=admin_user["id"], channel_id=chan["id"])
+
+        resp = admin_client.delete(f"/api/channels/{chan['id']}", headers=ORIGIN)
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+        # Verify channel no longer exists
+        assert database.get_channel_by_id(chan["id"]) is None
+        # Verify messages in that channel were cleaned up
+        with database.get_connection() as conn:
+            cnt = conn.execute("SELECT COUNT(*) FROM messages WHERE channel_id=?", (chan["id"],)).fetchone()[0]
+        assert cnt == 0
+
+    def test_cannot_delete_default_general_channel(self):
+        admin_client, admin_user = session_client("admin_user", role="admin")
+        resp = admin_client.delete("/api/channels/1", headers=ORIGIN)
+        assert resp.status_code == 400
+        assert "기본 채널은 삭제할 수 없습니다" in resp.json()["detail"]
+
+    def test_non_admin_cannot_delete_channel(self):
+        student_client, student_user = session_client("student_user", role="student")
+        chan = database.create_channel("student-room", "학생 방")
+        resp = student_client.delete(f"/api/channels/{chan['id']}", headers=ORIGIN)
+        assert resp.status_code == 403
+        assert "관리자 권한" in resp.json()["detail"]
+
+    def test_delete_channel_broadcasts_channel_deleted_over_websocket(self):
+        admin_client, admin_user = session_client("admin_user", role="admin")
+        student_client, student_user = session_client("student_user")
+        chan = database.create_channel("temp-room", "임시 방")
+
+        with student_client.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                msg = ws.receive_json()
+                if msg.get("type") == "history_ready":
+                    break
+
+            resp = admin_client.delete(f"/api/channels/{chan['id']}", headers=ORIGIN)
+            assert resp.status_code == 200
+
+            event = ws.receive_json()
+            assert event["type"] == "channel_deleted"
+            assert event["channel_id"] == chan["id"]
+
 

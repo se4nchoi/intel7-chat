@@ -50,6 +50,17 @@ const channelNameInput = document.getElementById('channel-name-input');
 const channelDescInput = document.getElementById('channel-desc-input');
 const channelError = document.getElementById('channel-error');
 const channelSubmit = document.getElementById('channel-submit');
+const channelSettingsBtn = document.getElementById('channel-settings-btn');
+const channelEditModal = document.getElementById('channel-edit-modal');
+const channelEditModalClose = document.getElementById('channel-edit-modal-close');
+const channelEditForm = document.getElementById('channel-edit-form');
+const channelEditId = document.getElementById('channel-edit-id');
+const channelEditDisplayInput = document.getElementById('channel-edit-display-input');
+const channelEditNameInput = document.getElementById('channel-edit-name-input');
+const channelEditDescInput = document.getElementById('channel-edit-desc-input');
+const channelEditError = document.getElementById('channel-edit-error');
+const channelEditSubmit = document.getElementById('channel-edit-submit');
+const channelDeleteBtn = document.getElementById('channel-delete-btn');
 const onlineListEl = document.getElementById('online-list');
 const onlineCountEl = document.getElementById('online-count');
 const userCountEl = document.getElementById('user-count');
@@ -350,6 +361,8 @@ async function logout() {
   helpModal.classList.add('hidden');
   nicknameModal.classList.add('hidden');
   if (channelModal) channelModal.classList.add('hidden');
+  if (channelEditModal) channelEditModal.classList.add('hidden');
+  if (channelSettingsBtn) channelSettingsBtn.classList.add('hidden');
   channelsDirectory.clear();
   messageListEl.replaceChildren();
   setConnected(false);
@@ -725,6 +738,122 @@ if (channelForm) {
   });
 }
 
+function openChannelEditModal(chan) {
+  if (!chan || !channelEditModal) return;
+  channelEditId.value = String(chan.id);
+  channelEditDisplayInput.value = chan.display_name || '';
+  channelEditNameInput.value = chan.name || '';
+  channelEditDescInput.value = chan.description || '';
+  channelEditError.textContent = '';
+  channelEditSubmit.disabled = false;
+  if (channelDeleteBtn) {
+    channelDeleteBtn.classList.toggle('hidden', Boolean(chan.is_default) || Number(chan.id) === 1);
+    channelDeleteBtn.disabled = false;
+  }
+  channelEditModal.classList.remove('hidden');
+  channelEditDisplayInput.focus();
+}
+
+function closeChannelEditModal() {
+  if (channelEditModal) channelEditModal.classList.add('hidden');
+}
+
+function updateChannelData(chan) {
+  if (!chan) return;
+  channelsDirectory.set(chan.id, chan);
+  const convId = 'channel:' + chan.id;
+  const conv = conversations.get(convId);
+  if (conv) {
+    conv.name = chan.name;
+    conv.displayName = chan.display_name;
+    conv.description = chan.description;
+  }
+  if (activeConvId === convId) {
+    chatAreaTitle.textContent = `# ${chan.display_name}`;
+    if (chatAreaDesc) chatAreaDesc.textContent = chan.description || '';
+    msgInput.placeholder = `# ${chan.display_name}에 메시지 입력`;
+  }
+  renderConversationList();
+}
+
+function removeChannelData(chanId) {
+  channelsDirectory.delete(chanId);
+  const convId = 'channel:' + chanId;
+  conversations.delete(convId);
+  if (activeConvId === convId) {
+    switchConversation(GLOBAL_ID);
+  }
+  renderConversationList();
+}
+
+if (channelSettingsBtn) {
+  channelSettingsBtn.addEventListener('click', () => {
+    const conv = conversations.get(activeConvId);
+    if (!conv || conv.type !== 'channel') return;
+    const chan = channelsDirectory.get(conv.channelId);
+    if (chan) openChannelEditModal(chan);
+  });
+}
+if (channelEditModalClose) channelEditModalClose.addEventListener('click', closeChannelEditModal);
+if (channelEditModal) {
+  channelEditModal.addEventListener('click', event => {
+    if (event.target === channelEditModal) closeChannelEditModal();
+  });
+}
+if (channelDeleteBtn) {
+  channelDeleteBtn.addEventListener('click', async () => {
+    const chanId = Number(channelEditId.value);
+    if (!chanId || chanId === 1) return;
+    const chan = channelsDirectory.get(chanId);
+    const displayName = chan?.display_name || `채널 ${chanId}`;
+    if (!confirm(`'# ${displayName}' 채널을 정말로 삭제하시겠습니까?\n채널 내 모든 메시지가 함께 삭제됩니다.`)) {
+      return;
+    }
+    channelDeleteBtn.disabled = true;
+    channelEditSubmit.disabled = true;
+    try {
+      const response = await fetch(`/api/channels/${chanId}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || '채널을 삭제하지 못했습니다.');
+      removeChannelData(chanId);
+      closeChannelEditModal();
+      showToast(`#${displayName} 채널이 삭제되었습니다.`, 'info');
+    } catch (err) {
+      channelEditError.textContent = err.message || '채널을 삭제하지 못했습니다.';
+    } finally {
+      channelDeleteBtn.disabled = false;
+      channelEditSubmit.disabled = false;
+    }
+  });
+}
+if (channelEditForm) {
+  channelEditForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    channelEditError.textContent = '';
+    channelEditSubmit.disabled = true;
+    const chanId = Number(channelEditId.value);
+    const name = channelEditNameInput.value.trim();
+    const displayName = channelEditDisplayInput.value.trim();
+    const description = channelEditDescInput.value.trim();
+    try {
+      const response = await fetch(`/api/channels/${chanId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, display_name: displayName, description }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || '채널 정보를 수정하지 못했습니다.');
+      updateChannelData(data);
+      closeChannelEditModal();
+      showToast(`#${data.display_name} 채널 정보가 수정되었습니다.`, 'success');
+    } catch (err) {
+      channelEditError.textContent = err.message || '채널 정보를 수정하지 못했습니다.';
+    } finally {
+      channelEditSubmit.disabled = false;
+    }
+  });
+}
+
 const COLLAPSED_SECTIONS_KEY = 'bamboochat_collapsed_sections';
 
 function loadCollapsedSections() {
@@ -846,6 +975,10 @@ function switchConversation(id) {
   closeMentionMenu();
   const conv = conversations.get(id);
   conv.unread = 0;
+  const isAdmin = currentUser && currentUser.role === 'admin';
+  if (channelSettingsBtn) {
+    channelSettingsBtn.classList.toggle('hidden', !(conv.type === 'channel' && isAdmin));
+  }
   if (conv.type === 'channel') {
     const displayName = conv.displayName || conv.name;
     chatAreaTitle.textContent = `# ${displayName}`;
@@ -2188,6 +2321,21 @@ function initWebSocket() {
           renderConversationList();
           showToast(`'# ${data.channel.display_name}' 채널이 생성되었습니다.`, 'info');
         }
+        break;
+      }
+      case 'channel_updated': {
+        if (data.channel) {
+          updateChannelData(data.channel);
+          showToast(`'# ${data.channel.display_name}' 채널 정보가 수정되었습니다.`, 'info');
+        }
+        break;
+      }
+      case 'channel_deleted': {
+        const chanId = Number(data.channel_id);
+        const chan = channelsDirectory.get(chanId);
+        const displayName = chan?.display_name || `채널 ${chanId}`;
+        removeChannelData(chanId);
+        showToast(`'# ${displayName}' 채널이 삭제되었습니다.`, 'info');
         break;
       }
       case 'chat': {
