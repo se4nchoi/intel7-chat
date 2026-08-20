@@ -995,6 +995,7 @@ async function saveEditedMessage(messageId, newContent) {
 function enterInlineEditMode(row, msg) {
   const bubble = row.querySelector('.msg-bubble');
   if (!bubble || bubble.querySelector('.inline-edit-box')) return;
+  row.classList.add('is-editing');
   const originalContent = msg.content || '';
   const editBox = document.createElement('div');
   editBox.className = 'inline-edit-box';
@@ -1003,8 +1004,22 @@ function enterInlineEditMode(row, msg) {
   textarea.value = originalContent;
   textarea.maxLength = 1000;
   
+  const adjustHeight = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(280, Math.max(80, textarea.scrollHeight + 4)) + 'px';
+  };
+  textarea.addEventListener('input', adjustHeight);
+
   const actionsBox = document.createElement('div');
   actionsBox.className = 'inline-edit-actions';
+
+  const hint = document.createElement('span');
+  hint.className = 'inline-edit-hint';
+  hint.textContent = 'Enter: 저장 · Shift+Enter: 줄바꿈 · Esc: 취소';
+
+  const btnGroup = document.createElement('div');
+  btnGroup.className = 'inline-edit-btn-group';
+
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.className = 'inline-edit-save';
@@ -1015,6 +1030,7 @@ function enterInlineEditMode(row, msg) {
   cancelBtn.textContent = '취소';
 
   const exitEdit = () => {
+    row.classList.remove('is-editing');
     renderMessages();
   };
 
@@ -1030,7 +1046,11 @@ function enterInlineEditMode(row, msg) {
     }
     saveBtn.disabled = true;
     const ok = await saveEditedMessage(msg.message_id, newText);
-    if (!ok) saveBtn.disabled = false;
+    if (!ok) {
+      saveBtn.disabled = false;
+    } else {
+      row.classList.remove('is-editing');
+    }
   });
 
   cancelBtn.addEventListener('click', exitEdit);
@@ -1044,10 +1064,12 @@ function enterInlineEditMode(row, msg) {
     }
   });
 
-  actionsBox.append(cancelBtn, saveBtn);
+  btnGroup.append(cancelBtn, saveBtn);
+  actionsBox.append(hint, btnGroup);
   editBox.append(textarea, actionsBox);
 
   bubble.replaceChildren(editBox);
+  adjustHeight();
   textarea.focus();
   textarea.setSelectionRange(textarea.value.length, textarea.value.length);
 }
