@@ -1201,7 +1201,11 @@ function appendMessageNode(msg, previousMsg = null) {
     meta.className = 'msg-meta';
     const nick = document.createElement('span');
     nick.className = 'nick';
-    nick.textContent = displayNickname(msg.nickname);
+    const displayName = displayNickname(msg.nickname);
+    nick.textContent = displayName;
+    nick.title = displayName !== msg.nickname
+      ? `${displayName} (@${msg.nickname})`
+      : `@${msg.nickname}`;
     const time = document.createElement('time');
     time.dateTime = msg.created_at || '';
     time.textContent = formatTime(msg.created_at);
@@ -1210,9 +1214,12 @@ function appendMessageNode(msg, previousMsg = null) {
   } else if (!isChat && !grouped) {
     const label = document.createElement('div');
     label.className = 'dm-label';
-    label.textContent = isOwn
-      ? `${displayNickname(msg.to_nick)}`
-      : `${displayNickname(msg.from_nick)}`;
+    const partnerNick = isOwn ? msg.to_nick : msg.from_nick;
+    const displayName = displayNickname(partnerNick);
+    label.textContent = displayName;
+    label.title = displayName !== partnerNick
+      ? `${displayName} (@${partnerNick})`
+      : `@${partnerNick}`;
     const time = document.createElement('time');
     time.className = 'dm-time';
     time.dateTime = msg.created_at || '';

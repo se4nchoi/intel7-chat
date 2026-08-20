@@ -166,9 +166,14 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     for index, migrate in enumerate(_MIGRATIONS, start=1):
         if index <= current:
             continue
-        migrate(conn)
-        _set_schema_version(conn, index)
-        conn.commit()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            migrate(conn)
+            _set_schema_version(conn, index)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 def create_user(username: str, password_hash: str, role: str = "student") -> Dict[str, Any]:
     from app.auth import normalize_username
