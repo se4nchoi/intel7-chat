@@ -70,15 +70,62 @@
       </div>
     </header>
     <div class="app-body">
-      <aside id="sidebar" class="sidebar" aria-label="대화와 접속자">
-        <div class="sidebar-section sidebar-convs"><div class="sidebar-section-title">💬 대화</div><ul id="conv-list" class="conv-list"></ul></div>
+      <aside id="sidebar" class="sidebar" aria-label="대화와 채널">
+        <div class="sidebar-section sidebar-channels" data-section="channels">
+          <div class="sidebar-section-header">
+            <button class="section-toggle-btn" type="button" aria-expanded="true" aria-controls="channel-list">
+              <span class="section-toggle-icon">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+                  <path d="M2 3.5L5 6.5L8 3.5H2Z"/>
+                </svg>
+              </span>
+              <span class="sidebar-section-title">채널</span>
+            </button>
+            <button id="create-channel-btn" class="icon-btn create-channel-btn" type="button" title="새 채널 만들기" aria-label="새 채널 만들기">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <ul id="channel-list" class="channel-list"></ul>
+        </div>
         <div class="sidebar-divider"></div>
-        <div class="sidebar-section sidebar-online"><div class="sidebar-section-title">👥 접속 <span id="online-count">0</span>/<span id="user-count">0</span> 명</div><ul id="online-list" class="online-list"></ul></div>
+        <div class="sidebar-section sidebar-dms" data-section="dms">
+          <div class="sidebar-section-header">
+            <button class="section-toggle-btn" type="button" aria-expanded="true" aria-controls="dm-list">
+              <span class="section-toggle-icon">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+                  <path d="M2 3.5L5 6.5L8 3.5H2Z"/>
+                </svg>
+              </span>
+              <span class="sidebar-section-title">1:1 대화</span>
+            </button>
+          </div>
+          <ul id="dm-list" class="dm-list"></ul>
+        </div>
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-section sidebar-online" data-section="online">
+          <div class="sidebar-section-header">
+            <button class="section-toggle-btn" type="button" aria-expanded="true" aria-controls="online-list">
+              <span class="section-toggle-icon">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+                  <path d="M2 3.5L5 6.5L8 3.5H2Z"/>
+                </svg>
+              </span>
+              <span class="sidebar-section-title">접속자 <span id="online-count">0</span>/<span id="user-count">0</span></span>
+            </button>
+          </div>
+          <ul id="online-list" class="online-list"></ul>
+        </div>
       </aside>
       <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
       <section class="chat-area" aria-labelledby="chat-area-title">
         <div class="chat-area-header">
-          <span id="chat-area-title" class="chat-area-title">전체 채팅</span>
+          <div class="chat-header-main">
+            <span id="chat-area-title" class="chat-area-title">전체 채팅</span>
+            <button id="channel-settings-btn" class="icon-btn channel-settings-btn hidden" type="button" title="채널 정보 수정" aria-label="채널 정보 수정">⚙️</button>
+            <span id="chat-area-desc" class="chat-area-desc"></span>
+          </div>
           <span id="retention-note" class="retention-note">⚠️ HTTP LAN · 암호화되지 않음 · 민감정보 공유 금지</span>
         </div>
         <button id="load-older-btn" class="load-older-btn hidden" type="button">↑ 이전 메시지 더 불러오기</button>
@@ -184,6 +231,62 @@
           <button id="nickname-submit" type="submit">변경</button>
         </form>
       </div>
+    </div>
+  </div>
+
+  <div id="channel-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="channel-modal-title">
+    <div class="modal-box channel-panel">
+      <div class="admin-panel-header">
+        <div>
+          <h2 id="channel-modal-title">새 채널 만들기</h2>
+          <p class="modal-desc">주제별 대화 공간을 만듭니다.</p>
+        </div>
+        <button id="channel-modal-close" class="admin-close" type="button" aria-label="닫기">×</button>
+      </div>
+      <form id="channel-form" class="channel-form">
+        <label for="channel-display-input">채널 표시 이름</label>
+        <input id="channel-display-input" type="text" maxlength="30" placeholder="예: 과제 질문방" autocomplete="off" required />
+        
+        <label for="channel-name-input">채널 식별자 (영문/숫자/슬러그)</label>
+        <input id="channel-name-input" type="text" maxlength="30" placeholder="예: homework-qna" autocomplete="off" required />
+        <small class="field-hint">영문, 숫자, 한글, -, _, . (2~30자, 공백 불가)</small>
+        
+        <label for="channel-desc-input">채널 설명 (선택)</label>
+        <input id="channel-desc-input" type="text" maxlength="200" placeholder="채널 목적이나 규칙을 간단히 적어주세요" autocomplete="off" />
+        
+        <p id="channel-error" class="error-msg" aria-live="polite"></p>
+        <button id="channel-submit" type="submit">채널 만들기</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="channel-edit-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="channel-edit-modal-title">
+    <div class="modal-box channel-panel">
+      <div class="admin-panel-header">
+        <div>
+          <h2 id="channel-edit-modal-title">채널 정보 수정</h2>
+          <p class="modal-desc">관리자 권한으로 채널 정보를 변경합니다.</p>
+        </div>
+        <button id="channel-edit-modal-close" class="admin-close" type="button" aria-label="닫기">×</button>
+      </div>
+      <form id="channel-edit-form" class="channel-form">
+        <input id="channel-edit-id" type="hidden" />
+        <label for="channel-edit-display-input">채널 표시 이름</label>
+        <input id="channel-edit-display-input" type="text" maxlength="30" placeholder="예: 과제 질문방" autocomplete="off" required />
+        
+        <label for="channel-edit-name-input">채널 식별자 (영문/숫자/슬러그)</label>
+        <input id="channel-edit-name-input" type="text" maxlength="30" placeholder="예: homework-qna" autocomplete="off" required />
+        <small class="field-hint">영문, 숫자, 한글, -, _, . (2~30자, 공백 불가)</small>
+        
+        <label for="channel-edit-desc-input">채널 설명 (선택)</label>
+        <input id="channel-edit-desc-input" type="text" maxlength="200" placeholder="채널 목적이나 규칙을 간단히 적어주세요" autocomplete="off" />
+        
+        <p id="channel-edit-error" class="error-msg" aria-live="polite"></p>
+        <div class="channel-edit-actions">
+          <button id="channel-edit-submit" type="submit">변경사항 저장</button>
+          <button id="channel-delete-btn" class="danger-btn" type="button">채널 삭제</button>
+        </div>
+      </form>
     </div>
   </div>
 

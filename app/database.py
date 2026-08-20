@@ -157,8 +157,32 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE users SET uuid = ? WHERE id = ?", (_uuid.uuid4().hex, row[0]))
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_uuid ON users(uuid)")
 
+def _migrate_v2(conn: sqlite3.Connection) -> None:
+    """Create channels table, seed default permanent general channel, and add channel_id to messages."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS channels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        uuid TEXT NOT NULL UNIQUE,
+        created_by_user_id INTEGER,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(created_by_user_id) REFERENCES users(id)
+    )""")
+    now = utc_now()
+    default_uuid = _uuid.uuid4().hex
+    conn.execute("""INSERT OR IGNORE INTO channels
+        (id, name, display_name, description, uuid, is_default, created_at)
+        VALUES (1, 'general', '전체 채팅', '기본 전체 공개 대화방', ?, 1, ?)""",
+        (default_uuid, now))
+    _add_column_if_missing(conn, "messages", "channel_id", "INTEGER NOT NULL DEFAULT 1")
+    conn.execute("UPDATE messages SET channel_id = 1 WHERE channel_id IS NULL OR channel_id = 0")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_channel_created ON messages(channel_id, id)")
+
 _MIGRATIONS = [
     _migrate_v1,
+    _migrate_v2,
 ]
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -281,6 +305,89 @@ def prune_expired_sessions() -> int:
         conn.commit()
         return cur.rowcount
 
+def create_channel(name: str, display_name: str, description: str = "",
+                   created_by_user_id: Optional[int] = None) -> Dict[str, Any]:
+    from app.auth import validate_channel_description, validate_channel_display_name, validate_channel_name
+    clean_name = validate_channel_name(name)
+    clean_display = validate_channel_display_name(display_name)
+    clean_desc = validate_channel_description(description)
+    now = utc_now()
+    chan_uuid = _uuid.uuid4().hex
+    with get_connection() as conn:
+        cur = conn.execute("""INSERT INTO channels
+            (name, display_name, description, uuid, created_by_user_id, is_default, created_at)
+            VALUES (?, ?, ?, ?, ?, 0, ?)""",
+            (clean_name, clean_display, clean_desc, chan_uuid, created_by_user_id, now))
+        conn.commit()
+        return get_channel_by_id(cur.lastrowid)
+
+def get_channel_by_id(channel_id: int) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM channels WHERE id=?", (channel_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["is_default"] = bool(d.get("is_default"))
+    return d
+
+def get_channel_by_name(name: str) -> Optional[Dict[str, Any]]:
+    clean_name = name.strip().casefold()
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM channels WHERE name=?", (clean_name,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["is_default"] = bool(d.get("is_default"))
+    return d
+
+def list_channels() -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute("""SELECT c.*,
+            (SELECT COUNT(*) FROM messages m WHERE m.channel_id=c.id) AS message_count
+            FROM channels c
+            ORDER BY c.is_default DESC, c.id ASC""").fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["is_default"] = bool(d.get("is_default"))
+            result.append(d)
+        return result
+
+def channel_exists(channel_id: int) -> bool:
+    with get_connection() as conn:
+        row = conn.execute("SELECT 1 FROM channels WHERE id=?", (channel_id,)).fetchone()
+        return bool(row)
+
+def update_channel(channel_id: int, name: Optional[str] = None,
+                   display_name: Optional[str] = None,
+                   description: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    from app.auth import validate_channel_description, validate_channel_display_name, validate_channel_name
+    current = get_channel_by_id(channel_id)
+    if not current:
+        return None
+    new_name = validate_channel_name(name) if name is not None else current["name"]
+    new_display = validate_channel_display_name(display_name) if display_name is not None else current["display_name"]
+    new_desc = validate_channel_description(description) if description is not None else current["description"]
+    with get_connection() as conn:
+        conn.execute("""UPDATE channels
+            SET name=?, display_name=?, description=?
+            WHERE id=?""",
+            (new_name, new_display, new_desc, channel_id))
+        conn.commit()
+    return get_channel_by_id(channel_id)
+
+def delete_channel(channel_id: int) -> bool:
+    current = get_channel_by_id(channel_id)
+    if not current:
+        return False
+    if current.get("is_default"):
+        raise ValueError("기본 채널은 삭제할 수 없습니다.")
+    with get_connection() as conn:
+        conn.execute("DELETE FROM messages WHERE channel_id=?", (channel_id,))
+        conn.execute("DELETE FROM channels WHERE id=?", (channel_id,))
+        conn.commit()
+    return True
+
 def _attachment_public(row: sqlite3.Row | Dict[str, Any] | None) -> Optional[Dict[str, Any]]:
     if not row:
         return None
@@ -316,22 +423,24 @@ def _message_public(row: sqlite3.Row, attachments: List[Dict[str, Any]]) -> Dict
     if row["reply_nickname"] or row["reply_content"]:
         reply = {"nickname": row["reply_nickname"] or "", "content": row["reply_content"] or ""}
     live = next((item for item in attachments if not item.get("removed")), None)
+    channel_id = row["channel_id"] if "channel_id" in row.keys() else 1
     return {"message_id": f"public:{row['id']}", "nickname": row["nickname"],
-            "author_id": row["user_id"], "content": row["content"],
+            "author_id": row["user_id"], "channel_id": channel_id, "content": row["content"],
             "created_at": row["created_at"], "reply": reply, "attachment": live,
             "attachments": attachments, "attachment_removed": bool(attachments and not live)}
 
 def save_message(nickname: str, content: str, ip: str = "", reply: Optional[Dict[str,str]] = None,
                  attachment_id: Optional[str] = None, attachment_ids: Optional[List[str]] = None,
-                 user_id: Optional[int] = None) -> Dict[str, Any]:
+                 user_id: Optional[int] = None, channel_id: int = 1) -> Dict[str, Any]:
     selected = list(dict.fromkeys(attachment_ids or ([] if not attachment_id else [attachment_id])))
     now = utc_now()
     with get_connection() as conn:
         cur = conn.execute("""INSERT INTO messages
-            (nickname,content,created_at,ip,reply_nickname,reply_content,attachment_id,user_id)
-            VALUES(?,?,?,?,?,?,?,?)""",
+            (nickname,content,created_at,ip,reply_nickname,reply_content,attachment_id,user_id,channel_id)
+            VALUES(?,?,?,?,?,?,?,?,?)""",
             (nickname, content, now, ip, reply.get("nickname","") if reply else None,
-             reply.get("content","") if reply else None, selected[0] if selected else None, user_id))
+             reply.get("content","") if reply else None, selected[0] if selected else None,
+             user_id, channel_id))
         message_id = cur.lastrowid
         if selected:
             marks = ",".join("?" for _ in selected)
@@ -347,16 +456,17 @@ def save_message(nickname: str, content: str, ip: str = "", reply: Optional[Dict
     result["ip"] = ip
     return result
 
-def get_recent_messages(limit: int = 100, before_id: Optional[int] = None) -> List[Dict[str, Any]]:
+def get_recent_messages(limit: int = 100, before_id: Optional[int] = None,
+                        channel_id: int = 1) -> List[Dict[str, Any]]:
     with get_connection() as conn:
         if before_id is None:
             rows = conn.execute("""SELECT * FROM
-                (SELECT * FROM messages ORDER BY id DESC LIMIT ?) ORDER BY id ASC""",
-                (limit,)).fetchall()
+                (SELECT * FROM messages WHERE channel_id=? ORDER BY id DESC LIMIT ?) ORDER BY id ASC""",
+                (channel_id, limit)).fetchall()
         else:
             rows = conn.execute("""SELECT * FROM
-                (SELECT * FROM messages WHERE id<? ORDER BY id DESC LIMIT ?)
-                ORDER BY id ASC""", (before_id, limit)).fetchall()
+                (SELECT * FROM messages WHERE channel_id=? AND id<? ORDER BY id DESC LIMIT ?)
+                ORDER BY id ASC""", (channel_id, before_id, limit)).fetchall()
         items = _message_attachments(conn, [row["id"] for row in rows])
     return [_message_public(row, items[row["id"]]) for row in rows]
 

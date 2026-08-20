@@ -6,7 +6,7 @@
 const DRAFTS_PREFIX = 'bamboochat_drafts_';
 const SAVED_USERNAME_KEY = 'bamboochat_saved_username';
 const RECONNECT_DELAY = 3000;
-const GLOBAL_ID = 'global';
+const GLOBAL_ID = 'channel:1';
 
 const authModal = document.getElementById('auth-modal');
 const authForm = document.getElementById('auth-form');
@@ -39,6 +39,28 @@ const sidebarToggle = document.getElementById('sidebar-toggle');
 const sidebar = document.getElementById('sidebar');
 const sidebarBackdrop = document.getElementById('sidebar-backdrop');
 const convListEl = document.getElementById('conv-list');
+const channelListEl = document.getElementById('channel-list');
+const dmListEl = document.getElementById('dm-list');
+const createChannelBtn = document.getElementById('create-channel-btn');
+const channelModal = document.getElementById('channel-modal');
+const channelModalClose = document.getElementById('channel-modal-close');
+const channelForm = document.getElementById('channel-form');
+const channelDisplayInput = document.getElementById('channel-display-input');
+const channelNameInput = document.getElementById('channel-name-input');
+const channelDescInput = document.getElementById('channel-desc-input');
+const channelError = document.getElementById('channel-error');
+const channelSubmit = document.getElementById('channel-submit');
+const channelSettingsBtn = document.getElementById('channel-settings-btn');
+const channelEditModal = document.getElementById('channel-edit-modal');
+const channelEditModalClose = document.getElementById('channel-edit-modal-close');
+const channelEditForm = document.getElementById('channel-edit-form');
+const channelEditId = document.getElementById('channel-edit-id');
+const channelEditDisplayInput = document.getElementById('channel-edit-display-input');
+const channelEditNameInput = document.getElementById('channel-edit-name-input');
+const channelEditDescInput = document.getElementById('channel-edit-desc-input');
+const channelEditError = document.getElementById('channel-edit-error');
+const channelEditSubmit = document.getElementById('channel-edit-submit');
+const channelDeleteBtn = document.getElementById('channel-delete-btn');
 const onlineListEl = document.getElementById('online-list');
 const onlineCountEl = document.getElementById('online-count');
 const userCountEl = document.getElementById('user-count');
@@ -51,6 +73,7 @@ const sendBtn = document.getElementById('send-btn');
 const attachBtn = document.getElementById('attach-btn');
 const fileInput = document.getElementById('file-input');
 const chatAreaTitle = document.getElementById('chat-area-title');
+const chatAreaDesc = document.getElementById('chat-area-desc');
 const retentionNote = document.getElementById('retention-note');
 const connStatus = document.getElementById('conn-status');
 const myNickBadge = document.getElementById('my-nick-badge');
@@ -80,6 +103,7 @@ const MAX_FILES = Number(fileInput.dataset.maxFiles || 5);
 const MAX_PARALLEL_UPLOADS = 2;
 
 const conversations = new Map();
+const channelsDirectory = new Map();
 const replyTargets = new Map();
 const pendingAttachments = new Map();
 const userDirectory = new Map();
@@ -119,12 +143,65 @@ function persistDrafts() {
   try { localStorage.setItem(draftsKey(), JSON.stringify(drafts)); } catch { /* storage unavailable */ }
 }
 
+function getOrCreateChannel(chan) {
+  const convId = 'channel:' + chan.id;
+  if (!conversations.has(convId)) {
+    conversations.set(convId, {
+      id: convId,
+      type: 'channel',
+      channelId: Number(chan.id),
+      name: chan.name,
+      displayName: chan.display_name,
+      description: chan.description || '',
+      isDefault: Boolean(chan.is_default),
+      messages: [],
+      messageIds: new Set(),
+      unread: 0,
+      hasOlder: false,
+      loadingOlder: false,
+      loaded: Number(chan.id) === 1,
+    });
+  } else {
+    const conv = conversations.get(convId);
+    conv.displayName = chan.display_name;
+    conv.description = chan.description || '';
+    conv.name = chan.name;
+    conv.isDefault = Boolean(chan.is_default);
+  }
+  return conversations.get(convId);
+}
+
 function initConversations() {
   conversations.clear();
-  conversations.set(GLOBAL_ID, {
-    id: GLOBAL_ID, name: '전체 채팅', type: 'global',
-    messages: [], messageIds: new Set(), unread: 0, hasOlder: false, loadingOlder: false,
-  });
+  channelsDirectory.clear();
+  const defaultChan = { id: 1, name: 'general', display_name: '전체 채팅', description: '기본 전체 공개 대화방', is_default: true };
+  channelsDirectory.set(1, defaultChan);
+  getOrCreateChannel(defaultChan);
+  activeConvId = GLOBAL_ID;
+}
+
+async function loadChannels() {
+  if (!currentUser) return;
+  try {
+    const response = await fetch('/api/channels', { cache: 'no-store' });
+    if (!response.ok) return;
+    const channels = await response.json();
+    if (Array.isArray(channels)) {
+      channels.forEach(chan => {
+        channelsDirectory.set(chan.id, chan);
+        getOrCreateChannel(chan);
+      });
+      renderConversationList();
+      const activeConv = conversations.get(activeConvId);
+      if (activeConv && activeConv.type === 'channel') {
+        const chanObj = channelsDirectory.get(activeConv.channelId);
+        if (chanObj) {
+          chatAreaTitle.textContent = `# ${chanObj.display_name}`;
+          if (chatAreaDesc) chatAreaDesc.textContent = chanObj.description || '';
+        }
+      }
+    }
+  } catch { /* advisory */ }
 }
 
 function displayNickname(nick) {
@@ -211,6 +288,7 @@ async function enterChat(user) {
   hideAuthModal();
   initConversations();
   chatApp.classList.remove('hidden');
+  await loadChannels();
   switchConversation(GLOBAL_ID);
   initWebSocket();
   refreshStorageWarning();
@@ -282,6 +360,10 @@ async function logout() {
   adminModal.classList.add('hidden');
   helpModal.classList.add('hidden');
   nicknameModal.classList.add('hidden');
+  if (channelModal) channelModal.classList.add('hidden');
+  if (channelEditModal) channelEditModal.classList.add('hidden');
+  if (channelSettingsBtn) channelSettingsBtn.classList.add('hidden');
+  channelsDirectory.clear();
   messageListEl.replaceChildren();
   setConnected(false);
   setAuthMode('login');
@@ -585,6 +667,237 @@ adminEnrollmentSave.addEventListener('click', async () => {
   }
 });
 
+function openChannelModal() {
+  channelForm.reset();
+  delete channelNameInput.dataset.manualEdit;
+  channelError.textContent = '';
+  channelSubmit.disabled = false;
+  channelModal.classList.remove('hidden');
+  channelDisplayInput.focus();
+}
+
+function closeChannelModal() {
+  channelModal.classList.add('hidden');
+}
+
+function slugify(text) {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9\u3131-\u3163\uac00-\ud7a3._-]/g, '')
+    .slice(0, 30);
+}
+
+if (createChannelBtn) createChannelBtn.addEventListener('click', openChannelModal);
+if (channelModalClose) channelModalClose.addEventListener('click', closeChannelModal);
+if (channelModal) {
+  channelModal.addEventListener('click', event => {
+    if (event.target === channelModal) closeChannelModal();
+  });
+}
+if (channelDisplayInput) {
+  channelDisplayInput.addEventListener('input', () => {
+    if (!channelNameInput.dataset.manualEdit) {
+      channelNameInput.value = slugify(channelDisplayInput.value);
+    }
+  });
+}
+if (channelNameInput) {
+  channelNameInput.addEventListener('input', () => {
+    channelNameInput.dataset.manualEdit = channelNameInput.value ? 'true' : '';
+  });
+}
+if (channelForm) {
+  channelForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    channelError.textContent = '';
+    channelSubmit.disabled = true;
+    const name = channelNameInput.value.trim();
+    const displayName = channelDisplayInput.value.trim();
+    const description = channelDescInput.value.trim();
+    try {
+      const response = await fetch('/api/channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, display_name: displayName, description }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || '채널을 만들지 못했습니다.');
+      channelsDirectory.set(data.id, data);
+      const conv = getOrCreateChannel(data);
+      closeChannelModal();
+      renderConversationList();
+      switchConversation(conv.id);
+      showToast(`#${data.display_name} 채널을 만들었습니다.`, 'success');
+    } catch (err) {
+      channelError.textContent = err.message || '채널을 만들지 못했습니다.';
+    } finally {
+      channelSubmit.disabled = false;
+    }
+  });
+}
+
+function openChannelEditModal(chan) {
+  if (!chan || !channelEditModal) return;
+  channelEditId.value = String(chan.id);
+  channelEditDisplayInput.value = chan.display_name || '';
+  channelEditNameInput.value = chan.name || '';
+  channelEditDescInput.value = chan.description || '';
+  channelEditError.textContent = '';
+  channelEditSubmit.disabled = false;
+  if (channelDeleteBtn) {
+    channelDeleteBtn.classList.toggle('hidden', Boolean(chan.is_default) || Number(chan.id) === 1);
+    channelDeleteBtn.disabled = false;
+  }
+  channelEditModal.classList.remove('hidden');
+  channelEditDisplayInput.focus();
+}
+
+function closeChannelEditModal() {
+  if (channelEditModal) channelEditModal.classList.add('hidden');
+}
+
+function updateChannelData(chan) {
+  if (!chan) return;
+  channelsDirectory.set(chan.id, chan);
+  const convId = 'channel:' + chan.id;
+  const conv = conversations.get(convId);
+  if (conv) {
+    conv.name = chan.name;
+    conv.displayName = chan.display_name;
+    conv.description = chan.description;
+  }
+  if (activeConvId === convId) {
+    chatAreaTitle.textContent = `# ${chan.display_name}`;
+    if (chatAreaDesc) chatAreaDesc.textContent = chan.description || '';
+    msgInput.placeholder = `# ${chan.display_name}에 메시지 입력`;
+  }
+  renderConversationList();
+}
+
+function removeChannelData(chanId) {
+  channelsDirectory.delete(chanId);
+  const convId = 'channel:' + chanId;
+  conversations.delete(convId);
+  if (activeConvId === convId) {
+    switchConversation(GLOBAL_ID);
+  }
+  renderConversationList();
+}
+
+if (channelSettingsBtn) {
+  channelSettingsBtn.addEventListener('click', () => {
+    const conv = conversations.get(activeConvId);
+    if (!conv || conv.type !== 'channel') return;
+    const chan = channelsDirectory.get(conv.channelId);
+    if (chan) openChannelEditModal(chan);
+  });
+}
+if (channelEditModalClose) channelEditModalClose.addEventListener('click', closeChannelEditModal);
+if (channelEditModal) {
+  channelEditModal.addEventListener('click', event => {
+    if (event.target === channelEditModal) closeChannelEditModal();
+  });
+}
+if (channelDeleteBtn) {
+  channelDeleteBtn.addEventListener('click', async () => {
+    const chanId = Number(channelEditId.value);
+    if (!chanId || chanId === 1) return;
+    const chan = channelsDirectory.get(chanId);
+    const displayName = chan?.display_name || `채널 ${chanId}`;
+    if (!confirm(`'# ${displayName}' 채널을 정말로 삭제하시겠습니까?\n채널 내 모든 메시지가 함께 삭제됩니다.`)) {
+      return;
+    }
+    channelDeleteBtn.disabled = true;
+    channelEditSubmit.disabled = true;
+    try {
+      const response = await fetch(`/api/channels/${chanId}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || '채널을 삭제하지 못했습니다.');
+      removeChannelData(chanId);
+      closeChannelEditModal();
+      showToast(`#${displayName} 채널이 삭제되었습니다.`, 'info');
+    } catch (err) {
+      channelEditError.textContent = err.message || '채널을 삭제하지 못했습니다.';
+    } finally {
+      channelDeleteBtn.disabled = false;
+      channelEditSubmit.disabled = false;
+    }
+  });
+}
+if (channelEditForm) {
+  channelEditForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    channelEditError.textContent = '';
+    channelEditSubmit.disabled = true;
+    const chanId = Number(channelEditId.value);
+    const name = channelEditNameInput.value.trim();
+    const displayName = channelEditDisplayInput.value.trim();
+    const description = channelEditDescInput.value.trim();
+    try {
+      const response = await fetch(`/api/channels/${chanId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, display_name: displayName, description }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || '채널 정보를 수정하지 못했습니다.');
+      updateChannelData(data);
+      closeChannelEditModal();
+      showToast(`#${data.display_name} 채널 정보가 수정되었습니다.`, 'success');
+    } catch (err) {
+      channelEditError.textContent = err.message || '채널 정보를 수정하지 못했습니다.';
+    } finally {
+      channelEditSubmit.disabled = false;
+    }
+  });
+}
+
+const COLLAPSED_SECTIONS_KEY = 'bamboochat_collapsed_sections';
+
+function loadCollapsedSections() {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_SECTIONS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistCollapsedSections(state) {
+  try {
+    localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(state));
+  } catch { /* storage unavailable */ }
+}
+
+function applyCollapsedSections() {
+  const state = loadCollapsedSections();
+  document.querySelectorAll('.sidebar-section[data-section]').forEach(section => {
+    const name = section.dataset.section;
+    const isCollapsed = Boolean(state[name]);
+    section.classList.toggle('collapsed', isCollapsed);
+    const btn = section.querySelector('.section-toggle-btn');
+    if (btn) btn.setAttribute('aria-expanded', String(!isCollapsed));
+  });
+}
+
+document.querySelectorAll('.section-toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const section = btn.closest('.sidebar-section');
+    if (!section) return;
+    const isCollapsed = section.classList.toggle('collapsed');
+    btn.setAttribute('aria-expanded', String(!isCollapsed));
+    const name = section.dataset.section;
+    if (name) {
+      const state = loadCollapsedSections();
+      if (isCollapsed) state[name] = true;
+      else delete state[name];
+      persistCollapsedSections(state);
+    }
+  });
+});
+
 sidebarToggle.addEventListener('click', () => {
   const open = sidebar.classList.toggle('open');
   sidebarToggle.setAttribute('aria-expanded', String(open));
@@ -592,8 +905,12 @@ sidebarToggle.addEventListener('click', () => {
 });
 sidebarBackdrop.addEventListener('click', closeSidebar);
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !nicknameModal.classList.contains('hidden')) closeNicknameModal();
-  else if (event.key === 'Escape' && !helpModal.classList.contains('hidden')) closeHelpModal();
+  if (event.key === 'Escape') {
+    if (channelEditModal && !channelEditModal.classList.contains('hidden')) closeChannelEditModal();
+    else if (!channelModal.classList.contains('hidden')) closeChannelModal();
+    else if (!nicknameModal.classList.contains('hidden')) closeNicknameModal();
+    else if (!helpModal.classList.contains('hidden')) closeHelpModal();
+  }
 });
 
 function closeSidebar() {
@@ -626,6 +943,31 @@ function updateLoadOlderButton() {
     : '↑ 이전 메시지 더 불러오기';
 }
 
+async function fetchChannelMessages(conv) {
+  if (!conv || conv.loadingOlder || conv.loaded) return;
+  conv.loadingOlder = true;
+  updateLoadOlderButton();
+  try {
+    const response = await fetch(`/api/channels/${conv.channelId}/messages`, { cache: 'no-store' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || '메시지를 불러오지 못했습니다.');
+    const messages = (Array.isArray(data.messages) ? data.messages : []).map(publicMessageFromData);
+    conv.messages = messages;
+    conv.messageIds = new Set(messages.map(m => m.message_id).filter(Boolean));
+    conv.hasOlder = Boolean(data.has_more);
+    conv.loaded = true;
+    if (conv.id === activeConvId) {
+      renderMessages();
+      scrollBottom();
+    }
+  } catch (err) {
+    showToast(err.message || '채널 메시지를 불러오지 못했습니다.', 'error');
+  } finally {
+    conv.loadingOlder = false;
+    updateLoadOlderButton();
+  }
+}
+
 function switchConversation(id) {
   if (!conversations.has(id)) return;
   saveCurrentDraft();
@@ -633,13 +975,28 @@ function switchConversation(id) {
   closeMentionMenu();
   const conv = conversations.get(id);
   conv.unread = 0;
-  const displayName = displayNickname(conv.name, conv.ipSuffix);
-  chatAreaTitle.textContent = conv.type === 'global' ? '🌐 전체 채팅' : `💬 ${displayName}`;
-  retentionNote.textContent = '⚠️ HTTP LAN · 암호화되지 않음 · 민감정보 공유 금지';
-  retentionNote.classList.toggle('dm-warning', conv.type !== 'global');
-  msgInput.placeholder = conv.type === 'global'
-    ? '메시지를 입력하세요'
-    : `${displayName}에게 DM 보내기`;
+  const isAdmin = currentUser && currentUser.role === 'admin';
+  if (channelSettingsBtn) {
+    channelSettingsBtn.classList.toggle('hidden', !(conv.type === 'channel' && isAdmin));
+  }
+  if (conv.type === 'channel') {
+    const displayName = conv.displayName || conv.name;
+    chatAreaTitle.textContent = `# ${displayName}`;
+    if (chatAreaDesc) chatAreaDesc.textContent = conv.description || '';
+    retentionNote.textContent = '⚠️ HTTP LAN · 암호화되지 않음 · 민감정보 공유 금지';
+    retentionNote.classList.remove('dm-warning');
+    msgInput.placeholder = `# ${displayName}에 메시지 입력`;
+    if (!conv.loaded && conv.channelId !== 1) {
+      fetchChannelMessages(conv);
+    }
+  } else {
+    const displayName = displayNickname(conv.name, conv.ipSuffix);
+    chatAreaTitle.textContent = `💬 ${displayName}`;
+    if (chatAreaDesc) chatAreaDesc.textContent = '';
+    retentionNote.textContent = '⚠️ HTTP LAN · 암호화되지 않음 · 민감정보 공유 금지';
+    retentionNote.classList.add('dm-warning');
+    msgInput.placeholder = `${displayName}에게 DM 보내기`;
+  }
   loadActiveDraft();
   renderComposerPreviews();
   renderMessages();
@@ -661,28 +1018,63 @@ function makeKeyboardClickable(element, callback) {
 }
 
 function renderConversationList() {
-  convListEl.replaceChildren();
-  for (const conv of conversations.values()) {
+  if (channelListEl) channelListEl.replaceChildren();
+  if (dmListEl) dmListEl.replaceChildren();
+  if (convListEl && !channelListEl) convListEl.replaceChildren();
+
+  // 1. Render Channels
+  const channelConvs = [...conversations.values()]
+    .filter(conv => conv.type === 'channel')
+    .sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault)) || a.channelId - b.channelId);
+
+  for (const conv of channelConvs) {
     const item = document.createElement('li');
-    item.className = `conv-item${conv.id === activeConvId ? ' active' : ''}`;
+    item.className = `conv-item channel-item${conv.id === activeConvId ? ' active' : ''}`;
     item.dataset.id = conv.id;
     const icon = document.createElement('span');
     icon.className = 'conv-icon';
-    icon.textContent = conv.type === 'global' ? '🌐' : '👤';
+    icon.textContent = '#';
     const name = document.createElement('span');
     name.className = 'conv-name';
-    name.textContent = displayNickname(conv.name, conv.ipSuffix);
+    name.textContent = conv.displayName || conv.name;
     item.append(icon, name);
     if (conv.unread > 0) {
       const badge = document.createElement('span');
-      badge.className = `conv-unread${conv.type === 'dm' ? ' dm-unread' : ''}`;
+      badge.className = 'conv-unread';
       badge.textContent = conv.unread > 99 ? '99+' : String(conv.unread);
       item.appendChild(badge);
     }
     const activate = () => switchConversation(conv.id);
     item.addEventListener('click', activate);
     makeKeyboardClickable(item, activate);
-    convListEl.appendChild(item);
+    if (channelListEl) channelListEl.appendChild(item);
+    else if (convListEl) convListEl.appendChild(item);
+  }
+
+  // 2. Render DMs
+  const dmConvs = [...conversations.values()].filter(conv => conv.type === 'dm');
+  for (const conv of dmConvs) {
+    const item = document.createElement('li');
+    item.className = `conv-item dm-item${conv.id === activeConvId ? ' active' : ''}`;
+    item.dataset.id = conv.id;
+    const icon = document.createElement('span');
+    icon.className = 'conv-icon';
+    icon.textContent = '👤';
+    const name = document.createElement('span');
+    name.className = 'conv-name';
+    name.textContent = displayNickname(conv.name);
+    item.append(icon, name);
+    if (conv.unread > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'conv-unread dm-unread';
+      badge.textContent = conv.unread > 99 ? '99+' : String(conv.unread);
+      item.appendChild(badge);
+    }
+    const activate = () => switchConversation(conv.id);
+    item.addEventListener('click', activate);
+    makeKeyboardClickable(item, activate);
+    if (dmListEl) dmListEl.appendChild(item);
+    else if (convListEl) convListEl.appendChild(item);
   }
 }
 
@@ -733,7 +1125,8 @@ function renderOnlineList(users) {
 }
 
 function getMentionContext() {
-  if (activeConvId !== GLOBAL_ID || msgInput.selectionStart !== msgInput.selectionEnd) return null;
+  const conv = conversations.get(activeConvId);
+  if (!conv || conv.type !== 'channel' || msgInput.selectionStart !== msgInput.selectionEnd) return null;
   const caret = msgInput.selectionStart;
   const beforeCaret = msgInput.value.slice(0, caret);
   const match = beforeCaret.match(/(^|[^\p{L}\p{N}._@-])@([\p{L}\p{N}._-]*)$/u);
@@ -1334,14 +1727,14 @@ async function loadOlderMessages() {
   conv.loadingOlder = true;
   updateLoadOlderButton();
   try {
-    const path = conv.type === 'global'
-      ? '/api/history/public'
+    const path = conv.type === 'channel'
+      ? `/api/channels/${conv.channelId}/messages`
       : `/api/history/dm/${encodeURIComponent(conv.name)}`;
     const response = await fetch(`${path}?before_id=${beforeId}`, { cache: 'no-store' });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || '이전 메시지를 불러오지 못했습니다.');
     const messages = (Array.isArray(data.messages) ? data.messages : []).map(item =>
-      conv.type === 'global' ? publicMessageFromData(item) : directMessageFromData(item)
+      conv.type === 'channel' ? publicMessageFromData(item) : directMessageFromData(item)
     );
     prependMessages(conv, messages);
     conv.hasOlder = Boolean(data.has_more);
@@ -1487,11 +1880,16 @@ function sendMessage() {
     return;
   }
 
+  const conv = conversations.get(activeConvId);
   const payload = {
-    type: activeConvId === GLOBAL_ID ? 'chat' : 'dm',
+    type: conv && conv.type === 'dm' ? 'dm' : 'chat',
     content,
   };
-  if (activeConvId !== GLOBAL_ID) payload.to = activeConvId;
+  if (conv && conv.type === 'dm') {
+    payload.to = conv.name;
+  } else if (conv && conv.type === 'channel') {
+    payload.channel_id = conv.channelId;
+  }
   if (readyAttachments.length) payload.attachment_ids = readyAttachments.map(state => state.meta.id);
   const reply = replyTargets.get(activeConvId);
   if (reply) payload.reply = reply;
@@ -1907,16 +2305,61 @@ function initWebSocket() {
     let data;
     try { data = JSON.parse(event.data); } catch { return; }
     switch (data.type) {
+      case 'channels': {
+        const chans = Array.isArray(data.channels) ? data.channels : [];
+        chans.forEach(chan => {
+          channelsDirectory.set(chan.id, chan);
+          getOrCreateChannel(chan);
+        });
+        renderConversationList();
+        break;
+      }
+      case 'channel_created': {
+        if (data.channel) {
+          channelsDirectory.set(data.channel.id, data.channel);
+          getOrCreateChannel(data.channel);
+          renderConversationList();
+          showToast(`'# ${data.channel.display_name}' 채널이 생성되었습니다.`, 'info');
+        }
+        break;
+      }
+      case 'channel_updated': {
+        if (data.channel) {
+          updateChannelData(data.channel);
+          showToast(`'# ${data.channel.display_name}' 채널 정보가 수정되었습니다.`, 'info');
+        }
+        break;
+      }
+      case 'channel_deleted': {
+        const chanId = Number(data.channel_id);
+        const chan = channelsDirectory.get(chanId);
+        const displayName = chan?.display_name || `채널 ${chanId}`;
+        removeChannelData(chanId);
+        showToast(`'# ${displayName}' 채널이 삭제되었습니다.`, 'info');
+        break;
+      }
       case 'chat': {
+        const chanId = Number(data.channel_id || 1);
+        const targetConvId = 'channel:' + chanId;
+        if (!conversations.has(targetConvId)) {
+          if (channelsDirectory.has(chanId)) {
+            getOrCreateChannel(channelsDirectory.get(chanId));
+          } else {
+            getOrCreateChannel({ id: chanId, name: `channel-${chanId}`, display_name: `채널 ${chanId}` });
+          }
+          renderConversationList();
+        }
         const chatMessage = publicMessageFromData(data);
-        const added = addMessage(GLOBAL_ID, chatMessage);
+        const added = addMessage(targetConvId, chatMessage, { markUnread: !data.history });
         if (!data.history && added && messageNeedsMyAttention(chatMessage)) {
           const senderDisplay = displayNickname(data.nickname);
           const repliesToMe = data.reply && data.reply.nickname === myNickname;
+          const chanObj = channelsDirectory.get(chanId);
+          const chanTitle = chanObj?.display_name || (chanId === 1 ? '전체 채팅' : `채널 ${chanId}`);
           showToast(
             repliesToMe
-              ? `${senderDisplay}님이 회원님의 메시지에 답장했습니다.`
-              : `${senderDisplay}님이 전체 채팅에서 회원님을 멘션했습니다.`,
+              ? `${senderDisplay}님이 #${chanTitle}에서 회원님의 메시지에 답장했습니다.`
+              : `${senderDisplay}님이 #${chanTitle}에서 회원님을 멘션했습니다.`,
             'mention',
           );
         }
@@ -2005,4 +2448,5 @@ window.addEventListener('beforeunload', saveCurrentDraft);
 resizeComposer();
 updateCharCount();
 setConnected(false);
+applyCollapsedSections();
 bootstrapAuth();
