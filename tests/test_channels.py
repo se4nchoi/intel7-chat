@@ -398,3 +398,27 @@ class TestWebSocketChannelRouting:
             error_msg = ws.receive_json()
             assert error_msg["type"] == "error"
             assert "채널을 찾을 수 없습니다" in error_msg["message"]
+    def test_channel_creation_broadcasts_channel_created_over_websocket(self):
+        client_alice, user_alice = session_client("alice")
+        client_bob, user_bob = session_client("bob")
+
+        with client_alice.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                msg = ws.receive_json()
+                if msg.get("type") == "history_ready":
+                    break
+
+            # Bob creates a new channel via REST API
+            resp = client_bob.post("/api/channels", headers=ORIGIN, json={
+                "name": "study-algo",
+                "display_name": "알고리즘 스터디",
+                "description": "백준/프로그래머스 문제풀이"
+            })
+            assert resp.status_code == 201
+
+            # Alice receives real-time channel_created broadcast
+            created_event = ws.receive_json()
+            assert created_event["type"] == "channel_created"
+            assert created_event["channel"]["name"] == "study-algo"
+            assert created_event["channel"]["display_name"] == "알고리즘 스터디"
+

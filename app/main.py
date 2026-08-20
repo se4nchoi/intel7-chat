@@ -444,6 +444,7 @@ async def api_create_channel(request: Request):
     if get_channel_by_name(clean_name):
         raise HTTPException(409, "이미 존재하는 채널 이름입니다.")
     channel = create_channel(clean_name, clean_display, clean_desc, user["id"])
+    await broadcast({"type": "channel_created", "channel": channel})
     return channel
 
 @app.get("/api/channels/{channel_id}")

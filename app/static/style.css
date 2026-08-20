@@ -1643,3 +1643,68 @@ kbd {
   opacity: .5;
   cursor: not-allowed;
 }
+
+/* ============================================================
+   새 채널 만들기 모달 & 채널 아이템
+   ============================================================ */
+.conv-item.channel-item .conv-icon {
+  font-weight: 700;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+}
+.conv-item.channel-item.active .conv-icon {
+  color: var(--accent);
+}
+
+.channel-panel {
+  max-width: 440px;
+  width: 100%;
+}
+.channel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.channel-form label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.channel-form input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color .15s;
+}
+.channel-form input:focus {
+  border-color: var(--accent);
+}
+.channel-form .field-hint {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: -6px;
+  margin-bottom: 4px;
+}
+.channel-form button[type="submit"] {
+  margin-top: 6px;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.channel-form button[type="submit"]:hover {
+  background: var(--accent-dark);
+}
+.channel-form button[type="submit"]:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
