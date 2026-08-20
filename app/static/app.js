@@ -1819,10 +1819,40 @@ msgInput.addEventListener('paste', event => {
 
 async function copyText(text, successMessage) {
   if (!text) return;
-  try {
-    await navigator.clipboard.writeText(text);
+  let copied = false;
+
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch {
+      copied = false;
+    }
+  }
+
+  if (!copied) {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      textarea.style.top = '-9999px';
+      textarea.style.opacity = '0';
+      textarea.setAttribute('readonly', '');
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, text.length);
+      copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+    } catch {
+      copied = false;
+    }
+  }
+
+  if (copied) {
     showToast(successMessage, 'success');
-  } catch {
+  } else {
     showToast('클립보드에 복사하지 못했습니다.', 'error');
   }
 }
