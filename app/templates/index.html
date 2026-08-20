@@ -124,12 +124,27 @@
           <div class="chat-header-main">
             <span id="chat-area-title" class="chat-area-title">전체 채팅</span>
             <button id="channel-settings-btn" class="icon-btn channel-settings-btn hidden" type="button" title="채널 정보 수정" aria-label="채널 정보 수정">⚙️</button>
+            <div class="conv-mute-container">
+              <button id="conv-mute-btn" class="icon-btn conv-mute-btn" type="button" title="알림 설정" aria-label="알림 설정">🔔</button>
+              <div id="mute-hint-popover" class="nickname-hint-popover mute-hint-popover hidden" role="tooltip" aria-live="polite">
+                <span class="hint-arrow"></span>
+                <div class="hint-body">
+                  <span class="hint-icon" id="mute-hint-icon">🔔</span>
+                  <div class="hint-text">
+                    <strong id="mute-hint-title">대화방 알림 설정</strong>
+                    <span id="mute-hint-desc">클릭하여 이 대화방의 알림을 끄거나 켤 수 있습니다.</span>
+                  </div>
+                </div>
+                <button id="mute-hint-close" class="hint-close-btn" type="button" aria-label="닫기">×</button>
+              </div>
+            </div>
             <span id="chat-area-desc" class="chat-area-desc"></span>
           </div>
           <span id="retention-note" class="retention-note">⚠️ HTTP LAN · 암호화되지 않음 · 민감정보 공유 금지</span>
         </div>
-        <button id="load-older-btn" class="load-older-btn hidden" type="button">↑ 이전 메시지 더 불러오기</button>
-        <main id="message-list" class="message-list" role="log" aria-live="polite" aria-relevant="additions"></main>
+        <main id="message-list" class="message-list" role="log" aria-live="polite" aria-relevant="additions">
+          <button id="load-older-btn" class="load-older-btn hidden" type="button">↑ 이전 메시지 더 불러오기</button>
+        </main>
         <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true"><div>파일 첨부</div></div>
         <footer class="composer">
           <div id="reply-preview" class="composer-preview reply-preview hidden"><div><strong id="reply-preview-name"></strong><span id="reply-preview-text"></span></div><button id="reply-cancel" class="preview-remove" type="button" aria-label="답장 취소">×</button></div>
@@ -307,6 +322,32 @@
         <p id="move-message-error" class="error-msg" aria-live="polite"></p>
         <button id="move-message-submit" type="submit">이동하기</button>
       </form>
+    </div>
+  </div>
+
+  <div id="notification-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="notification-modal-title">
+    <div class="modal-box channel-panel">
+      <div class="admin-panel-header">
+        <div>
+          <h2 id="notification-modal-title">대화방 알림 설정</h2>
+          <p class="modal-desc" id="notification-modal-desc">대화방의 알림 및 음소거 상태를 설정합니다.</p>
+        </div>
+        <button id="notification-modal-close" class="admin-close" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="notification-modal-body">
+        <div class="notification-status-card">
+          <span class="notification-status-icon" id="notification-status-icon">🔔</span>
+          <div>
+            <strong id="notification-status-title">현재 상태: 알림 켜짐</strong>
+            <p id="notification-status-desc">새 메시지가 도착하면 알림이 표시됩니다.</p>
+          </div>
+        </div>
+        <p class="field-hint">※ 음소거 시에도 회원님을 직접 <strong>@멘션</strong>하거나 회원님의 메시지에 <strong>답장</strong>한 경우에는 알림이 전달됩니다.</p>
+        <div class="channel-edit-actions">
+          <button id="notification-toggle-btn" type="button" class="caution-btn">알림 끄기 (음소거)</button>
+          <button id="notification-modal-cancel" type="button" class="inline-edit-cancel">닫기</button>
+        </div>
+      </div>
     </div>
   </div>
 

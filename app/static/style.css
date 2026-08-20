@@ -2049,3 +2049,130 @@ kbd {
 .msg-row.hidden-msg {
   opacity: 0.75;
 }
+
+/* ============================================================
+   읽지 않은 메시지 구분선 및 대화 음소거 스타일
+   ============================================================ */
+.unread-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  color: var(--danger);
+  font-size: 0.72rem;
+  font-weight: 700;
+  user-select: none;
+  width: 100%;
+}
+.unread-divider::before,
+.unread-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(239, 68, 68, 0.4);
+}
+.unread-divider span {
+  padding: 2px 10px;
+  background: rgba(239, 68, 68, 0.12);
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.conv-mute-btn {
+  background: transparent;
+  border: none;
+  font-size: 0.88rem;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity .15s, background .15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.conv-mute-btn:hover {
+  opacity: 1;
+  background: var(--surface2);
+}
+.conv-mute-btn.is-muted {
+  opacity: 0.9;
+}
+
+.conv-mute-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mute-hint-popover {
+  top: calc(100% + 9px);
+  left: 0;
+  transform: none;
+}
+.mute-hint-popover .hint-arrow {
+  left: 14px;
+  transform: none;
+}
+
+.conv-item .conv-mute-indicator {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.load-older-btn {
+  display: block;
+  margin: 8px auto 16px auto;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+  text-align: center;
+}
+.load-older-btn:hover {
+  background: var(--surface3);
+  color: var(--text);
+  border-color: var(--accent);
+}
+.load-older-btn.hidden {
+  display: none !important;
+}
+
+.notification-modal-body {
+  padding: 16px 20px 20px 20px;
+}
+.notification-status-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.notification-status-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.notification-status-card strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 2px;
+}
+.notification-status-card p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
