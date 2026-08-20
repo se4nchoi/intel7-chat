@@ -35,7 +35,7 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     get_storage_status, get_upload_usage, get_user_by_id, get_user_by_username, init_db,
     list_channels, list_mentionable_users, list_users, prune_expired_sessions, save_attachment,
     save_direct_message, save_message, set_user_active,
-    set_user_role, update_channel, delete_channel, update_display_name, update_password_hash)
+    set_user_role, update_channel, archive_channel, delete_channel, update_display_name, update_password_hash)
 
 CONFIG = load_config()
 configure_storage(CONFIG.data_path, CONFIG.database_limit_bytes)
@@ -496,6 +496,28 @@ async def api_update_channel(channel_id: int, request: Request):
     await broadcast({"type": "channel_updated", "channel": updated})
     return updated
 
+@app.post("/api/channels/{channel_id}/archive")
+async def api_archive_channel(channel_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    require_admin(request)
+    current = get_channel_by_id(channel_id)
+    if not current:
+        raise HTTPException(404, "채널을 찾을 수 없습니다.")
+    if current.get("is_default"):
+        raise HTTPException(400, "기본 채널은 보관할 수 없습니다.")
+    data = await read_json_body(request) if request.headers.get("content-type", "").startswith("application/json") else {}
+    unarchive = bool(data.get("unarchive", False))
+    try:
+        updated = archive_channel(channel_id, unarchive=unarchive)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not updated:
+        raise HTTPException(404, "채널을 찾을 수 없습니다.")
+    event_type = "channel_unarchived" if unarchive else "channel_archived"
+    await broadcast({"type": event_type, "channel_id": channel_id, "channel": updated})
+    return updated
+
 @app.delete("/api/channels/{channel_id}")
 async def api_delete_channel(channel_id: int, request: Request):
     if not request_origin_is_allowed(request):
@@ -507,11 +529,13 @@ async def api_delete_channel(channel_id: int, request: Request):
     if current.get("is_default"):
         raise HTTPException(400, "기본 채널은 삭제할 수 없습니다.")
     try:
-        success = delete_channel(channel_id)
+        deleted_files = delete_channel(channel_id)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    if not success:
+    if deleted_files is None:
         raise HTTPException(404, "채널을 찾을 수 없습니다.")
+    for stored_name in deleted_files:
+        remove_stored_file(stored_name)
     await broadcast({"type": "channel_deleted", "channel_id": channel_id})
     return {"status": "ok", "deleted_channel_id": channel_id}
 
@@ -819,8 +843,12 @@ async def websocket_endpoint(ws: WebSocket):
                     channel_id = int(raw_channel_id)
                 except (ValueError, TypeError):
                     channel_id = 1
-                if not channel_exists(channel_id):
+                chan = get_channel_by_id(channel_id)
+                if not chan:
                     await ws.send_text(json.dumps({"type":"error","message":"채널을 찾을 수 없습니다."},ensure_ascii=False))
+                    continue
+                if chan.get("archived"):
+                    await ws.send_text(json.dumps({"type":"error","message":"보관된 채널에는 메시지를 작성할 수 없습니다."},ensure_ascii=False))
                     continue
                 saved=save_message(info.username,content,ip=ip,reply=reply,
                     attachment_ids=[a["id"] for a in attachments],user_id=info.user_id,

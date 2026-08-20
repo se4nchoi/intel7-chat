@@ -2,6 +2,7 @@
 import json
 import sqlite3
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -540,5 +541,140 @@ class TestAdminChannelManagement:
             event = ws.receive_json()
             assert event["type"] == "channel_deleted"
             assert event["channel_id"] == chan["id"]
+
+    def test_admin_can_archive_and_unarchive_channel(self):
+        admin_client, admin_user = session_client("admin_user", role="admin")
+        student_client, student_user = session_client("student_user")
+        chan = database.create_channel("archive-target", "보관할 방")
+        database.save_message("student_user", "채널 메시지", user_id=student_user["id"], channel_id=chan["id"])
+
+        with student_client.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                msg = ws.receive_json()
+                if msg.get("type") == "history_ready":
+                    break
+
+            # 1. Admin archives the channel
+            resp = admin_client.post(f"/api/channels/{chan['id']}/archive", headers=ORIGIN, json={})
+            assert resp.status_code == 200
+            assert resp.json()["archived"] is True
+
+            event = ws.receive_json()
+            assert event["type"] == "channel_archived"
+            assert event["channel_id"] == chan["id"]
+
+            # Verify hidden from normal list_channels but present in include_archived
+            normal_list = database.list_channels(include_archived=False)
+            assert not any(c["id"] == chan["id"] for c in normal_list)
+            all_list = database.list_channels(include_archived=True)
+            assert any(c["id"] == chan["id"] and c["archived"] for c in all_list)
+
+            # Messages are preserved in DB
+            with database.get_connection() as conn:
+                cnt = conn.execute("SELECT COUNT(*) FROM messages WHERE channel_id=?", (chan["id"],)).fetchone()[0]
+            assert cnt == 1
+
+            # 2. Admin unarchives the channel
+            resp = admin_client.post(f"/api/channels/{chan['id']}/archive", headers=ORIGIN, json={"unarchive": True})
+            assert resp.status_code == 200
+            assert resp.json()["archived"] is False
+
+            event = ws.receive_json()
+            assert event["type"] == "channel_unarchived"
+            assert event["channel"]["id"] == chan["id"]
+            assert event["channel"]["archived"] is False
+
+            # Verify restored in normal list_channels
+            assert any(c["id"] == chan["id"] for c in database.list_channels())
+
+    def test_cannot_archive_default_general_channel(self):
+        admin_client, admin_user = session_client("admin_user", role="admin")
+        resp = admin_client.post("/api/channels/1/archive", headers=ORIGIN, json={})
+        assert resp.status_code == 400
+        assert "기본 채널은 보관할 수 없습니다" in resp.json()["detail"]
+
+    def test_non_admin_cannot_archive_channel(self):
+        student_client, student_user = session_client("student_user", role="student")
+        chan = database.create_channel("student-lab", "실습실")
+        resp = student_client.post(f"/api/channels/{chan['id']}/archive", headers=ORIGIN, json={})
+        assert resp.status_code == 403
+        assert "관리자 권한" in resp.json()["detail"]
+
+    def test_cannot_send_message_to_archived_channel(self):
+        admin_client, admin_user = session_client("admin_user", role="admin")
+        student_client, student_user = session_client("student_user")
+        chan = database.create_channel("closed-course", "종료된 강좌")
+        database.archive_channel(chan["id"])
+
+        with student_client.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                msg = ws.receive_json()
+                if msg.get("type") == "history_ready":
+                    break
+
+            ws.send_json({
+                "type": "chat",
+                "channel_id": chan["id"],
+                "content": "보관된 방에 메시지 전송 시도"
+            })
+            error_event = ws.receive_json()
+            assert error_event["type"] == "error"
+            assert "보관된 채널" in error_event["message"]
+
+    def test_permanent_channel_deletion_cleans_message_attachments_and_files_without_orphans(self):
+        admin_client, admin_user = session_client("admin_user", role="admin")
+        student_client, student_user = session_client("student_user")
+        chan = database.create_channel("cleanup-room", "정리 테스트 방")
+
+        # 1. Student uploads a file
+        file_bytes = b"Sample channel assignment file content"
+        upload_resp = student_client.post("/api/files", content=file_bytes, headers={
+            **ORIGIN, "X-File-Name": quote("lab_report.txt", safe="")
+        })
+        assert upload_resp.status_code == 201
+        att_data = upload_resp.json()
+        att_id = att_data["id"]
+
+        # 2. Student sends message with attachment in the channel
+        with student_client.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                msg = ws.receive_json()
+                if msg.get("type") == "history_ready":
+                    break
+            ws.send_json({
+                "type": "chat",
+                "channel_id": chan["id"],
+                "content": "과제 제출합니다.",
+                "attachment_ids": [att_id]
+            })
+            chat_event = ws.receive_json()
+            assert chat_event["type"] == "chat"
+            assert chat_event["channel_id"] == chan["id"]
+
+        # Verify attachment record and file exist before deletion
+        att_rec = database.get_attachment_record(att_id)
+        assert att_rec is not None
+        file_path = main.attachment_path(att_rec["stored_name"])
+        assert file_path.is_file()
+
+        # Verify message_attachments association row exists
+        with database.get_connection() as conn:
+            assoc_cnt = conn.execute("SELECT COUNT(*) FROM message_attachments WHERE attachment_id=?", (att_id,)).fetchone()[0]
+        assert assoc_cnt == 1
+
+        # 3. Admin permanently deletes channel
+        del_resp = admin_client.delete(f"/api/channels/{chan['id']}", headers=ORIGIN)
+        assert del_resp.status_code == 200
+
+        # 4. Verify no orphaned association rows, no orphaned DB attachment records, and disk file unlinked
+        with database.get_connection() as conn:
+            assoc_cnt = conn.execute("SELECT COUNT(*) FROM message_attachments WHERE attachment_id=?", (att_id,)).fetchone()[0]
+            att_cnt = conn.execute("SELECT COUNT(*) FROM attachments WHERE id=?", (att_id,)).fetchone()[0]
+            msg_cnt = conn.execute("SELECT COUNT(*) FROM messages WHERE channel_id=?", (chan["id"],)).fetchone()[0]
+        assert assoc_cnt == 0
+        assert att_cnt == 0
+        assert msg_cnt == 0
+        assert not file_path.is_file()
+        assert database.get_channel_by_id(chan["id"]) is None
 
 

@@ -1893,3 +1893,23 @@ kbd {
   opacity: .5;
   cursor: not-allowed;
 }
+
+.caution-btn {
+  padding: 10px 12px;
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+  background: rgba(234, 179, 8, 0.1);
+  color: var(--warning);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+.caution-btn:hover {
+  background: var(--warning);
+  color: #1a1a1a;
+}
+.caution-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}

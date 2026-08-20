@@ -60,6 +60,7 @@ const channelEditNameInput = document.getElementById('channel-edit-name-input');
 const channelEditDescInput = document.getElementById('channel-edit-desc-input');
 const channelEditError = document.getElementById('channel-edit-error');
 const channelEditSubmit = document.getElementById('channel-edit-submit');
+const channelArchiveBtn = document.getElementById('channel-archive-btn');
 const channelDeleteBtn = document.getElementById('channel-delete-btn');
 const onlineListEl = document.getElementById('online-list');
 const onlineCountEl = document.getElementById('online-count');
@@ -746,8 +747,13 @@ function openChannelEditModal(chan) {
   channelEditDescInput.value = chan.description || '';
   channelEditError.textContent = '';
   channelEditSubmit.disabled = false;
+  const isDefault = Boolean(chan.is_default) || Number(chan.id) === 1;
+  if (channelArchiveBtn) {
+    channelArchiveBtn.classList.toggle('hidden', isDefault);
+    channelArchiveBtn.disabled = false;
+  }
   if (channelDeleteBtn) {
-    channelDeleteBtn.classList.toggle('hidden', Boolean(chan.is_default) || Number(chan.id) === 1);
+    channelDeleteBtn.classList.toggle('hidden', isDefault);
     channelDeleteBtn.disabled = false;
   }
   channelEditModal.classList.remove('hidden');
@@ -800,15 +806,48 @@ if (channelEditModal) {
     if (event.target === channelEditModal) closeChannelEditModal();
   });
 }
+if (channelArchiveBtn) {
+  channelArchiveBtn.addEventListener('click', async () => {
+    const chanId = Number(channelEditId.value);
+    if (!chanId || chanId === 1) return;
+    const chan = channelsDirectory.get(chanId);
+    const displayName = chan?.display_name || `채널 ${chanId}`;
+    if (!confirm(`'# ${displayName}' 채널을 보관하시겠습니까?\n채널 목록에서 숨겨지며 기존 대화 기록과 첨부파일은 안전하게 보존됩니다.`)) {
+      return;
+    }
+    channelArchiveBtn.disabled = true;
+    channelDeleteBtn.disabled = true;
+    channelEditSubmit.disabled = true;
+    try {
+      const response = await fetch(`/api/channels/${chanId}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unarchive: false }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || '채널을 보관하지 못했습니다.');
+      removeChannelData(chanId);
+      closeChannelEditModal();
+      showToast(`#${displayName} 채널이 보관되었습니다.`, 'info');
+    } catch (err) {
+      channelEditError.textContent = err.message || '채널을 보관하지 못했습니다.';
+    } finally {
+      channelArchiveBtn.disabled = false;
+      channelDeleteBtn.disabled = false;
+      channelEditSubmit.disabled = false;
+    }
+  });
+}
 if (channelDeleteBtn) {
   channelDeleteBtn.addEventListener('click', async () => {
     const chanId = Number(channelEditId.value);
     if (!chanId || chanId === 1) return;
     const chan = channelsDirectory.get(chanId);
     const displayName = chan?.display_name || `채널 ${chanId}`;
-    if (!confirm(`'# ${displayName}' 채널을 정말로 삭제하시겠습니까?\n채널 내 모든 메시지가 함께 삭제됩니다.`)) {
+    if (!confirm(`'# ${displayName}' 채널을 정말로 영구 삭제하시겠습니까?\n채널 내 모든 대화 및 첨부파일이 완전히 삭제되며 복구할 수 없습니다.`)) {
       return;
     }
+    channelArchiveBtn.disabled = true;
     channelDeleteBtn.disabled = true;
     channelEditSubmit.disabled = true;
     try {
@@ -817,10 +856,11 @@ if (channelDeleteBtn) {
       if (!response.ok) throw new Error(data.detail || '채널을 삭제하지 못했습니다.');
       removeChannelData(chanId);
       closeChannelEditModal();
-      showToast(`#${displayName} 채널이 삭제되었습니다.`, 'info');
+      showToast(`#${displayName} 채널이 영구 삭제되었습니다.`, 'info');
     } catch (err) {
       channelEditError.textContent = err.message || '채널을 삭제하지 못했습니다.';
     } finally {
+      channelArchiveBtn.disabled = false;
       channelDeleteBtn.disabled = false;
       channelEditSubmit.disabled = false;
     }
@@ -2330,12 +2370,29 @@ function initWebSocket() {
         }
         break;
       }
+      case 'channel_archived': {
+        const chanId = Number(data.channel_id);
+        const chan = channelsDirectory.get(chanId);
+        const displayName = chan?.display_name || `채널 ${chanId}`;
+        removeChannelData(chanId);
+        showToast(`'# ${displayName}' 채널이 보관되었습니다.`, 'info');
+        break;
+      }
+      case 'channel_unarchived': {
+        if (data.channel) {
+          channelsDirectory.set(data.channel.id, data.channel);
+          getOrCreateChannel(data.channel);
+          renderConversationList();
+          showToast(`'# ${data.channel.display_name}' 채널 보관이 해제되었습니다.`, 'info');
+        }
+        break;
+      }
       case 'channel_deleted': {
         const chanId = Number(data.channel_id);
         const chan = channelsDirectory.get(chanId);
         const displayName = chan?.display_name || `채널 ${chanId}`;
         removeChannelData(chanId);
-        showToast(`'# ${displayName}' 채널이 삭제되었습니다.`, 'info');
+        showToast(`'# ${displayName}' 채널이 영구 삭제되었습니다.`, 'info');
         break;
       }
       case 'chat': {
