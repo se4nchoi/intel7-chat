@@ -26,6 +26,12 @@
           <label class="sr-only" for="enrollment-input">가입 코드</label>
           <input id="enrollment-input" type="text" maxlength="128" placeholder="교실 가입 코드" autocomplete="off" />
         </div>
+        <div id="auth-remember-row" class="auth-remember-row">
+          <label class="auth-remember-label" for="remember-id-input">
+            <input id="remember-id-input" type="checkbox" />
+            <span>아이디 저장</span>
+          </label>
+        </div>
         <p id="auth-error" class="error-msg" aria-live="polite"></p>
         <button id="auth-submit" type="submit">로그인</button>
       </form>
@@ -43,7 +49,20 @@
         <h1 class="service-name">{{ service_name }}</h1>
       </div>
       <div class="header-right">
-        <button id="my-nick-badge" class="my-nick-badge" type="button" aria-label="닉네임 변경" title="닉네임 변경"></button>
+        <div class="my-nick-badge-container">
+          <button id="my-nick-badge" class="my-nick-badge" type="button" aria-label="닉네임 변경" title="닉네임 변경"></button>
+          <div id="nickname-hint-popover" class="nickname-hint-popover hidden" role="tooltip" aria-live="polite">
+            <span class="hint-arrow"></span>
+            <div class="hint-body">
+              <span class="hint-icon">💡</span>
+              <div class="hint-text">
+                <strong>닉네임 변경 가능!</strong>
+                <span>여기를 클릭해 닉네임을 설정하세요</span>
+              </div>
+            </div>
+            <button id="nickname-hint-close" class="hint-close-btn" type="button" aria-label="닫기">×</button>
+          </div>
+        </div>
         <span id="conn-status" class="conn-status disconnected" role="status">연결 끊김</span>
         <button id="admin-btn" class="admin-btn hidden" type="button">관리</button>
         <button id="logout-btn" class="logout-btn" type="button">로그아웃</button>

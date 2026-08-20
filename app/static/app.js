@@ -4,6 +4,7 @@
 'use strict';
 
 const DRAFTS_PREFIX = 'bamboochat_drafts_';
+const SAVED_USERNAME_KEY = 'bamboochat_saved_username';
 const RECONNECT_DELAY = 3000;
 const GLOBAL_ID = 'global';
 
@@ -13,6 +14,8 @@ const usernameInput = document.getElementById('username-input');
 const passwordInput = document.getElementById('password-input');
 const passwordConfirmInput = document.getElementById('password-confirm-input');
 const enrollmentInput = document.getElementById('enrollment-input');
+const rememberIdInput = document.getElementById('remember-id-input');
+const authRememberRow = document.getElementById('auth-remember-row');
 const registerFields = document.getElementById('register-fields');
 const authSubmit = document.getElementById('auth-submit');
 const authModeToggle = document.getElementById('auth-mode-toggle');
@@ -51,6 +54,8 @@ const chatAreaTitle = document.getElementById('chat-area-title');
 const retentionNote = document.getElementById('retention-note');
 const connStatus = document.getElementById('conn-status');
 const myNickBadge = document.getElementById('my-nick-badge');
+const nicknameHintPopover = document.getElementById('nickname-hint-popover');
+const nicknameHintClose = document.getElementById('nickname-hint-close');
 const charCount = document.getElementById('char-count');
 const nicknameModal = document.getElementById('nickname-modal');
 const nicknameClose = document.getElementById('nickname-close');
@@ -86,6 +91,7 @@ let myDisplayName = '';
 let myUserId = null;
 let ws = null;
 let reconnectTimer = null;
+let nicknameHintTimer = null;
 let authMode = 'login';
 let lastStorageWarning = 0;
 let dragDepth = 0;
@@ -140,6 +146,7 @@ function setAuthMode(mode) {
   authMode = mode;
   const registering = mode === 'register';
   registerFields.classList.toggle('hidden', !registering);
+  if (authRememberRow) authRememberRow.classList.toggle('hidden', registering);
   authSubmit.textContent = registering ? '계정 만들기' : '로그인';
   passwordInput.autocomplete = registering ? 'new-password' : 'current-password';
   if (authModeToggle) {
@@ -152,11 +159,38 @@ function showAuthModal(message = '') {
   authError.textContent = message;
   authModal.classList.remove('hidden');
   chatApp.classList.add('hidden');
-  setTimeout(() => usernameInput.focus(), 50);
+  const savedUsername = localStorage.getItem(SAVED_USERNAME_KEY);
+  if (savedUsername) {
+    usernameInput.value = savedUsername;
+    if (rememberIdInput) rememberIdInput.checked = true;
+    setTimeout(() => passwordInput.focus(), 50);
+  } else {
+    if (rememberIdInput) rememberIdInput.checked = false;
+    setTimeout(() => usernameInput.focus(), 50);
+  }
 }
 
 function hideAuthModal() {
   authModal.classList.add('hidden');
+}
+
+function showNicknameHint() {
+  if (!nicknameHintPopover) return;
+  if (nicknameHintTimer) clearTimeout(nicknameHintTimer);
+  nicknameHintPopover.classList.remove('hidden');
+  nicknameHintTimer = setTimeout(() => {
+    hideNicknameHint();
+  }, 5000);
+}
+
+function hideNicknameHint() {
+  if (nicknameHintTimer) {
+    clearTimeout(nicknameHintTimer);
+    nicknameHintTimer = null;
+  }
+  if (nicknameHintPopover) {
+    nicknameHintPopover.classList.add('hidden');
+  }
 }
 
 function updateNickBadge() {
@@ -180,6 +214,7 @@ async function enterChat(user) {
   switchConversation(GLOBAL_ID);
   initWebSocket();
   refreshStorageWarning();
+  showNicknameHint();
 }
 
 async function submitAuth(event) {
@@ -208,6 +243,11 @@ async function submitAuth(event) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || '요청을 처리하지 못했습니다.');
+    if (rememberIdInput && rememberIdInput.checked) {
+      localStorage.setItem(SAVED_USERNAME_KEY, username);
+    } else {
+      localStorage.removeItem(SAVED_USERNAME_KEY);
+    }
     passwordInput.value = '';
     passwordConfirmInput.value = '';
     enrollmentInput.value = '';
@@ -220,6 +260,7 @@ async function submitAuth(event) {
 }
 
 async function logout() {
+  hideNicknameHint();
   saveCurrentDraft();
   if (ws) {
     ws.onclose = null;
@@ -448,6 +489,7 @@ adminModal.addEventListener('click', event => {
 });
 
 function openNicknameModal() {
+  hideNicknameHint();
   nicknameCurrentName.textContent = myDisplayName || myNickname;
   nicknameUsernameLabel.textContent = `@${myNickname}`;
   nicknameInput.value = '';
@@ -492,6 +534,18 @@ async function submitNickname(event) {
 }
 
 myNickBadge.addEventListener('click', openNicknameModal);
+if (nicknameHintClose) {
+  nicknameHintClose.addEventListener('click', event => {
+    event.stopPropagation();
+    hideNicknameHint();
+  });
+}
+if (nicknameHintPopover) {
+  nicknameHintPopover.addEventListener('click', () => {
+    hideNicknameHint();
+    openNicknameModal();
+  });
+}
 nicknameClose.addEventListener('click', closeNicknameModal);
 nicknameModal.addEventListener('click', event => {
   if (event.target === nicknameModal) closeNicknameModal();
