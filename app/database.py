@@ -185,9 +185,18 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE messages SET channel_id = 1 WHERE channel_id IS NULL OR channel_id = 0")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_channel_created ON messages(channel_id, id)")
 
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    """Add archived column to channels; add edited_at, is_hidden, moved_from_channel_id to messages."""
+    _add_column_if_missing(conn, "channels", "archived", "INTEGER NOT NULL DEFAULT 0")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_channels_archived ON channels(archived)")
+    _add_column_if_missing(conn, "messages", "edited_at", "TEXT")
+    _add_column_if_missing(conn, "messages", "is_hidden", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "messages", "moved_from_channel_id", "INTEGER")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
+    _migrate_v3,
 ]
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
