@@ -228,7 +228,8 @@ button {
   gap: 10px;
   padding: 0 16px;
   flex-shrink: 0;
-  z-index: 10;
+  position: relative;
+  z-index: 100;
   padding-left:  max(16px, env(safe-area-inset-left));
   padding-right: max(16px, env(safe-area-inset-right));
 }
@@ -704,24 +705,9 @@ button {
   align-items: center;
   padding: 0 18px;
   flex-shrink: 0;
+  position: relative;
+  z-index: 20;
 }
-.load-older-btn {
-  align-self: center;
-  flex-shrink: 0;
-  margin: 8px 0 0;
-  padding: 5px 11px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface2);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: .72rem;
-}
-.load-older-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--text);
-}
-.load-older-btn:disabled { cursor: wait; opacity: .65; }
 
 .chat-header-main {
   display: flex;
@@ -2111,10 +2097,23 @@ kbd {
   top: calc(100% + 9px);
   left: 0;
   transform: none;
+  z-index: 100;
+  animation: muteHintPopIn .25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .mute-hint-popover .hint-arrow {
   left: 14px;
-  transform: none;
+  transform: translateX(-50%);
+}
+
+@keyframes muteHintPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .conv-item .conv-mute-indicator {

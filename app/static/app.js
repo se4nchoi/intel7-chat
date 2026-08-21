@@ -283,7 +283,7 @@ function showNicknameHint() {
   nicknameHintPopover.classList.remove('hidden');
   nicknameHintTimer = setTimeout(() => {
     hideNicknameHint();
-  }, 5000);
+  }, 6000);
 }
 
 function hideNicknameHint() {
@@ -319,6 +319,7 @@ async function enterChat(user) {
   initWebSocket();
   refreshStorageWarning();
   showNicknameHint();
+  showMuteHint();
 }
 
 async function submitAuth(event) {
@@ -365,6 +366,7 @@ async function submitAuth(event) {
 
 async function logout() {
   hideNicknameHint();
+  hideMuteHint();
   saveCurrentDraft();
   if (ws) {
     ws.onclose = null;
@@ -1205,6 +1207,30 @@ function updateMuteButtonUI() {
   convMuteBtn.classList.toggle('is-muted', isMuted);
 }
 
+let muteHintTimer = null;
+function hideMuteHint() {
+  if (muteHintTimer) {
+    clearTimeout(muteHintTimer);
+    muteHintTimer = null;
+  }
+  if (muteHintPopover) {
+    muteHintPopover.classList.add('hidden');
+  }
+}
+
+function showMuteHint() {
+  if (!muteHintPopover) return;
+  if (muteHintTimer) clearTimeout(muteHintTimer);
+  const isMuted = Boolean(userConversationStates.get(activeConvId)?.muted);
+  if (muteHintIcon) muteHintIcon.textContent = isMuted ? '🔕' : '💡';
+  if (muteHintTitle) muteHintTitle.textContent = isMuted ? '알림 음소거 상태' : '알림 설정 가능!';
+  if (muteHintDesc) muteHintDesc.textContent = isMuted ? '여기를 클릭해 음소거를 해제할 수 있습니다' : '여기를 클릭해 대화방 알림을 끄거나 켤 수 있습니다';
+  muteHintPopover.classList.remove('hidden');
+  muteHintTimer = setTimeout(() => {
+    hideMuteHint();
+  }, 6000);
+}
+
 function openNotificationModal() {
   hideMuteHint();
   const conv = conversations.get(activeConvId);
@@ -1229,19 +1255,6 @@ function openNotificationModal() {
 function closeNotificationModal() {
   if (notificationModal) notificationModal.classList.add('hidden');
   if (currentUser) msgInput.focus();
-}
-
-function hideMuteHint() {
-  if (muteHintPopover) muteHintPopover.classList.add('hidden');
-}
-
-function showMuteHint() {
-  if (!muteHintPopover) return;
-  const isMuted = Boolean(userConversationStates.get(activeConvId)?.muted);
-  if (muteHintIcon) muteHintIcon.textContent = isMuted ? '🔕' : '🔔';
-  if (muteHintTitle) muteHintTitle.textContent = isMuted ? '알림 음소거됨' : '대화방 알림 설정';
-  if (muteHintDesc) muteHintDesc.textContent = isMuted ? '클릭하여 음소거를 해제하고 알림을 켭니다.' : '클릭하여 이 대화방의 알림을 음소거합니다.';
-  muteHintPopover.classList.remove('hidden');
 }
 
 if (convMuteBtn) {
