@@ -664,6 +664,14 @@ async def api_ack_read_state(request: Request):
     except (ValueError, TypeError):
         raise HTTPException(400, "유효한 메시지 ID가 아닙니다.")
     
+    if conv_type == "dm":
+        if not conv_id.isdigit():
+            partner = get_user_by_username(conv_id)
+            if partner:
+                conv_id = str(partner["id"])
+            else:
+                raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
+    
     updated = update_user_read_state(user["id"], conv_type, conv_id, last_read_id)
     unread_counts = get_user_unread_counts(user["id"])
     payload = {
@@ -685,6 +693,14 @@ async def api_set_muted(request: Request):
     muted = bool(data.get("muted", True))
     if conv_type not in ("channel", "dm") or not conv_id:
         raise HTTPException(400, "유효한 대화 정보가 필요합니다.")
+    
+    if conv_type == "dm":
+        if not conv_id.isdigit():
+            partner = get_user_by_username(conv_id)
+            if partner:
+                conv_id = str(partner["id"])
+            else:
+                raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
     
     updated = set_conversation_muted(user["id"], conv_type, conv_id, muted)
     payload = {

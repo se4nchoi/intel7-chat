@@ -119,6 +119,26 @@ class TestReadStateApi:
         assert ack_resp.status_code == 200
         assert ack_resp.json()["unread_counts"].get(dm_key, 0) == 0
 
+    def test_ack_dm_read_state_by_username(self):
+        client_alice, user_alice = session_client("alice")
+        client_bob, user_bob = session_client("bob")
+
+        dm1 = database.save_direct_message(user_alice, user_bob, "DM 메시지 1")
+        raw_dm1 = int(dm1["message_id"].replace("dm:", ""))
+
+        dm_key = f"dm:{user_alice['id']}"
+        resp = client_bob.get("/api/read-states", headers=ORIGIN)
+        assert resp.json()["unread_counts"].get(dm_key) == 1
+
+        # Bob acks DM using partner username
+        ack_resp = client_bob.post("/api/read-states/ack", headers=ORIGIN, json={
+            "conversation_type": "dm",
+            "conversation_id": "alice",
+            "last_read_message_id": raw_dm1,
+        })
+        assert ack_resp.status_code == 200
+        assert ack_resp.json()["unread_counts"].get(dm_key, 0) == 0
+
     def test_mute_and_unmute_conversation(self):
         client_bob, user_bob = session_client("bob")
 
