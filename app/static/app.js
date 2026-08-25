@@ -96,11 +96,28 @@ const notificationStatusIcon = document.getElementById('notification-status-icon
 const notificationStatusTitle = document.getElementById('notification-status-title');
 const notificationStatusDesc = document.getElementById('notification-status-desc');
 const notificationToggleBtn = document.getElementById('notification-toggle-btn');
+const headerNotifBtn = document.getElementById('header-notif-btn');
+const notifConvSection = document.getElementById('notif-conv-section');
+const soundModeInputs = document.querySelectorAll('input[name="sound-mode"]');
+const soundVolumeSlider = document.getElementById('sound-volume-slider');
+const soundVolumeVal = document.getElementById('sound-volume-val');
+const soundTestBtn = document.getElementById('sound-test-btn');
+const desktopNotifToggleBtn = document.getElementById('desktop-notif-toggle-btn');
+const desktopNotifTestBtn = document.getElementById('desktop-notif-test-btn');
+const desktopNotifStatusBadge = document.getElementById('desktop-notif-status-badge');
+const desktopNotifStatusDesc = document.getElementById('desktop-notif-status-desc');
+const desktopNotifHint = document.getElementById('desktop-notif-hint');
+const snoozeStatusBadge = document.getElementById('snooze-status-badge');
+const snoozeDesc = document.getElementById('snooze-desc');
+const snoozeResumeBtn = document.getElementById('snooze-resume-btn');
+const snoozeButtons = document.querySelectorAll('.snooze-btn[data-snooze]');
 const retentionNote = document.getElementById('retention-note');
 const connStatus = document.getElementById('conn-status');
 const myNickBadge = document.getElementById('my-nick-badge');
 const nicknameHintPopover = document.getElementById('nickname-hint-popover');
 const nicknameHintClose = document.getElementById('nickname-hint-close');
+const notifHintPopover = document.getElementById('notif-hint-popover');
+const notifHintClose = document.getElementById('notif-hint-close');
 const charCount = document.getElementById('char-count');
 const nicknameModal = document.getElementById('nickname-modal');
 const nicknameClose = document.getElementById('nickname-close');
@@ -281,22 +298,46 @@ function hideAuthModal() {
   authModal.classList.add('hidden');
 }
 
+let notifHintTimer = null;
+
 function showNicknameHint() {
   if (!nicknameHintPopover) return;
   if (nicknameHintTimer) clearTimeout(nicknameHintTimer);
   nicknameHintPopover.classList.remove('hidden');
   nicknameHintTimer = setTimeout(() => {
-    hideNicknameHint();
+    hideNicknameHint(true);
   }, 6000);
 }
 
-function hideNicknameHint() {
+function hideNicknameHint(triggerNext = true) {
   if (nicknameHintTimer) {
     clearTimeout(nicknameHintTimer);
     nicknameHintTimer = null;
   }
   if (nicknameHintPopover) {
     nicknameHintPopover.classList.add('hidden');
+  }
+  if (triggerNext && currentUser) {
+    showNotifHint();
+  }
+}
+
+function showNotifHint() {
+  if (!notifHintPopover || !currentUser) return;
+  if (notifHintTimer) clearTimeout(notifHintTimer);
+  notifHintPopover.classList.remove('hidden');
+  notifHintTimer = setTimeout(() => {
+    hideNotifHint();
+  }, 6000);
+}
+
+function hideNotifHint() {
+  if (notifHintTimer) {
+    clearTimeout(notifHintTimer);
+    notifHintTimer = null;
+  }
+  if (notifHintPopover) {
+    notifHintPopover.classList.add('hidden');
   }
 }
 
@@ -369,7 +410,8 @@ async function submitAuth(event) {
 }
 
 async function logout() {
-  hideNicknameHint();
+  hideNicknameHint(false);
+  hideNotifHint();
   hideMuteHint();
   saveCurrentDraft();
   if (ws) {
@@ -392,6 +434,7 @@ async function logout() {
   adminModal.classList.add('hidden');
   helpModal.classList.add('hidden');
   nicknameModal.classList.add('hidden');
+  if (notificationModal) notificationModal.classList.add('hidden');
   if (channelModal) channelModal.classList.add('hidden');
   if (channelEditModal) channelEditModal.classList.add('hidden');
   if (channelSettingsBtn) channelSettingsBtn.classList.add('hidden');
@@ -399,6 +442,7 @@ async function logout() {
   messageListEl.replaceChildren();
   setConnected(false);
   setAuthMode('login');
+  updateDocumentTitle();
   showAuthModal();
 }
 
@@ -1319,24 +1363,404 @@ function showMuteHint() {
   }, 6000);
 }
 
-function openNotificationModal() {
-  hideMuteHint();
-  const conv = conversations.get(activeConvId);
-  if (!conv || !currentUser) return;
-  const isMuted = Boolean(getConvState(activeConvId)?.muted);
-  const displayName = conv.type === 'channel' ? `#${conv.displayName || conv.name}` : `${displayNickname(conv.name)}`;
+// --- Global Sound Preferences & Web Audio Synthesizer ---
+let audioCtx = null;
+let lastSoundTime = 0;
+const SOUND_THROTTLE_MS = 500;
 
-  if (notificationModalDesc) notificationModalDesc.textContent = `${displayName}의 알림 및 음소거 설정입니다.`;
-  if (notificationStatusIcon) notificationStatusIcon.textContent = isMuted ? '🔕' : '🔔';
-  if (notificationStatusTitle) notificationStatusTitle.textContent = isMuted ? '현재 상태: 알림 음소거됨 (🔕)' : '현재 상태: 알림 켜짐 (🔔)';
-  if (notificationStatusDesc) notificationStatusDesc.textContent = isMuted
-    ? '이 대화방의 새 메시지 도착 시 토스트 알림이 표시되지 않습니다.'
-    : '이 대화방에 새 메시지가 도착하면 알림이 정상적으로 표시됩니다.';
-  if (notificationToggleBtn) {
-    notificationToggleBtn.textContent = isMuted ? '알림 켜기 (음소거 해제)' : '알림 끄기 (음소거)';
-    notificationToggleBtn.className = isMuted ? 'primary-btn' : 'caution-btn';
+function getSoundModeKey() {
+  return currentUser ? `bamboochat_sound_mode_${currentUser.id}` : 'bamboochat_sound_mode';
+}
+
+function getSoundVolumeKey() {
+  return currentUser ? `bamboochat_sound_volume_${currentUser.id}` : 'bamboochat_sound_volume';
+}
+
+function getDesktopNotifKey() {
+  return currentUser ? `bamboochat_desktop_notif_${currentUser.id}` : 'bamboochat_desktop_notif';
+}
+
+function getSnoozeKey() {
+  return currentUser ? `bamboochat_snooze_until_${currentUser.id}` : 'bamboochat_snooze_until';
+}
+
+function getSoundMode() {
+  try {
+    return localStorage.getItem(getSoundModeKey()) || 'important';
+  } catch {
+    return 'important';
+  }
+}
+
+function setSoundMode(mode) {
+  try {
+    localStorage.setItem(getSoundModeKey(), mode);
+  } catch { /* storage */ }
+}
+
+function getSoundVolume() {
+  try {
+    const raw = localStorage.getItem(getSoundVolumeKey());
+    return raw !== null ? Math.max(0, Math.min(1, parseFloat(raw))) : 0.5;
+  } catch {
+    return 0.5;
+  }
+}
+
+function setSoundVolume(volume) {
+  try {
+    localStorage.setItem(getSoundVolumeKey(), String(Math.max(0, Math.min(1, volume))));
+  } catch { /* storage */ }
+}
+
+function isDesktopNotificationEnabled() {
+  try {
+    return localStorage.getItem(getDesktopNotifKey()) === 'enabled';
+  } catch {
+    return false;
+  }
+}
+
+function setDesktopNotificationEnabled(enabled) {
+  try {
+    localStorage.setItem(getDesktopNotifKey(), enabled ? 'enabled' : 'disabled');
+  } catch { /* storage */ }
+}
+
+function getAudioContext() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) audioCtx = new AudioContextClass();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+function playNotificationSound(overrideThrottle = false) {
+  const now = Date.now();
+  if (!overrideThrottle && (now - lastSoundTime < SOUND_THROTTLE_MS)) return;
+  lastSoundTime = now;
+
+  const volume = getSoundVolume();
+  if (volume <= 0) return;
+
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const gainNode = ctx.createGain();
+    gainNode.connect(ctx.destination);
+    gainNode.gain.setValueAtTime(volume * 0.15, ctx.currentTime);
+
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+
+    osc1.type = 'sine';
+    osc2.type = 'sine';
+
+    osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+    osc1.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.08); // A5
+
+    osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.08); // A5
+    osc2.frequency.exponentialRampToValueAtTime(1174.66, ctx.currentTime + 0.16); // D6
+
+    osc1.connect(gainNode);
+    osc2.connect(gainNode);
+
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+
+    osc1.start(ctx.currentTime);
+    osc1.stop(ctx.currentTime + 0.12);
+
+    osc2.start(ctx.currentTime + 0.08);
+    osc2.stop(ctx.currentTime + 0.35);
+  } catch {
+    // Suppressed audio playback
+  }
+}
+
+// --- Snooze Management ---
+function getSnoozeUntil() {
+  if (!currentUser) return 0;
+  try {
+    const raw = localStorage.getItem(getSnoozeKey());
+    return raw ? parseInt(raw, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function isSnoozed() {
+  const until = getSnoozeUntil();
+  if (!until) return false;
+  if (Date.now() >= until) {
+    clearSnooze();
+    return false;
+  }
+  return true;
+}
+
+function setSnooze(durationMinutes) {
+  let until = 0;
+  const now = Date.now();
+  if (durationMinutes === 'tomorrow') {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    until = d.getTime();
+  } else {
+    const mins = Number(durationMinutes) || 15;
+    until = now + mins * 60 * 1000;
+  }
+  try {
+    localStorage.setItem(getSnoozeKey(), String(until));
+  } catch { /* storage */ }
+  updateNotificationSettingsUI();
+}
+
+function clearSnooze() {
+  try {
+    localStorage.removeItem(getSnoozeKey());
+  } catch { /* storage */ }
+  updateNotificationSettingsUI();
+}
+
+function formatSnoozeRemaining(untilMs) {
+  const diffMs = untilMs - Date.now();
+  if (diffMs <= 0) return '종료됨';
+  const mins = Math.ceil(diffMs / 60000);
+  if (mins < 60) return `${mins}분 남음`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hours}시간 ${remMins}분 남음` : `${hours}시간 남음`;
+}
+
+// --- Browser Title Unread Counter ---
+function getTotalUnreadCount() {
+  if (!currentUser) return 0;
+  let total = 0;
+  const processedDms = new Set();
+
+  conversations.forEach(conv => {
+    if (conv.type === 'dm') {
+      const partnerId = conv.partnerUserId || userDirectory.get(conv.name)?.id || conv.name;
+      processedDms.add(String(partnerId));
+      processedDms.add(String(conv.name));
+    }
+    total += getConvUnreadCount(conv);
+  });
+
+  userUnreadCounts.forEach((val, key) => {
+    if (val <= 0) return;
+    if (key.startsWith('channel:')) {
+      if (!conversations.has(key)) {
+        total += val;
+      }
+    } else if (key.startsWith('dm:')) {
+      const idOrNick = key.slice(3);
+      if (!processedDms.has(idOrNick)) {
+        processedDms.add(idOrNick);
+        total += val;
+      }
+    }
+  });
+
+  return total;
+}
+
+function updateDocumentTitle() {
+  if (!currentUser) {
+    document.title = 'BambooChat';
+    return;
+  }
+  const total = getTotalUnreadCount();
+  document.title = total > 0 ? `(${total}) BambooChat` : 'BambooChat';
+}
+
+// --- Desktop Notifications ---
+function checkDesktopNotificationContext() {
+  const isSecure = window.isSecureContext || ['localhost', '127.0.0.1'].includes(location.hostname);
+  const hasSupport = 'Notification' in window;
+  let permission = 'unsupported';
+  if (hasSupport) {
+    try {
+      permission = Notification.permission;
+    } catch {
+      permission = 'unsupported';
+    }
+  }
+  return { isSecure, hasSupport, permission };
+}
+
+function showDesktopNotification({ title, body, conversationId }) {
+  if (!isDesktopNotificationEnabled()) return;
+  const { hasSupport, permission } = checkDesktopNotificationContext();
+  if (!hasSupport || permission !== 'granted') return;
+
+  try {
+    const notif = new Notification(title || 'BambooChat', {
+      body: body || '',
+      icon: '/favicon.ico',
+      tag: conversationId || 'bamboochat-msg',
+    });
+    notif.onclick = () => {
+      window.focus();
+      if (conversationId) {
+        switchConversation(conversationId);
+      }
+      notif.close();
+    };
+  } catch {
+    // Suppressed or failed
+  }
+}
+
+// --- Shared Attention Adapter ---
+function emitAttention({
+  kind = 'ordinary', // 'dm' | 'mention' | 'reply' | 'ordinary'
+  conversationId = null,
+  title = '',
+  body = '',
+  isHistory = false,
+  isOwnMessage = false,
+  senderNick = '',
+}) {
+  if (isOwnMessage) return;
+  if (isHistory) return;
+
+  // Harmless future desktop-wrapper hook
+  try {
+    window.bambooDesktop?.requestAttention?.({
+      kind,
+      conversationId,
+    });
+  } catch { /* ignore */ }
+
+  const isCurrentActive = Boolean(conversationId && conversationId === activeConvId);
+  const convState = conversationId ? getConvState(conversationId) : null;
+  const isMuted = Boolean(convState?.muted);
+  const snoozed = isSnoozed();
+
+  if (isCurrentActive) return;
+  if (isMuted || snoozed) return;
+
+  const isImportant = (kind === 'dm' || kind === 'mention' || kind === 'reply');
+  const soundMode = getSoundMode();
+
+  if (soundMode === 'all' || (soundMode === 'important' && isImportant)) {
+    playNotificationSound();
   }
 
+  if (title || body) {
+    const toastTone = (kind === 'mention' || kind === 'reply') ? 'mention' : 'info';
+    const toastMsg = title ? `${title}: ${body}` : body;
+    showToast(toastMsg, toastTone);
+  }
+
+  if (isImportant && isDesktopNotificationEnabled()) {
+    showDesktopNotification({ title, body, conversationId });
+  }
+}
+
+// --- Notification Modal UI Sync ---
+function updateNotificationSettingsUI() {
+  if (!currentUser) return;
+
+  // 1. Current Conversation Mute Section
+  const conv = conversations.get(activeConvId);
+  if (conv && notifConvSection) {
+    notifConvSection.classList.remove('hidden');
+    const isMuted = Boolean(getConvState(activeConvId)?.muted);
+    const displayName = conv.type === 'channel' ? `#${conv.displayName || conv.name}` : `${displayNickname(conv.name)}`;
+
+    if (notificationModalDesc) notificationModalDesc.textContent = `${displayName} 및 전체 알림 환경을 설정합니다.`;
+    if (notificationStatusIcon) notificationStatusIcon.textContent = isMuted ? '🔕' : '🔔';
+    if (notificationStatusTitle) notificationStatusTitle.textContent = isMuted ? '현재 상태: 알림 음소거됨 (🔕)' : '현재 상태: 알림 켜짐 (🔔)';
+    if (notificationStatusDesc) notificationStatusDesc.textContent = isMuted
+      ? `${displayName}의 새 메시지 도착 시 소리 및 팝업 알림이 표시되지 않습니다.`
+      : `${displayName}에 새 메시지가 도착하면 알림이 정상적으로 표시됩니다.`;
+    if (notificationToggleBtn) {
+      notificationToggleBtn.textContent = isMuted ? '알림 켜기 (음소거 해제)' : '알림 끄기 (음소거)';
+      notificationToggleBtn.className = isMuted ? 'primary-btn notif-toggle-action-btn' : 'caution-btn notif-toggle-action-btn';
+    }
+  } else if (notifConvSection) {
+    notifConvSection.classList.add('hidden');
+    if (notificationModalDesc) notificationModalDesc.textContent = '전체 알림 및 소리 환경을 설정합니다.';
+  }
+
+  // 2. Sound Mode & Volume
+  const currentSoundMode = getSoundMode();
+  soundModeInputs.forEach(input => {
+    input.checked = input.value === currentSoundMode;
+  });
+
+  const vol = getSoundVolume();
+  if (soundVolumeSlider) soundVolumeSlider.value = String(Math.round(vol * 100));
+  if (soundVolumeVal) soundVolumeVal.textContent = `${Math.round(vol * 100)}%`;
+
+  // 3. Desktop Notifications Context
+  const { isSecure, hasSupport, permission } = checkDesktopNotificationContext();
+  const enabled = isDesktopNotificationEnabled();
+
+  if (desktopNotifStatusBadge) {
+    desktopNotifStatusBadge.className = 'notif-badge';
+    if (!hasSupport) {
+      desktopNotifStatusBadge.textContent = '브라우저 미지원';
+    } else if (permission === 'denied') {
+      desktopNotifStatusBadge.textContent = '권한 차단됨';
+      desktopNotifStatusBadge.classList.add('denied');
+    } else if (permission === 'granted') {
+      desktopNotifStatusBadge.textContent = enabled ? '활성화됨 (허용됨)' : '꺼짐 (권한 허용됨)';
+      if (enabled) desktopNotifStatusBadge.classList.add('granted');
+    } else {
+      desktopNotifStatusBadge.textContent = '권한 필요';
+    }
+  }
+
+  if (desktopNotifToggleBtn) {
+    if (!hasSupport) {
+      desktopNotifToggleBtn.disabled = true;
+      desktopNotifToggleBtn.textContent = '지원하지 않음';
+    } else if (permission === 'denied') {
+      desktopNotifToggleBtn.disabled = true;
+      desktopNotifToggleBtn.textContent = '브라우저에서 차단됨';
+    } else if (permission === 'granted') {
+      desktopNotifToggleBtn.disabled = false;
+      desktopNotifToggleBtn.textContent = enabled ? '데스크톱 알림 끄기' : '데스크톱 알림 켜기';
+      desktopNotifToggleBtn.className = enabled ? 'caution-btn' : 'primary-btn';
+    } else {
+      desktopNotifToggleBtn.disabled = false;
+      desktopNotifToggleBtn.textContent = '데스크톱 알림 허용하기';
+      desktopNotifToggleBtn.className = 'primary-btn';
+    }
+  }
+
+  if (desktopNotifHint) {
+    desktopNotifHint.classList.toggle('hidden', isSecure);
+  }
+
+  // 4. Snooze Status
+  const snoozed = isSnoozed();
+  const until = getSnoozeUntil();
+  if (snoozeStatusBadge) {
+    snoozeStatusBadge.className = `snooze-badge ${snoozed ? 'active' : 'inactive'}`;
+    snoozeStatusBadge.textContent = snoozed ? `방해 금지 중 (${formatSnoozeRemaining(until)})` : '알림 수신 중';
+  }
+  if (snoozeResumeBtn) {
+    snoozeResumeBtn.classList.toggle('hidden', !snoozed);
+  }
+  snoozeButtons.forEach(btn => {
+    btn.classList.toggle('active', false);
+  });
+}
+
+function openNotificationModal() {
+  hideNotifHint();
+  hideMuteHint();
+  if (!currentUser) return;
+  updateNotificationSettingsUI();
   if (notificationModal) notificationModal.classList.remove('hidden');
 }
 
@@ -1348,10 +1772,118 @@ function closeNotificationModal() {
 if (convMuteBtn) {
   convMuteBtn.addEventListener('click', openNotificationModal);
 }
+if (headerNotifBtn) {
+  headerNotifBtn.addEventListener('click', openNotificationModal);
+}
+if (notifHintClose) {
+  notifHintClose.addEventListener('click', event => {
+    event.stopPropagation();
+    hideNotifHint();
+  });
+}
+if (notifHintPopover) {
+  notifHintPopover.addEventListener('click', () => {
+    hideNotifHint();
+    openNotificationModal();
+  });
+}
 if (notificationToggleBtn) {
   notificationToggleBtn.addEventListener('click', async () => {
     await toggleActiveConvMute();
-    openNotificationModal();
+    updateNotificationSettingsUI();
+  });
+}
+if (soundModeInputs) {
+  soundModeInputs.forEach(input => {
+    input.addEventListener('change', () => {
+      setSoundMode(input.value);
+    });
+  });
+}
+if (soundVolumeSlider) {
+  soundVolumeSlider.addEventListener('input', () => {
+    const val = Number(soundVolumeSlider.value) / 100;
+    setSoundVolume(val);
+    if (soundVolumeVal) soundVolumeVal.textContent = `${soundVolumeSlider.value}%`;
+  });
+}
+if (soundTestBtn) {
+  soundTestBtn.addEventListener('click', () => {
+    playNotificationSound(true);
+  });
+}
+if (desktopNotifToggleBtn) {
+  desktopNotifToggleBtn.addEventListener('click', async () => {
+    const { hasSupport, permission } = checkDesktopNotificationContext();
+    if (!hasSupport) return;
+
+    if (permission === 'default') {
+      try {
+        const res = await Notification.requestPermission();
+        if (res === 'granted') {
+          setDesktopNotificationEnabled(true);
+        }
+      } catch { /* ignored */ }
+    } else if (permission === 'granted') {
+      setDesktopNotificationEnabled(!isDesktopNotificationEnabled());
+    }
+    updateNotificationSettingsUI();
+  });
+}
+if (desktopNotifTestBtn) {
+  desktopNotifTestBtn.addEventListener('click', async () => {
+    const { hasSupport, permission } = checkDesktopNotificationContext();
+    if (!hasSupport) {
+      showToast('이 브라우저는 데스크톱 알림을 지원하지 않습니다.', 'warning');
+      return;
+    }
+    if (permission === 'default') {
+      try {
+        const res = await Notification.requestPermission();
+        if (res === 'granted') {
+          setDesktopNotificationEnabled(true);
+          updateNotificationSettingsUI();
+          new Notification('BambooChat 테스트 알림 💬', {
+            body: '데스크톱 알림이 정상적으로 작동하고 있습니다! 🎉',
+            icon: '/favicon.ico',
+          });
+          showToast('데스크톱 테스트 알림을 발송했습니다.', 'success');
+        } else {
+          updateNotificationSettingsUI();
+          showToast('알림 권한이 허용되지 않았습니다.', 'warning');
+        }
+      } catch {
+        showToast('알림 권한 요청에 실패했습니다.', 'error');
+      }
+      return;
+    }
+    if (permission === 'denied') {
+      showToast('브라우저 설정에서 알림 권한이 차단되어 있습니다.', 'error');
+      return;
+    }
+    if (permission === 'granted') {
+      try {
+        new Notification('BambooChat 테스트 알림 💬', {
+          body: '데스크톱 알림이 정상적으로 작동하고 있습니다! 🎉',
+          icon: '/favicon.ico',
+        });
+        showToast('데스크톱 테스트 알림을 발송했습니다.', 'success');
+      } catch (err) {
+        showToast('알림 발송 실패: ' + (err.message || '권한 또는 환경 제한'), 'error');
+      }
+    }
+  });
+}
+if (snoozeButtons) {
+  snoozeButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      setSnooze(btn.dataset.snooze);
+    });
+  });
+}
+if (snoozeResumeBtn) {
+  snoozeResumeBtn.addEventListener('click', () => {
+    clearSnooze();
   });
 }
 if (notificationModalClose) notificationModalClose.addEventListener('click', closeNotificationModal);
@@ -1641,6 +2173,7 @@ function renderConversationList() {
     if (dmListEl) dmListEl.appendChild(item);
     else if (convListEl) convListEl.appendChild(item);
   }
+  updateDocumentTitle();
 }
 
 function renderOnlineList(users) {
@@ -3148,23 +3681,48 @@ function initWebSocket() {
           userUnreadCounts.set(targetConvId, currCnt + 1);
           renderConversationList();
         }
-        const isMuted = Boolean(userConversationStates.get(targetConvId)?.muted);
-        if (!data.history && added && messageNeedsMyAttention(chatMessage)) {
-          const senderDisplay = displayNickname(data.nickname);
-          const repliesToMe = data.reply && data.reply.nickname === myNickname;
-          const chanObj = channelsDirectory.get(chanId);
-          const chanTitle = chanObj?.display_name || (chanId === 1 ? '전체 채팅' : `채널 ${chanId}`);
-          showToast(
-            repliesToMe
-              ? `${senderDisplay}님이 #${chanTitle}에서 회원님의 메시지에 답장했습니다.`
-              : `${senderDisplay}님이 #${chanTitle}에서 회원님을 멘션했습니다.`,
-            'mention',
-          );
-        } else if (!data.history && added && !isMuted && targetConvId !== activeConvId && data.nickname !== myNickname) {
+        const isOwn = data.nickname === myNickname || (myUserId !== null && Number(data.author_id) === myUserId);
+        if (!data.history && added && !isOwn) {
           const senderDisplay = displayNickname(data.nickname);
           const chanObj = channelsDirectory.get(chanId);
           const chanTitle = chanObj?.display_name || (chanId === 1 ? '전체 채팅' : `채널 ${chanId}`);
-          showToast(`#${chanTitle} · ${senderDisplay}: ${(data.content || '파일 전송').slice(0, 50)}`, 'info');
+          const contentPreview = (data.content || '파일 전송').slice(0, 50);
+
+          const mentionsMe = Array.isArray(chatMessage.mentioned_user_ids)
+            && chatMessage.mentioned_user_ids.some(id => Number(id) === myUserId);
+          const repliesToMe = Boolean(chatMessage.reply && chatMessage.reply.nickname === myNickname);
+
+          if (repliesToMe) {
+            emitAttention({
+              kind: 'reply',
+              conversationId: targetConvId,
+              title: `#${chanTitle} · ${senderDisplay}`,
+              body: `${senderDisplay}님이 회원님의 메시지에 답장했습니다: ${contentPreview}`,
+              isHistory: Boolean(data.history),
+              isOwnMessage: isOwn,
+              senderNick: data.nickname,
+            });
+          } else if (mentionsMe) {
+            emitAttention({
+              kind: 'mention',
+              conversationId: targetConvId,
+              title: `#${chanTitle} · ${senderDisplay}`,
+              body: `${senderDisplay}님이 회원님을 멘션했습니다: ${contentPreview}`,
+              isHistory: Boolean(data.history),
+              isOwnMessage: isOwn,
+              senderNick: data.nickname,
+            });
+          } else {
+            emitAttention({
+              kind: 'ordinary',
+              conversationId: targetConvId,
+              title: `#${chanTitle}`,
+              body: `${senderDisplay}: ${contentPreview}`,
+              isHistory: Boolean(data.history),
+              isOwnMessage: isOwn,
+              senderNick: data.nickname,
+            });
+          }
         }
         break;
       }
@@ -3186,10 +3744,20 @@ function initWebSocket() {
           if (partnerUserId) userUnreadCounts.set(`dm:${partnerUserId}`, currCnt);
           renderConversationList();
         }
-        const isMuted = Boolean(getConvState(targetConvId)?.muted);
-        if (!data.history && added && !isMuted && targetConvId !== activeConvId && data.from_nick !== myNickname) {
-          const senderDisplay = displayNickname(data.from_nick);
-          showToast(`💬 ${senderDisplay}: ${(data.content || '파일 전송').slice(0, 50)}`, 'info');
+        const isOwn = data.from_nick === myNickname || (myUserId !== null && Number(data.from_user_id) === myUserId);
+        const senderDisplay = displayNickname(data.from_nick);
+        const contentPreview = (data.content || '파일 전송').slice(0, 50);
+
+        if (!data.history && added && !isOwn) {
+          emitAttention({
+            kind: 'dm',
+            conversationId: targetConvId,
+            title: `💬 1:1 대화 · ${senderDisplay}`,
+            body: contentPreview,
+            isHistory: Boolean(data.history),
+            isOwnMessage: isOwn,
+            senderNick: data.from_nick,
+          });
         }
         break;
       }
