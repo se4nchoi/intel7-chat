@@ -1630,14 +1630,6 @@ function emitAttention({
   if (isOwnMessage) return;
   if (isHistory) return;
 
-  // Harmless future desktop-wrapper hook
-  try {
-    window.bambooDesktop?.requestAttention?.({
-      kind,
-      conversationId,
-    });
-  } catch { /* ignore */ }
-
   const isCurrentActive = Boolean(conversationId && conversationId === activeConvId);
   const convState = conversationId ? getConvState(conversationId) : null;
   const isMuted = Boolean(convState?.muted);
@@ -1647,6 +1639,17 @@ function emitAttention({
   if (isMuted || snoozed) return;
 
   const isImportant = (kind === 'dm' || kind === 'mention' || kind === 'reply');
+
+  // Harmless future desktop-wrapper hook (executed only for active, unmuted, unsnoozed important alerts)
+  if (isImportant) {
+    try {
+      window.bambooDesktop?.requestAttention?.({
+        kind,
+        conversationId,
+      });
+    } catch { /* ignore */ }
+  }
+
   const soundMode = getSoundMode();
 
   if (soundMode === 'all' || (soundMode === 'important' && isImportant)) {
