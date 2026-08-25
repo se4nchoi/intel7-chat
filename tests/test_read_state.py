@@ -211,3 +211,71 @@ class TestReadStateWebSocketSync:
             assert event["type"] == "read_state_updated"
             assert event["state"]["last_read_message_id"] == raw_id
             assert event["unread_counts"]["channel:1"] == 0
+
+    def test_cross_session_dm_read_state_sync(self):
+        client_alice, user_alice = session_client("alice")
+        client_bob, user_bob = session_client("bob")
+
+        dm = database.save_direct_message(user_alice, user_bob, "안녕 밥")
+        raw_dm_id = int(dm["message_id"].replace("dm:", ""))
+        dm_key = f"dm:{user_alice['id']}"
+
+        with client_bob.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                evt = ws.receive_json()
+                if evt.get("type") == "history_ready":
+                    assert evt["unread_counts"].get(dm_key) == 1
+                    break
+
+            # Bob ACKs DM via HTTP from another session tab using partner username
+            ack_resp = client_bob.post("/api/read-states/ack", headers=ORIGIN, json={
+                "conversation_type": "dm",
+                "conversation_id": "alice",
+                "last_read_message_id": raw_dm_id,
+            })
+            assert ack_resp.status_code == 200
+
+            # Active WebSocket session receives real-time read_state_updated event
+            event = ws.receive_json()
+            assert event["type"] == "read_state_updated"
+            assert event["state"]["conversation_type"] == "dm"
+            assert str(event["state"]["conversation_id"]) == str(user_alice["id"])
+            assert event["unread_counts"].get(dm_key, 0) == 0
+
+    def test_mute_state_persistence_in_history_ready(self):
+        client_alice, user_alice = session_client("alice")
+        client_bob, user_bob = session_client("bob")
+
+        # Bob mutes DM with Alice
+        mute_resp = client_bob.post("/api/read-states/mute", headers=ORIGIN, json={
+            "conversation_type": "dm",
+            "conversation_id": "alice",
+            "muted": True,
+        })
+        assert mute_resp.status_code == 200
+
+        # Bob connects via WebSocket and checks history_ready
+        dm_key = f"dm:{user_alice['id']}"
+        with client_bob.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                evt = ws.receive_json()
+                if evt.get("type") == "history_ready":
+                    assert dm_key in evt["read_states"]
+                    assert evt["read_states"][dm_key]["muted"] is True
+                    break
+
+    def test_unread_counts_has_no_duplicate_aliases(self):
+        client_alice, user_alice = session_client("alice")
+        client_bob, user_bob = session_client("bob")
+
+        database.save_direct_message(user_alice, user_bob, "메시지 1")
+        database.save_direct_message(user_alice, user_bob, "메시지 2")
+
+        resp = client_bob.get("/api/read-states", headers=ORIGIN)
+        assert resp.status_code == 200
+        unread_counts = resp.json()["unread_counts"]
+        # Should contain dm:<alice_id>, NOT dm:alice or raw user ID
+        assert f"dm:{user_alice['id']}" in unread_counts
+        assert "dm:alice" not in unread_counts
+        assert unread_counts[f"dm:{user_alice['id']}"] == 2
+

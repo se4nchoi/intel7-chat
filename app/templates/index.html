@@ -63,8 +63,22 @@
             <button id="nickname-hint-close" class="hint-close-btn" type="button" aria-label="닫기">×</button>
           </div>
         </div>
-        <span id="conn-status" class="conn-status disconnected" role="status">연결 끊김</span>
+        <button id="conn-status" class="conn-status disconnected" role="status">연결 끊김</button>
         <button id="admin-btn" class="admin-btn hidden" type="button">관리</button>
+        <div class="header-notif-container">
+          <button id="header-notif-btn" class="icon-btn header-notif-btn" type="button" title="알림 및 소리 설정" aria-label="알림 및 소리 설정">🔔</button>
+          <div id="notif-hint-popover" class="nickname-hint-popover notif-hint-popover hidden" role="tooltip" aria-live="polite">
+            <span class="hint-arrow"></span>
+            <div class="hint-body">
+              <span class="hint-icon">🔔</span>
+              <div class="hint-text">
+                <strong>알림 및 소리 설정 가능!</strong>
+                <span>여기를 클릭해 소리, 데스크톱 알림, 방해 금지를 설정하세요</span>
+              </div>
+            </div>
+            <button id="notif-hint-close" class="hint-close-btn" type="button" aria-label="닫기">×</button>
+          </div>
+        </div>
         <button id="logout-btn" class="logout-btn" type="button">로그아웃</button>
         <button id="help-btn" class="help-btn" type="button" aria-label="기능 도움말" title="기능 도움말">?</button>
       </div>
@@ -326,25 +340,88 @@
   </div>
 
   <div id="notification-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="notification-modal-title">
-    <div class="modal-box channel-panel">
+    <div class="modal-box notif-settings-modal-box">
       <div class="admin-panel-header">
         <div>
-          <h2 id="notification-modal-title">대화방 알림 설정</h2>
-          <p class="modal-desc" id="notification-modal-desc">대화방의 알림 및 음소거 상태를 설정합니다.</p>
+          <h2 id="notification-modal-title">알림 및 소리 설정</h2>
+          <p class="modal-desc" id="notification-modal-desc">대화방 및 전체 알림 환경을 설정합니다.</p>
         </div>
         <button id="notification-modal-close" class="admin-close" type="button" aria-label="닫기">×</button>
       </div>
       <div class="notification-modal-body">
-        <div class="notification-status-card">
-          <span class="notification-status-icon" id="notification-status-icon">🔔</span>
-          <div>
-            <strong id="notification-status-title">현재 상태: 알림 켜짐</strong>
-            <p id="notification-status-desc">새 메시지가 도착하면 알림이 표시됩니다.</p>
+        <!-- Section 1: 현재 대화방 알림 설정 -->
+        <div class="notif-section" id="notif-conv-section">
+          <h3 class="notif-section-title">현재 대화방 설정</h3>
+          <div class="notification-status-card">
+            <span class="notification-status-icon" id="notification-status-icon">🔔</span>
+            <div class="notification-status-info">
+              <strong id="notification-status-title">현재 상태: 알림 켜짐</strong>
+              <p id="notification-status-desc">새 메시지가 도착하면 알림이 표시됩니다.</p>
+            </div>
+            <button id="notification-toggle-btn" type="button" class="caution-btn notif-toggle-action-btn">알림 끄기 (음소거)</button>
+          </div>
+          <p class="field-hint">※ 대화방 음소거 시 모든 알림(소리/팝업/토스트)이 차단되며(멘션/답장 포함), 읽지 않은 메시지 수(배지)만 유지됩니다.</p>
+        </div>
+
+        <!-- Section 2: 전체 알림 소리 설정 -->
+        <div class="notif-section">
+          <h3 class="notif-section-title">알림 소리</h3>
+          <div class="notif-options-group" id="sound-mode-group">
+            <label class="notif-radio-label">
+              <input type="radio" name="sound-mode" value="important" id="sound-mode-important" checked>
+              <span><strong>중요 알림만 (기본)</strong> — 1:1 DM, @멘션, 내 메시지 답장 시에만 소리 재생</span>
+            </label>
+            <label class="notif-radio-label">
+              <input type="radio" name="sound-mode" value="all" id="sound-mode-all">
+              <span><strong>모든 메시지</strong> — 모든 채널 및 DM 새 메시지 수신 시 소리 재생</span>
+            </label>
+            <label class="notif-radio-label">
+              <input type="radio" name="sound-mode" value="off" id="sound-mode-off">
+              <span><strong>소리 끔</strong> — 소리 알림 비활성화</span>
+            </label>
+          </div>
+          <div class="sound-volume-row">
+            <label for="sound-volume-slider" class="volume-label">볼륨</label>
+            <input type="range" id="sound-volume-slider" min="0" max="100" value="50" class="volume-slider" aria-label="알림 소리 볼륨">
+            <span id="sound-volume-val" class="volume-val">50%</span>
+            <button id="sound-test-btn" type="button" class="inline-edit-btn">소리 테스트 🔊</button>
           </div>
         </div>
-        <p class="field-hint">※ 음소거 시에도 회원님을 직접 <strong>@멘션</strong>하거나 회원님의 메시지에 <strong>답장</strong>한 경우에는 알림이 전달됩니다.</p>
-        <div class="channel-edit-actions">
-          <button id="notification-toggle-btn" type="button" class="caution-btn">알림 끄기 (음소거)</button>
+
+        <!-- Section 3: 데스크톱 팝업 알림 -->
+        <div class="notif-section">
+          <h3 class="notif-section-title">데스크톱 팝업 알림</h3>
+          <div class="notif-row-inline">
+            <div class="notif-row-text">
+              <div>
+                <span id="desktop-notif-status-badge" class="notif-badge">비활성화됨</span>
+                <span id="desktop-notif-status-desc" class="notif-desc-text">중요 알림(DM, 멘션, 답장) 수신 시 브라우저 팝업 알림</span>
+              </div>
+            </div>
+            <div class="notif-actions-inline">
+              <button id="desktop-notif-toggle-btn" type="button" class="inline-edit-btn">데스크톱 알림 허용</button>
+              <button id="desktop-notif-test-btn" type="button" class="inline-edit-btn">테스트 알림 발송 💬</button>
+            </div>
+          </div>
+          <p id="desktop-notif-hint" class="field-hint">⚠️ HTTP LAN 환경에서는 브라우저 보안 정책에 따라 데스크톱 팝업 알림이 제한될 수 있습니다. (소리, 토스트, 탭 제목 알림은 정상 동작합니다)</p>
+        </div>
+
+        <!-- Section 4: 알림 일시 중단 (방해 금지 / Snooze) -->
+        <div class="notif-section">
+          <div class="notif-section-header-inline">
+            <h3 class="notif-section-title">알림 일시 중단 (방해 금지)</h3>
+            <span id="snooze-status-badge" class="snooze-badge inactive">알림 수신 중</span>
+          </div>
+          <p class="notif-desc-text" id="snooze-desc">설정한 시간 동안 소리, 팝업 및 토스트 알림을 끕니다. (읽지 않은 메시지 수와 배지는 유지됩니다)</p>
+          <div class="snooze-btn-group">
+            <button type="button" class="snooze-btn" data-snooze="15">15분 동안</button>
+            <button type="button" class="snooze-btn" data-snooze="60">1시간 동안</button>
+            <button type="button" class="snooze-btn" data-snooze="tomorrow">내일 아침까지</button>
+            <button type="button" class="snooze-btn caution-btn hidden" id="snooze-resume-btn">즉시 알림 재개</button>
+          </div>
+        </div>
+
+        <div class="channel-edit-actions notif-modal-actions">
           <button id="notification-modal-cancel" type="button" class="inline-edit-cancel">닫기</button>
         </div>
       </div>
