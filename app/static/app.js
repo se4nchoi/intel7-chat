@@ -234,15 +234,19 @@ function displayNickname(nick) {
   return entry?.display_name || nick;
 }
 
-function getOrCreateDm(nick) {
+function getOrCreateDm(nick, partnerUserId = null) {
   if (!conversations.has(nick)) {
     conversations.set(nick, {
-      id: nick, name: nick, type: 'dm', messages: [],
+      id: nick, name: nick, type: 'dm', partnerUserId: partnerUserId, messages: [],
       messageIds: new Set(), unread: 0, hasOlder: false, loadingOlder: false,
       lastActivityTime: 0,
     });
   }
-  return conversations.get(nick);
+  const conv = conversations.get(nick);
+  if (partnerUserId && !conv.partnerUserId) {
+    conv.partnerUserId = partnerUserId;
+  }
+  return conv;
 }
 
 function setAuthMode(mode) {
@@ -1100,12 +1104,82 @@ function getNumericMessageId(msg) {
   return Number.isNaN(num) ? 0 : num;
 }
 
-function parseConvKey(convId) {
-  const parts = String(convId).split(':');
-  if (parts.length === 2) {
-    return { type: parts[0], id: parts[1] };
+function findDmConv(userIdOrNick) {
+  if (!userIdOrNick) return null;
+  const str = String(userIdOrNick);
+  if (conversations.has(str)) return conversations.get(str);
+  const withoutPrefix = str.replace(/^dm:/, '');
+  if (conversations.has(withoutPrefix)) return conversations.get(withoutPrefix);
+  const num = parseInt(withoutPrefix, 10);
+  for (const conv of conversations.values()) {
+    if (conv.type === 'dm') {
+      if (conv.name === withoutPrefix) return conv;
+      if (conv.partnerUserId && Number(conv.partnerUserId) === num) return conv;
+      const user = userDirectory.get(conv.name);
+      if (user && Number(user.id) === num) {
+        conv.partnerUserId = user.id;
+        return conv;
+      }
+    }
   }
-  return { type: 'channel', id: '1' };
+  return null;
+}
+
+function parseConvKey(convId) {
+  const conv = conversations.get(convId) || findDmConv(convId);
+  if (conv && conv.type === 'dm') {
+    const partnerUser = userDirectory.get(conv.name);
+    const partnerId = conv.partnerUserId || partnerUser?.id || conv.name;
+    return { type: 'dm', id: String(partnerId), rawKey: `dm:${partnerId}`, nick: conv.name };
+  }
+  const str = String(convId);
+  const parts = str.split(':');
+  if (parts.length === 2) {
+    return { type: parts[0], id: parts[1], rawKey: str };
+  }
+  if (str.startsWith('dm:')) {
+    const id = str.slice(3);
+    return { type: 'dm', id, rawKey: str };
+  }
+  return { type: 'channel', id: '1', rawKey: 'channel:1' };
+}
+
+function getConvUnreadCount(conv) {
+  if (!conv) return 0;
+  if (conv.id === activeConvId) return 0;
+  if (conv.type === 'channel') {
+    return userUnreadCounts.get(conv.id) ?? conv.unread ?? 0;
+  }
+  if (conv.type === 'dm') {
+    const partnerId = conv.partnerUserId || userDirectory.get(conv.name)?.id;
+    if (partnerId && userUnreadCounts.has(`dm:${partnerId}`)) {
+      return userUnreadCounts.get(`dm:${partnerId}`);
+    }
+    if (userUnreadCounts.has(conv.id)) {
+      return userUnreadCounts.get(conv.id);
+    }
+    if (userUnreadCounts.has(`dm:${conv.name}`)) {
+      return userUnreadCounts.get(`dm:${conv.name}`);
+    }
+    return conv.unread ?? 0;
+  }
+  return 0;
+}
+
+function getConvState(convId) {
+  const conv = conversations.get(convId) || findDmConv(convId);
+  if (!conv) return userConversationStates.get(convId);
+  if (conv.type === 'channel') {
+    return userConversationStates.get(conv.id);
+  }
+  if (conv.type === 'dm') {
+    const partnerId = conv.partnerUserId || userDirectory.get(conv.name)?.id;
+    if (partnerId && userConversationStates.has(`dm:${partnerId}`)) {
+      return userConversationStates.get(`dm:${partnerId}`);
+    }
+    return userConversationStates.get(conv.id) || userConversationStates.get(`dm:${conv.name}`);
+  }
+  return userConversationStates.get(convId);
 }
 
 let ackDebounceTimer = null;
@@ -1121,17 +1195,21 @@ function ackActiveConversationRead() {
   
   if (maxId <= 0) return;
   
-  const state = userConversationStates.get(activeConvId);
+  const parsed = parseConvKey(activeConvId);
+  const state = getConvState(activeConvId);
   const prevLastRead = state?.last_read_message_id || 0;
   if (maxId <= prevLastRead) return;
 
-  userConversationStates.set(activeConvId, {
+  const updatedState = {
     ...(state || {}),
-    conversation_type: parseConvKey(activeConvId).type,
-    conversation_id: parseConvKey(activeConvId).id,
+    conversation_type: parsed.type,
+    conversation_id: parsed.id,
     last_read_message_id: maxId,
     muted: Boolean(state?.muted),
-  });
+  };
+  userConversationStates.set(parsed.rawKey, updatedState);
+  userConversationStates.set(activeConvId, updatedState);
+  userUnreadCounts.set(parsed.rawKey, 0);
   userUnreadCounts.set(activeConvId, 0);
   conv.unread = 0;
   renderConversationList();
@@ -1139,13 +1217,12 @@ function ackActiveConversationRead() {
   clearTimeout(ackDebounceTimer);
   ackDebounceTimer = setTimeout(async () => {
     try {
-      const { type, id } = parseConvKey(activeConvId);
       const res = await fetch('/api/read-states/ack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          conversation_type: type,
-          conversation_id: id,
+          conversation_type: parsed.type,
+          conversation_id: parsed.id,
           last_read_message_id: maxId,
         }),
       });
@@ -1153,8 +1230,17 @@ function ackActiveConversationRead() {
       if (res.ok && data.unread_counts) {
         Object.entries(data.unread_counts).forEach(([k, v]) => {
           userUnreadCounts.set(k, v);
-          const c = conversations.get(k);
-          if (c && k !== activeConvId) c.unread = v;
+          const c = findDmConv(k) || conversations.get(k);
+          if (c) {
+            if (c.id === activeConvId) {
+              c.unread = 0;
+              userUnreadCounts.set(k, 0);
+              userUnreadCounts.set(c.id, 0);
+            } else {
+              c.unread = v;
+              userUnreadCounts.set(c.id, v);
+            }
+          }
         });
         renderConversationList();
       }
@@ -1165,17 +1251,19 @@ function ackActiveConversationRead() {
 async function toggleActiveConvMute() {
   const conv = conversations.get(activeConvId);
   if (!conv || !currentUser) return;
-  const { type, id } = parseConvKey(activeConvId);
-  const state = userConversationStates.get(activeConvId);
+  const parsed = parseConvKey(activeConvId);
+  const state = getConvState(activeConvId);
   const newMuted = !Boolean(state?.muted);
   
-  userConversationStates.set(activeConvId, {
+  const updatedState = {
     ...(state || {}),
-    conversation_type: type,
-    conversation_id: id,
+    conversation_type: parsed.type,
+    conversation_id: parsed.id,
     last_read_message_id: state?.last_read_message_id || 0,
     muted: newMuted,
-  });
+  };
+  userConversationStates.set(parsed.rawKey, updatedState);
+  userConversationStates.set(activeConvId, updatedState);
   updateMuteButtonUI();
   renderConversationList();
 
@@ -1184,8 +1272,8 @@ async function toggleActiveConvMute() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        conversation_type: type,
-        conversation_id: id,
+        conversation_type: parsed.type,
+        conversation_id: parsed.id,
         muted: newMuted,
       }),
     });
@@ -1199,7 +1287,7 @@ async function toggleActiveConvMute() {
 
 function updateMuteButtonUI() {
   if (!convMuteBtn) return;
-  const state = userConversationStates.get(activeConvId);
+  const state = getConvState(activeConvId);
   const isMuted = Boolean(state?.muted);
   convMuteBtn.textContent = isMuted ? '🔕' : '🔔';
   convMuteBtn.title = isMuted ? '알림 설정 (음소거됨)' : '알림 설정 (켜짐)';
@@ -1221,7 +1309,7 @@ function hideMuteHint() {
 function showMuteHint() {
   if (!muteHintPopover) return;
   if (muteHintTimer) clearTimeout(muteHintTimer);
-  const isMuted = Boolean(userConversationStates.get(activeConvId)?.muted);
+  const isMuted = Boolean(getConvState(activeConvId)?.muted);
   if (muteHintIcon) muteHintIcon.textContent = isMuted ? '🔕' : '💡';
   if (muteHintTitle) muteHintTitle.textContent = isMuted ? '알림 음소거 상태' : '알림 설정 가능!';
   if (muteHintDesc) muteHintDesc.textContent = isMuted ? '여기를 클릭해 음소거를 해제할 수 있습니다' : '여기를 클릭해 대화방 알림을 끄거나 켤 수 있습니다';
@@ -1235,7 +1323,7 @@ function openNotificationModal() {
   hideMuteHint();
   const conv = conversations.get(activeConvId);
   if (!conv || !currentUser) return;
-  const isMuted = Boolean(userConversationStates.get(activeConvId)?.muted);
+  const isMuted = Boolean(getConvState(activeConvId)?.muted);
   const displayName = conv.type === 'channel' ? `#${conv.displayName || conv.name}` : `${displayNickname(conv.name)}`;
 
   if (notificationModalDesc) notificationModalDesc.textContent = `${displayName}의 알림 및 음소거 설정입니다.`;
@@ -1392,6 +1480,7 @@ async function fetchChannelMessages(conv) {
     if (conv.id === activeConvId) {
       renderMessages();
       scrollBottom();
+      ackActiveConversationRead();
     }
   } catch (err) {
     showToast(err.message || '채널 메시지를 불러오지 못했습니다.', 'error');
@@ -1409,6 +1498,8 @@ function switchConversation(id) {
   const conv = conversations.get(id);
   conv.unread = 0;
   userUnreadCounts.set(id, 0);
+  const parsed = parseConvKey(id);
+  if (parsed.rawKey) userUnreadCounts.set(parsed.rawKey, 0);
   const isAdmin = currentUser && currentUser.role === 'admin';
   if (channelSettingsBtn) {
     channelSettingsBtn.classList.toggle('hidden', !(conv.type === 'channel' && isAdmin));
@@ -1435,6 +1526,7 @@ function switchConversation(id) {
   loadActiveDraft();
   renderComposerPreviews();
   renderMessages();
+  ackActiveConversationRead();
   renderConversationList();
   updateLoadOlderButton();
   closeSidebar();
@@ -1483,7 +1575,7 @@ function renderConversationList() {
     name.textContent = conv.displayName || conv.name;
     item.append(icon, name);
 
-    const state = userConversationStates.get(conv.id);
+    const state = getConvState(conv.id);
     if (state?.muted) {
       const muteIcon = document.createElement('span');
       muteIcon.className = 'conv-mute-indicator';
@@ -1492,7 +1584,7 @@ function renderConversationList() {
       item.appendChild(muteIcon);
     }
 
-    const unreadCount = userUnreadCounts.get(conv.id) ?? conv.unread ?? 0;
+    const unreadCount = getConvUnreadCount(conv);
     if (unreadCount > 0 && conv.id !== activeConvId) {
       const badge = document.createElement('span');
       badge.className = 'conv-unread';
@@ -1527,7 +1619,7 @@ function renderConversationList() {
     name.textContent = displayNickname(conv.name);
     item.append(icon, name);
 
-    const state = userConversationStates.get(conv.id);
+    const state = getConvState(conv.id);
     if (state?.muted) {
       const muteIcon = document.createElement('span');
       muteIcon.className = 'conv-mute-indicator';
@@ -1536,7 +1628,7 @@ function renderConversationList() {
       item.appendChild(muteIcon);
     }
 
-    const unreadCount = userUnreadCounts.get(conv.id) ?? conv.unread ?? 0;
+    const unreadCount = getConvUnreadCount(conv);
     if (unreadCount > 0 && conv.id !== activeConvId) {
       const badge = document.createElement('span');
       badge.className = 'conv-unread dm-unread';
@@ -1575,7 +1667,7 @@ function renderOnlineList(users) {
     item.append(dot, nickElement);
     if (nick !== myNickname && online) {
       const openDm = () => {
-        getOrCreateDm(nick);
+        getOrCreateDm(nick, user.id);
         renderConversationList();
         switchConversation(nick);
       };
@@ -2248,13 +2340,17 @@ function directMessageFromData(data) {
     msgType: 'dm',
     message_id: data.message_id,
     from_nick: data.from_nick,
+    from_user_id: data.from_user_id,
     to_nick: data.to_nick,
+    to_user_id: data.to_user_id,
     content: data.content || '',
     created_at: data.created_at,
     reply: data.reply || null,
     attachment: data.attachment || null,
     attachments: Array.isArray(data.attachments) ? data.attachments : null,
     attachment_removed: Boolean(data.attachment_removed),
+    edited_at: data.edited_at || null,
+    is_hidden: Boolean(data.is_hidden),
   };
 }
 
@@ -2993,12 +3089,25 @@ function initWebSocket() {
         if (data.state) {
           const key = `${data.state.conversation_type}:${data.state.conversation_id}`;
           userConversationStates.set(key, data.state);
+          const targetConv = findDmConv(key) || conversations.get(key);
+          if (targetConv) {
+            userConversationStates.set(targetConv.id, data.state);
+          }
         }
         if (data.unread_counts && typeof data.unread_counts === 'object') {
           Object.entries(data.unread_counts).forEach(([k, v]) => {
             userUnreadCounts.set(k, v);
-            const conv = conversations.get(k);
-            if (conv && k !== activeConvId) conv.unread = v;
+            const conv = findDmConv(k) || conversations.get(k);
+            if (conv) {
+              if (conv.id === activeConvId) {
+                conv.unread = 0;
+                userUnreadCounts.set(k, 0);
+                userUnreadCounts.set(conv.id, 0);
+              } else {
+                conv.unread = v;
+                userUnreadCounts.set(conv.id, v);
+              }
+            }
           });
           renderConversationList();
         }
@@ -3008,10 +3117,13 @@ function initWebSocket() {
         if (data.state) {
           const key = `${data.state.conversation_type}:${data.state.conversation_id}`;
           const curr = userConversationStates.get(key) || {};
-          userConversationStates.set(key, { ...curr, ...data.state });
-          if (activeConvId === key) {
-            updateMuteButtonUI();
+          const merged = { ...curr, ...data.state };
+          userConversationStates.set(key, merged);
+          const targetConv = findDmConv(key) || conversations.get(key);
+          if (targetConv) {
+            userConversationStates.set(targetConv.id, merged);
           }
+          updateMuteButtonUI();
           renderConversationList();
         }
         break;
@@ -3058,18 +3170,23 @@ function initWebSocket() {
       }
       case 'dm': {
         const partner = data.from_nick === myNickname ? data.to_nick : data.from_nick;
-        const conv = getOrCreateDm(partner);
+        const partnerUserId = data.from_nick === myNickname ? data.to_user_id : data.from_user_id;
+        const conv = getOrCreateDm(partner, partnerUserId);
         const targetConvId = conv.id;
         renderConversationList();
         const added = addMessage(targetConvId, directMessageFromData(data), { markUnread: !data.history });
         if (targetConvId === activeConvId) {
+          conv.unread = 0;
+          userUnreadCounts.set(targetConvId, 0);
+          if (partnerUserId) userUnreadCounts.set(`dm:${partnerUserId}`, 0);
           ackActiveConversationRead();
-        } else {
-          const currCnt = userUnreadCounts.get(targetConvId) || 0;
-          userUnreadCounts.set(targetConvId, currCnt + 1);
+        } else if (added && !data.history) {
+          const currCnt = getConvUnreadCount(conv);
+          userUnreadCounts.set(targetConvId, currCnt);
+          if (partnerUserId) userUnreadCounts.set(`dm:${partnerUserId}`, currCnt);
           renderConversationList();
         }
-        const isMuted = Boolean(userConversationStates.get(targetConvId)?.muted);
+        const isMuted = Boolean(getConvState(targetConvId)?.muted);
         if (!data.history && added && !isMuted && targetConvId !== activeConvId && data.from_nick !== myNickname) {
           const senderDisplay = displayNickname(data.from_nick);
           showToast(`💬 ${senderDisplay}: ${(data.content || '파일 전송').slice(0, 50)}`, 'info');
@@ -3087,15 +3204,29 @@ function initWebSocket() {
         if (data.read_states && typeof data.read_states === 'object') {
           Object.entries(data.read_states).forEach(([k, v]) => {
             userConversationStates.set(k, v);
+            const targetConv = findDmConv(k) || conversations.get(k);
+            if (targetConv) {
+              userConversationStates.set(targetConv.id, v);
+            }
           });
         }
         if (data.unread_counts && typeof data.unread_counts === 'object') {
           Object.entries(data.unread_counts).forEach(([k, v]) => {
             userUnreadCounts.set(k, v);
-            const conv = conversations.get(k);
-            if (conv && k !== activeConvId) conv.unread = v;
+            const conv = findDmConv(k) || conversations.get(k);
+            if (conv) {
+              if (conv.id === activeConvId) {
+                conv.unread = 0;
+                userUnreadCounts.set(k, 0);
+                userUnreadCounts.set(conv.id, 0);
+              } else {
+                conv.unread = v;
+                userUnreadCounts.set(conv.id, v);
+              }
+            }
           });
         }
+        ackActiveConversationRead();
         updateMuteButtonUI();
         renderConversationList();
         updateLoadOlderButton();
@@ -3117,7 +3248,12 @@ function initWebSocket() {
             online: Boolean(user.online),
           });
         });
-        // Update own display name if changed by another session or admin
+        conversations.forEach(conv => {
+          if (conv.type === 'dm') {
+            const u = userDirectory.get(conv.name);
+            if (u) conv.partnerUserId = u.id;
+          }
+        });
         if (myNickname) {
           const me = userDirectory.get(myNickname);
           if (me && me.display_name !== myDisplayName) {
