@@ -38,7 +38,8 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     set_user_role, update_channel, archive_channel, delete_channel,
     get_message_by_id, update_message_content, set_message_hidden, move_message_channel,
     get_user_conversation_states, update_user_read_state, set_conversation_muted, get_user_unread_counts,
-    update_display_name, update_password_hash)
+    update_display_name, update_password_hash,
+    ALLOWED_REACTION_EMOJIS, toggle_message_reaction, get_message_reactions, get_direct_message_by_id)
 
 CONFIG = load_config()
 configure_storage(CONFIG.data_path, CONFIG.database_limit_bytes)
@@ -556,10 +557,10 @@ async def api_delete_channel(channel_id: int, request: Request):
 
 @app.get("/api/channels/{channel_id}/messages")
 async def channel_message_history(channel_id: int, request: Request, before_id: Optional[int] = None):
-    request_user(request)
+    user = request_user(request)
     if not channel_exists(channel_id):
         raise HTTPException(404, "채널을 찾을 수 없습니다.")
-    messages = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1, before_id, channel_id=channel_id)
+    messages = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1, before_id, channel_id=channel_id, current_user_id=user["id"])
     has_more = len(messages) > PUBLIC_HISTORY_PAGE_SIZE
     messages = messages[-PUBLIC_HISTORY_PAGE_SIZE:]
     users = list_mentionable_users()
@@ -641,6 +642,77 @@ async def api_move_message(message_id: int, request: Request):
     })
     return enriched
 
+@app.post("/api/messages/{message_type}/{message_id}/reactions/toggle")
+async def api_toggle_reaction(message_type: str, message_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    if message_type not in ("channel", "dm"):
+        raise HTTPException(400, "유효하지 않은 메시지 유형입니다.")
+
+    data = await read_json_body(request)
+    emoji = str(data.get("emoji", "")).strip()
+    if not emoji or emoji not in ALLOWED_REACTION_EMOJIS:
+        raise HTTPException(400, "유효하지 않은 이모지입니다.")
+
+    if message_type == "channel":
+        msg = get_message_by_id(message_id, current_user_id=user["id"])
+        if not msg:
+            raise HTTPException(404, "메시지를 찾을 수 없습니다.")
+        if msg.get("is_hidden") and user["role"] != "admin":
+            raise HTTPException(403, "숨겨진 메시지에는 반응할 수 없습니다.")
+
+        toggle_message_reaction("channel", message_id, user["id"], emoji)
+        updated_reactions = get_message_reactions("channel", message_id, current_user_id=user["id"])
+
+        all_reactions = get_message_reactions("channel", message_id, current_user_id=None)
+        await broadcast({
+            "type": "reaction_updated",
+            "message_type": "channel",
+            "message_id": message_id,
+            "channel_id": msg["channel_id"],
+            "reactions": all_reactions,
+        })
+        return {
+            "message_type": "channel",
+            "message_id": message_id,
+            "reactions": updated_reactions,
+        }
+    else:  # dm
+        dm = get_direct_message_by_id(message_id, current_user_id=user["id"])
+        if not dm:
+            raise HTTPException(404, "대화 메시지를 찾을 수 없습니다.")
+        if user["id"] not in (dm["from_user_id"], dm["to_user_id"]):
+            raise HTTPException(403, "대화 참여자만 반응할 수 있습니다.")
+
+        toggle_message_reaction("dm", message_id, user["id"], emoji)
+        user_reactions = get_message_reactions("dm", message_id, current_user_id=user["id"])
+
+        partner_id = dm["to_user_id"] if dm["from_user_id"] == user["id"] else dm["from_user_id"]
+
+        user_event = {
+            "type": "reaction_updated",
+            "message_type": "dm",
+            "message_id": message_id,
+            "reactions": user_reactions,
+        }
+        await send_to_user_id(user["id"], user_event)
+
+        partner_reactions = get_message_reactions("dm", message_id, current_user_id=partner_id)
+        partner_event = {
+            "type": "reaction_updated",
+            "message_type": "dm",
+            "message_id": message_id,
+            "reactions": partner_reactions,
+        }
+        await send_to_user_id(partner_id, partner_event)
+
+        return {
+            "message_type": "dm",
+            "message_id": message_id,
+            "reactions": user_reactions,
+        }
+
 @app.get("/api/read-states")
 async def api_get_read_states(request: Request):
     user = request_user(request)
@@ -718,8 +790,8 @@ async def api_messages(request: Request):
 
 @app.get("/api/history/public")
 async def public_message_history(request: Request, before_id: Optional[int] = None):
-    request_user(request)
-    messages = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1, before_id)
+    user = request_user(request)
+    messages = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1, before_id, current_user_id=user["id"])
     has_more = len(messages) > PUBLIC_HISTORY_PAGE_SIZE
     messages = messages[-PUBLIC_HISTORY_PAGE_SIZE:]
     users = list_mentionable_users()

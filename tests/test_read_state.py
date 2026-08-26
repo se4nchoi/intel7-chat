@@ -43,8 +43,8 @@ class TestReadStateMigration:
     def test_schema_version_reaches_v4(self):
         with database.get_connection() as conn:
             version = database._get_schema_version(conn)
-        assert version == 4
-        assert len(database._MIGRATIONS) == 4
+        assert version >= 4
+        assert len(database._MIGRATIONS) >= 4
 
     def test_user_conversation_state_table_structure(self):
         with database.get_connection() as conn:

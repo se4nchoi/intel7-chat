@@ -193,6 +193,8 @@ def _migrate_v3(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "messages", "is_hidden", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(conn, "messages", "moved_from_channel_id", "INTEGER")
 
+ALLOWED_REACTION_EMOJIS = {"👍", "❤️", "😂", "😮", "😢", "👏", "✅", "❌", "👀"}
+
 def _migrate_v4(conn: sqlite3.Connection) -> None:
     """Create user_conversation_state table for read tracking and notification muting."""
     conn.execute("""CREATE TABLE IF NOT EXISTS user_conversation_state (
@@ -207,11 +209,25 @@ def _migrate_v4(conn: sqlite3.Connection) -> None:
     )""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ucs_user ON user_conversation_state(user_id)")
 
+def _migrate_v5(conn: sqlite3.Connection) -> None:
+    """Create message_reactions table for channel and DM message reactions."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS message_reactions (
+        message_type TEXT NOT NULL,
+        message_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        emoji TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (message_type, message_id, user_id, emoji),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_reactions_target ON message_reactions(message_type, message_id)")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
     _migrate_v3,
     _migrate_v4,
+    _migrate_v5,
 ]
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -438,6 +454,7 @@ def delete_channel(channel_id: int) -> Optional[List[str]]:
             att_rows = conn.execute(f"SELECT DISTINCT attachment_id FROM message_attachments WHERE message_id IN ({marks})", msg_ids).fetchall()
             att_ids = [r[0] for r in att_rows if r[0]]
             conn.execute(f"DELETE FROM message_attachments WHERE message_id IN ({marks})", msg_ids)
+            conn.execute(f"DELETE FROM message_reactions WHERE message_type='channel' AND message_id IN ({marks})", msg_ids)
             for att_id in att_ids:
                 in_msgs = conn.execute("SELECT 1 FROM message_attachments WHERE attachment_id=?", (att_id,)).fetchone()
                 in_dms = conn.execute("SELECT 1 FROM direct_message_attachments WHERE attachment_id=?", (att_id,)).fetchone()
@@ -447,6 +464,7 @@ def delete_channel(channel_id: int) -> Optional[List[str]]:
                         stored_files_to_remove.append(rec["stored_name"])
                         conn.execute("DELETE FROM attachments WHERE id=?", (att_id,))
             conn.execute(f"DELETE FROM messages WHERE id IN ({marks})", msg_ids)
+        conn.execute("DELETE FROM user_conversation_state WHERE conversation_type='channel' AND conversation_id=?", (str(channel_id),))
         conn.execute("DELETE FROM channels WHERE id=?", (channel_id,))
         conn.commit()
     return stored_files_to_remove
@@ -481,7 +499,90 @@ def _message_attachments(conn: sqlite3.Connection, ids: List[int]) -> Dict[int, 
         result[row["message_id"]].append(item)
     return result
 
-def _message_public(row: sqlite3.Row, attachments: List[Dict[str, Any]]) -> Dict[str, Any]:
+def get_reactions_for_messages(
+    conn: sqlite3.Connection,
+    message_type: str,
+    message_ids: List[int],
+    current_user_id: Optional[int] = None,
+) -> Dict[int, List[Dict[str, Any]]]:
+    result: Dict[int, List[Dict[str, Any]]] = {mid: [] for mid in message_ids}
+    if not message_ids:
+        return result
+    marks = ",".join("?" for _ in message_ids)
+    rows = conn.execute(f"""
+        SELECT mr.message_id, mr.emoji, mr.user_id, mr.created_at,
+               u.username, u.display_name
+        FROM message_reactions mr
+        JOIN users u ON u.id = mr.user_id
+        WHERE mr.message_type = ? AND mr.message_id IN ({marks})
+        ORDER BY mr.created_at ASC, mr.rowid ASC
+    """, [message_type, *message_ids]).fetchall()
+
+    grouped: Dict[int, Dict[str, Dict[str, Any]]] = {mid: {} for mid in message_ids}
+    for row in rows:
+        mid = row["message_id"]
+        emoji = row["emoji"]
+        uid = row["user_id"]
+        user_info = {
+            "id": uid,
+            "username": row["username"],
+            "display_name": row["display_name"] or row["username"],
+        }
+        if emoji not in grouped[mid]:
+            grouped[mid][emoji] = {
+                "emoji": emoji,
+                "count": 0,
+                "reacted_by_me": False,
+                "users": [],
+            }
+        grouped[mid][emoji]["count"] += 1
+        grouped[mid][emoji]["users"].append(user_info)
+        if current_user_id is not None and uid == current_user_id:
+            grouped[mid][emoji]["reacted_by_me"] = True
+
+    for mid in message_ids:
+        result[mid] = list(grouped[mid].values())
+    return result
+
+def toggle_message_reaction(
+    message_type: str,
+    message_id: int,
+    user_id: int,
+    emoji: str,
+) -> bool:
+    """Toggles reaction on a message. Returns True if added, False if removed."""
+    if emoji not in ALLOWED_REACTION_EMOJIS:
+        raise ValueError(f"Invalid reaction emoji: {emoji}")
+    with get_connection() as conn:
+        existing = conn.execute("""
+            SELECT 1 FROM message_reactions
+            WHERE message_type = ? AND message_id = ? AND user_id = ? AND emoji = ?
+        """, (message_type, message_id, user_id, emoji)).fetchone()
+        if existing:
+            conn.execute("""
+                DELETE FROM message_reactions
+                WHERE message_type = ? AND message_id = ? AND user_id = ? AND emoji = ?
+            """, (message_type, message_id, user_id, emoji))
+            conn.commit()
+            return False
+        else:
+            conn.execute("""
+                INSERT INTO message_reactions (message_type, message_id, user_id, emoji, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (message_type, message_id, user_id, emoji, utc_now()))
+            conn.commit()
+            return True
+
+def get_message_reactions(
+    message_type: str,
+    message_id: int,
+    current_user_id: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        res = get_reactions_for_messages(conn, message_type, [message_id], current_user_id)
+        return res.get(message_id, [])
+
+def _message_public(row: sqlite3.Row, attachments: List[Dict[str, Any]], reactions: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     reply = None
     if row["reply_nickname"] or row["reply_content"]:
         reply = {"nickname": row["reply_nickname"] or "", "content": row["reply_content"] or ""}
@@ -495,15 +596,17 @@ def _message_public(row: sqlite3.Row, attachments: List[Dict[str, Any]]) -> Dict
             "author_id": row["user_id"], "channel_id": channel_id, "content": row["content"],
             "created_at": row["created_at"], "edited_at": edited_at, "is_hidden": is_hidden,
             "moved_from_channel_id": moved_from, "reply": reply, "attachment": live,
-            "attachments": attachments, "attachment_removed": bool(attachments and not live)}
+            "attachments": attachments, "attachment_removed": bool(attachments and not live),
+            "reactions": reactions if reactions is not None else []}
 
-def get_message_by_id(message_id: int) -> Optional[Dict[str, Any]]:
+def get_message_by_id(message_id: int, current_user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
         if not row:
             return None
         attachments = _message_attachments(conn, [message_id]).get(message_id, [])
-        return _message_public(row, attachments)
+        reactions = get_reactions_for_messages(conn, "channel", [message_id], current_user_id).get(message_id, [])
+        return _message_public(row, attachments, reactions)
 
 def update_message_content(message_id: int, new_content: str, user_id: int, is_admin: bool = False) -> Optional[Dict[str, Any]]:
     now = utc_now()
@@ -516,7 +619,7 @@ def update_message_content(message_id: int, new_content: str, user_id: int, is_a
         conn.execute("UPDATE messages SET content=?, edited_at=? WHERE id=?",
                      (new_content, now, message_id))
         conn.commit()
-    return get_message_by_id(message_id)
+    return get_message_by_id(message_id, user_id)
 
 def set_message_hidden(message_id: int, is_hidden: bool) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
@@ -562,12 +665,12 @@ def save_message(nickname: str, content: str, ip: str = "", reply: Optional[Dict
         row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
         items = _message_attachments(conn, [message_id])[message_id]
         conn.commit()
-    result = _message_public(row, items)
+    result = _message_public(row, items, [])
     result["ip"] = ip
     return result
 
 def get_recent_messages(limit: int = 100, before_id: Optional[int] = None,
-                        channel_id: int = 1) -> List[Dict[str, Any]]:
+                        channel_id: int = 1, current_user_id: Optional[int] = None) -> List[Dict[str, Any]]:
     with get_connection() as conn:
         if before_id is None:
             rows = conn.execute("""SELECT * FROM
@@ -577,8 +680,10 @@ def get_recent_messages(limit: int = 100, before_id: Optional[int] = None,
             rows = conn.execute("""SELECT * FROM
                 (SELECT * FROM messages WHERE channel_id=? AND id<? ORDER BY id DESC LIMIT ?)
                 ORDER BY id ASC""", (channel_id, before_id, limit)).fetchall()
-        items = _message_attachments(conn, [row["id"] for row in rows])
-    return [_message_public(row, items[row["id"]]) for row in rows]
+        msg_ids = [row["id"] for row in rows]
+        items = _message_attachments(conn, msg_ids)
+        reactions = get_reactions_for_messages(conn, "channel", msg_ids, current_user_id)
+    return [_message_public(row, items[row["id"]], reactions.get(row["id"], [])) for row in rows]
 
 def _direct_message_attachments(conn: sqlite3.Connection,
                                 ids: List[int]) -> Dict[int, List[Dict[str, Any]]]:
@@ -607,7 +712,8 @@ def _direct_message_attachments(conn: sqlite3.Connection,
     return result
 
 def _direct_message_public(row: sqlite3.Row,
-                           attachments: List[Dict[str, Any]]) -> Dict[str, Any]:
+                           attachments: List[Dict[str, Any]],
+                           reactions: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     reply = None
     if row["reply_nickname"] or row["reply_content"]:
         reply = {"nickname": row["reply_nickname"] or "",
@@ -618,7 +724,17 @@ def _direct_message_public(row: sqlite3.Row,
             "to_user_id": row["recipient_user_id"], "content": row["content"],
             "created_at": row["created_at"], "reply": reply, "attachment": live,
             "attachments": attachments,
-            "attachment_removed": bool(attachments and not live)}
+            "attachment_removed": bool(attachments and not live),
+            "reactions": reactions if reactions is not None else []}
+
+def get_direct_message_by_id(dm_id: int, current_user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM direct_messages WHERE id=?", (dm_id,)).fetchone()
+        if not row:
+            return None
+        items = _direct_message_attachments(conn, [dm_id]).get(dm_id, [])
+        reactions = get_reactions_for_messages(conn, "dm", [dm_id], current_user_id).get(dm_id, [])
+        return _direct_message_public(row, items, reactions)
 
 def save_direct_message(sender: Dict[str, Any], recipient: Dict[str, Any], content: str,
                         reply: Optional[Dict[str, str]] = None,
@@ -643,7 +759,7 @@ def save_direct_message(sender: Dict[str, Any], recipient: Dict[str, Any], conte
         row = conn.execute("SELECT * FROM direct_messages WHERE id=?", (message_id,)).fetchone()
         items = _direct_message_attachments(conn, [message_id])[message_id]
         conn.commit()
-    return _direct_message_public(row, items)
+    return _direct_message_public(row, items, [])
 
 def get_recent_direct_messages(user_id: int, limit: int = 30) -> List[Dict[str, Any]]:
     with get_connection() as conn:
@@ -656,8 +772,10 @@ def get_recent_direct_messages(user_id: int, limit: int = 30) -> List[Dict[str, 
             WHERE sender_user_id=? OR recipient_user_id=?
         ) WHERE conversation_row<=? ORDER BY id ASC""",
             (user_id, user_id, user_id, limit)).fetchall()
-        items = _direct_message_attachments(conn, [row["id"] for row in rows])
-    return [_direct_message_public(row, items[row["id"]]) for row in rows]
+        msg_ids = [row["id"] for row in rows]
+        items = _direct_message_attachments(conn, msg_ids)
+        reactions = get_reactions_for_messages(conn, "dm", msg_ids, user_id)
+    return [_direct_message_public(row, items[row["id"]], reactions.get(row["id"], [])) for row in rows]
 
 def get_direct_messages_between(user_id: int, partner_user_id: int, limit: int = 50,
                                 before_id: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -674,8 +792,10 @@ def get_direct_messages_between(user_id: int, partner_user_id: int, limit: int =
              (sender_user_id=? AND recipient_user_id=?))
             {before_clause} ORDER BY id DESC LIMIT ?
         ) ORDER BY id ASC""", params).fetchall()
-        items = _direct_message_attachments(conn, [row["id"] for row in rows])
-    return [_direct_message_public(row, items[row["id"]]) for row in rows]
+        msg_ids = [row["id"] for row in rows]
+        items = _direct_message_attachments(conn, msg_ids)
+        reactions = get_reactions_for_messages(conn, "dm", msg_ids, user_id)
+    return [_direct_message_public(row, items[row["id"]], reactions.get(row["id"], [])) for row in rows]
 
 def attachment_is_visible_to_user(attachment_id: str, user_id: int) -> bool:
     with get_connection() as conn:

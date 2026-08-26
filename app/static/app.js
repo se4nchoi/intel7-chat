@@ -2615,9 +2615,155 @@ async function deleteOwnedAttachment(attachmentId) {
   }
 }
 
+const REACTION_PALETTE = ['👍', '❤️', '😂', '😮', '😢', '👏', '✅', '❌', '👀'];
+
+let activeReactionPicker = null;
+
+function closeReactionPicker() {
+  if (activeReactionPicker) {
+    activeReactionPicker.remove();
+    activeReactionPicker = null;
+  }
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.reaction-picker-popover') && !e.target.closest('.msg-action-react-btn')) {
+    closeReactionPicker();
+  }
+});
+
+function openReactionPicker(msg, anchorBtn) {
+  if (activeReactionPicker && activeReactionPicker.dataset.msgId === msg.message_id) {
+    closeReactionPicker();
+    return;
+  }
+  closeReactionPicker();
+  const picker = document.createElement('div');
+  picker.className = 'reaction-picker-popover';
+  picker.dataset.msgId = msg.message_id;
+
+  REACTION_PALETTE.forEach(emoji => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'reaction-picker-emoji-btn';
+    btn.textContent = emoji;
+    const isReacted = Array.isArray(msg.reactions) && msg.reactions.some(r => r.emoji === emoji && (r.reacted_by_me || r.users?.some(u => Number(u.id) === myUserId)));
+    if (isReacted) btn.classList.add('active');
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      closeReactionPicker();
+      await toggleReaction(msg, emoji);
+    });
+    picker.appendChild(btn);
+  });
+
+  const parentShell = anchorBtn.closest('.message-actions') || anchorBtn.parentElement;
+  parentShell.appendChild(picker);
+  activeReactionPicker = picker;
+}
+
+function renderMessageReactions(msg, container) {
+  container.replaceChildren();
+  const reactions = Array.isArray(msg.reactions) ? msg.reactions : [];
+  if (!reactions.length) {
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+
+  reactions.forEach(r => {
+    if (!r.count || r.count <= 0) return;
+    const isReactedByMe = Boolean(r.reacted_by_me || r.users?.some(u => Number(u.id) === myUserId));
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = `reaction-pill${isReactedByMe ? ' reacted-by-me' : ''}`;
+    
+    const emojiSpan = document.createElement('span');
+    emojiSpan.className = 'reaction-pill-emoji';
+    emojiSpan.textContent = r.emoji;
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'reaction-pill-count';
+    countSpan.textContent = r.count;
+
+    pill.append(emojiSpan, countSpan);
+
+    if (Array.isArray(r.users) && r.users.length) {
+      const names = r.users.map(u => u.display_name || u.username);
+      const tooltipText = names.length <= 3 
+        ? `${names.join(', ')}님이 반응함` 
+        : `${names.slice(0, 3).join(', ')} 외 ${names.length - 3}명이 반응함`;
+      pill.title = tooltipText;
+    }
+
+    pill.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await toggleReaction(msg, r.emoji);
+    });
+
+    container.appendChild(pill);
+  });
+}
+
+async function toggleReaction(msg, emoji) {
+  if (!currentUser || !msg.message_id) return;
+  const isChat = msg.msgType === 'chat';
+  const msgType = isChat ? 'channel' : 'dm';
+  const rawId = isChat 
+    ? Number(String(msg.message_id).replace(/^public:/, ''))
+    : Number(String(msg.message_id).replace(/^dm:/, ''));
+  if (!rawId || isNaN(rawId)) return;
+
+  try {
+    const res = await fetch(`/api/messages/${msgType}/${rawId}/reactions/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.detail || '반응을 변경하지 못했습니다.');
+    }
+    msg.reactions = data.reactions;
+    updateMessageReactionsInDOM(msg.message_id, data.reactions);
+  } catch (err) {
+    showToast(err.message || '반응 처리에 실패했습니다.', 'error');
+  }
+}
+
+function updateMessageReactionsInDOM(messageId, reactions) {
+  const row = document.querySelector(`.msg-row[data-message-id="${messageId}"]`);
+  if (!row) return;
+  const container = row.querySelector('.message-reactions-row');
+  if (!container) return;
+
+  for (const [convId, conv] of conversations.entries()) {
+    const m = conv.messages.find(item => item.message_id === messageId);
+    if (m) m.reactions = reactions;
+  }
+  renderMessageReactions({ reactions }, container);
+}
+
 function createMessageActions(msg) {
   const actions = document.createElement('div');
   actions.className = 'message-actions';
+
+  const isHidden = Boolean(msg.is_hidden);
+  const isAdmin = currentUser?.role === 'admin';
+  if (msg.message_id && (!isHidden || isAdmin)) {
+    const reactBtn = document.createElement('button');
+    reactBtn.type = 'button';
+    reactBtn.className = 'msg-action-react-btn';
+    reactBtn.textContent = '😀+';
+    reactBtn.title = '반응 남기기';
+    reactBtn.setAttribute('aria-label', '반응 남기기');
+    reactBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openReactionPicker(msg, reactBtn);
+    });
+    actions.appendChild(reactBtn);
+  }
+
   const replyButton = document.createElement('button');
   replyButton.type = 'button';
   replyButton.textContent = '답장';
@@ -2634,7 +2780,6 @@ function createMessageActions(msg) {
 
   if (msg.msgType === 'chat' && msg.message_id) {
     const isAuthor = (msg.author_id != null && Number(msg.author_id) === myUserId) || msg.nickname === myNickname;
-    const isAdmin = currentUser?.role === 'admin';
     if ((isAuthor || isAdmin) && !msg.is_hidden) {
       const editButton = document.createElement('button');
       editButton.type = 'button';
@@ -2815,6 +2960,12 @@ function appendMessageNode(msg, previousMsg = null) {
   });
   shell.append(bubble, actions);
   row.appendChild(shell);
+
+  const reactionsRow = document.createElement('div');
+  reactionsRow.className = 'message-reactions-row';
+  renderMessageReactions(msg, reactionsRow);
+  row.appendChild(reactionsRow);
+
   messageListEl.appendChild(row);
 }
 
@@ -2868,6 +3019,7 @@ function publicMessageFromData(data) {
     attachment_removed: Boolean(data.attachment_removed),
     mentions: Array.isArray(data.mentions) ? data.mentions : [],
     mentioned_user_ids: Array.isArray(data.mentioned_user_ids) ? data.mentioned_user_ids : [],
+    reactions: Array.isArray(data.reactions) ? data.reactions : [],
   };
 }
 
@@ -2887,6 +3039,7 @@ function directMessageFromData(data) {
     attachment_removed: Boolean(data.attachment_removed),
     edited_at: data.edited_at || null,
     is_hidden: Boolean(data.is_hidden),
+    reactions: Array.isArray(data.reactions) ? data.reactions : [],
   };
 }
 
@@ -3619,6 +3772,22 @@ function initWebSocket() {
           const wasAtBottom = (messageListEl.scrollHeight - messageListEl.scrollTop - messageListEl.clientHeight) < 50;
           renderMessages({ preserveScroll: !wasAtBottom });
         }
+        break;
+      }
+      case 'reaction_updated': {
+        const msgType = data.message_type;
+        const msgId = Number(data.message_id);
+        const formattedId = msgType === 'channel' ? `public:${msgId}` : `dm:${msgId}`;
+        const newReactions = Array.isArray(data.reactions) ? data.reactions : [];
+
+        for (const [convId, conv] of conversations.entries()) {
+          const m = conv.messages.find(item => item.message_id === formattedId);
+          if (m) {
+            m.reactions = newReactions;
+          }
+        }
+
+        updateMessageReactionsInDOM(formattedId, newReactions);
         break;
       }
       case 'read_state_updated': {
