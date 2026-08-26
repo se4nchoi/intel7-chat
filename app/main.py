@@ -513,6 +513,7 @@ async def api_update_channel(channel_id: int, request: Request):
     return updated
 
 @app.post("/api/channels/{channel_id}/archive")
+@app.post("/api/channels/{channel_id}/unarchive")
 async def api_archive_channel(channel_id: int, request: Request):
     if not request_origin_is_allowed(request):
         raise HTTPException(403, "허용되지 않은 요청입니다.")
@@ -523,7 +524,7 @@ async def api_archive_channel(channel_id: int, request: Request):
     if current.get("is_default"):
         raise HTTPException(400, "기본 채널은 보관할 수 없습니다.")
     data = await read_json_body(request) if request.headers.get("content-type", "").startswith("application/json") else {}
-    unarchive = bool(data.get("unarchive", False))
+    unarchive = bool(data.get("unarchive", False)) or request.url.path.endswith("/unarchive")
     try:
         updated = archive_channel(channel_id, unarchive=unarchive)
     except ValueError as exc:

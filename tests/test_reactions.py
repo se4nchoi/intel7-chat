@@ -261,3 +261,155 @@ class TestReactionsPersistenceAndLifecycle:
         with database.get_connection() as conn:
             cnt_after = conn.execute("SELECT COUNT(*) FROM message_reactions WHERE message_id=?", (msg_id,)).fetchone()[0]
         assert cnt_after == 0
+
+    def test_reactions_survive_channel_archive_and_unarchive(self):
+        client, admin = session_client("admin", role="admin")
+        chan = database.create_channel("team-proj", "팀 프로젝트", created_by_user_id=admin["id"])
+        msg = database.save_message("admin", "Project launch", user_id=admin["id"], channel_id=chan["id"])
+        msg_id = int(msg["message_id"].split(":")[1])
+
+        # Add reaction
+        client.post(f"/api/messages/channel/{msg_id}/reactions/toggle",
+                    json={"emoji": "👏"}, headers=ORIGIN)
+
+        # 1. Archive channel
+        arc_res = client.post(f"/api/channels/{chan['id']}/archive", headers=ORIGIN)
+        assert arc_res.status_code == 200
+
+        # Verify reactions intact in archived channel history
+        hist_arc = client.get(f"/api/channels/{chan['id']}/messages")
+        assert hist_arc.status_code == 200
+        msg_arc = next(m for m in hist_arc.json()["messages"] if m["message_id"] == f"public:{msg_id}")
+        assert msg_arc["reactions"][0]["emoji"] == "👏"
+        assert msg_arc["reactions"][0]["count"] == 1
+
+        # 2. Unarchive channel
+        unarc_res = client.post(f"/api/channels/{chan['id']}/unarchive", headers=ORIGIN)
+        assert unarc_res.status_code == 200
+
+        # Verify reactions intact in unarchived channel history
+        hist_unarc = client.get(f"/api/channels/{chan['id']}/messages")
+        assert hist_unarc.status_code == 200
+        msg_unarc = next(m for m in hist_unarc.json()["messages"] if m["message_id"] == f"public:{msg_id}")
+        assert msg_unarc["reactions"][0]["emoji"] == "👏"
+        assert msg_unarc["reactions"][0]["count"] == 1
+
+
+class TestRealtimeReactions:
+    def test_channel_reaction_broadcast_over_websocket(self):
+        client_alice, alice = session_client("alice")
+        client_bob, bob = session_client("bob")
+
+        msg = database.save_message("alice", "Broadcast test", user_id=alice["id"], channel_id=1)
+        msg_id = int(msg["message_id"].split(":")[1])
+
+        with client_bob.websocket_connect("/ws", headers=ORIGIN) as ws_bob:
+            # Drain initial connection history
+            while True:
+                evt = ws_bob.receive_json()
+                if evt.get("type") == "history_ready":
+                    break
+
+            # Alice toggles reaction
+            resp = client_alice.post(f"/api/messages/channel/{msg_id}/reactions/toggle",
+                                     json={"emoji": "👍"}, headers=ORIGIN)
+            assert resp.status_code == 200
+
+            # Bob receives real-time reaction_updated event
+            event = ws_bob.receive_json()
+            assert event["type"] == "reaction_updated"
+            assert event["message_type"] == "channel"
+            assert event["message_id"] == msg_id
+            assert event["channel_id"] == 1
+            assert len(event["reactions"]) == 1
+            assert event["reactions"][0]["emoji"] == "👍"
+            assert event["reactions"][0]["count"] == 1
+            assert event["reactions"][0]["users"][0]["id"] == alice["id"]
+
+    def test_dm_reaction_realtime_reaches_both_participants(self):
+        client_alice, alice = session_client("alice")
+        client_bob, bob = session_client("bob")
+
+        dm = database.save_direct_message(alice, bob, "Realtime secret")
+        dm_id = int(dm["message_id"].split(":")[1])
+
+        with client_alice.websocket_connect("/ws", headers=ORIGIN) as ws_alice:
+            while True:
+                if ws_alice.receive_json().get("type") == "history_ready":
+                    break
+
+            with client_bob.websocket_connect("/ws", headers=ORIGIN) as ws_bob:
+                while True:
+                    if ws_bob.receive_json().get("type") == "history_ready":
+                        break
+
+                # Alice reacts to DM
+                resp = client_alice.post(f"/api/messages/dm/{dm_id}/reactions/toggle",
+                                         json={"emoji": "❤️"}, headers=ORIGIN)
+                assert resp.status_code == 200
+
+                # Alice receives real-time update
+                while True:
+                    evt_alice = ws_alice.receive_json()
+                    if evt_alice.get("type") == "reaction_updated":
+                        break
+                assert evt_alice["type"] == "reaction_updated"
+                assert evt_alice["message_type"] == "dm"
+                assert evt_alice["message_id"] == dm_id
+                assert evt_alice["reactions"][0]["emoji"] == "❤️"
+                assert evt_alice["reactions"][0]["count"] == 1
+                assert evt_alice["reactions"][0]["reacted_by_me"] is True
+
+                # Bob receives real-time update
+                while True:
+                    evt_bob = ws_bob.receive_json()
+                    if evt_bob.get("type") == "reaction_updated":
+                        break
+                assert evt_bob["type"] == "reaction_updated"
+                assert evt_bob["message_type"] == "dm"
+                assert evt_bob["message_id"] == dm_id
+                assert evt_bob["reactions"][0]["emoji"] == "❤️"
+                assert evt_bob["reactions"][0]["count"] == 1
+                assert evt_bob["reactions"][0]["reacted_by_me"] is False
+
+    def test_dm_reaction_realtime_not_delivered_to_third_party(self):
+        client_alice, alice = session_client("alice")
+        _, bob = session_client("bob")
+        client_charlie, charlie = session_client("charlie")
+
+        dm = database.save_direct_message(alice, bob, "Alice and Bob only")
+        dm_id = int(dm["message_id"].split(":")[1])
+
+        with client_charlie.websocket_connect("/ws", headers=ORIGIN) as ws_charlie:
+            while True:
+                if ws_charlie.receive_json().get("type") == "history_ready":
+                    break
+
+            # Alice reacts to DM with Bob
+            resp = client_alice.post(f"/api/messages/dm/{dm_id}/reactions/toggle",
+                                     json={"emoji": "👀"}, headers=ORIGIN)
+            assert resp.status_code == 200
+
+            # Charlie sends a public chat message to produce an event on his socket
+            ws_charlie.send_json({
+                "type": "chat",
+                "channel_id": 1,
+                "content": "Charlie msg",
+            })
+
+            # The next event Charlie receives MUST be the public message, NOT the DM reaction
+            while True:
+                evt = ws_charlie.receive_json()
+                if evt.get("type") in ("chat", "reaction_updated"):
+                    break
+            assert evt["type"] == "chat"
+            assert evt["content"] == "Charlie msg"
+
+
+class TestMigrationIdempotency:
+    def test_migrate_v5_is_idempotent(self):
+        with database.get_connection() as conn:
+            # Re-running _migrate_v5 on already upgraded DB should not raise error
+            database._migrate_v5(conn)
+            assert database._get_schema_version(conn) >= 5
+
