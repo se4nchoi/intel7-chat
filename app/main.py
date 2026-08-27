@@ -38,7 +38,10 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     set_user_role, update_channel, archive_channel, delete_channel,
     get_message_by_id, update_message_content, set_message_hidden, move_message_channel,
     get_user_conversation_states, update_user_read_state, set_conversation_muted, get_user_unread_counts,
-    update_display_name, update_password_hash)
+    update_display_name, update_password_hash,
+    ALLOWED_REACTION_EMOJIS, toggle_message_reaction, get_message_reactions, get_direct_message_by_id,
+    update_direct_message_content,
+    normalize_dm_conversation_id, pin_message, unpin_message, get_pinned_messages, get_pinned_message_ids)
 
 CONFIG = load_config()
 configure_storage(CONFIG.data_path, CONFIG.database_limit_bytes)
@@ -247,7 +250,9 @@ def account_public(user: dict) -> dict:
             "display_name": user.get("display_name") or user["username"],
             "role": user["role"],
             "active": bool(user["active"]), "created_at": user["created_at"],
-            "last_login": user.get("last_login"), "message_count": user.get("message_count", 0),
+            "last_login": user.get("last_login"),
+            "last_login_ip": user.get("last_login_ip"),
+            "message_count": user.get("message_count", 0),
             "attachment_bytes": user.get("attachment_bytes", 0),
             "current_ip": current_user_ip(user["id"])}
 
@@ -372,7 +377,8 @@ async def register(request: Request):
         raise HTTPException(409,"이미 사용 중인 아이디입니다.") from exc
     raw=new_session_token()
     expiry=(datetime.now(timezone.utc)+timedelta(hours=CONFIG.session_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    create_session(token_hash(raw),user["id"],expiry)
+    ip=get_client_ip(request)
+    create_session(token_hash(raw),user["id"],expiry,client_ip=ip)
     user=get_session_user(token_hash(raw))
     response=JSONResponse(public_user(user),status_code=201)
     set_session_cookie(response,raw,request)
@@ -400,7 +406,7 @@ async def login(request: Request):
         update_password_hash(user["id"],await asyncio.to_thread(hash_secret,password))
     raw=new_session_token()
     expiry=(datetime.now(timezone.utc)+timedelta(hours=CONFIG.session_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    create_session(token_hash(raw),user["id"],expiry)
+    create_session(token_hash(raw),user["id"],expiry,client_ip=ip)
     user=get_session_user(token_hash(raw))
     response=JSONResponse(public_user(user))
     set_session_cookie(response,raw,request)
@@ -512,6 +518,7 @@ async def api_update_channel(channel_id: int, request: Request):
     return updated
 
 @app.post("/api/channels/{channel_id}/archive")
+@app.post("/api/channels/{channel_id}/unarchive")
 async def api_archive_channel(channel_id: int, request: Request):
     if not request_origin_is_allowed(request):
         raise HTTPException(403, "허용되지 않은 요청입니다.")
@@ -522,7 +529,7 @@ async def api_archive_channel(channel_id: int, request: Request):
     if current.get("is_default"):
         raise HTTPException(400, "기본 채널은 보관할 수 없습니다.")
     data = await read_json_body(request) if request.headers.get("content-type", "").startswith("application/json") else {}
-    unarchive = bool(data.get("unarchive", False))
+    unarchive = bool(data.get("unarchive", False)) or request.url.path.endswith("/unarchive")
     try:
         updated = archive_channel(channel_id, unarchive=unarchive)
     except ValueError as exc:
@@ -556,10 +563,10 @@ async def api_delete_channel(channel_id: int, request: Request):
 
 @app.get("/api/channels/{channel_id}/messages")
 async def channel_message_history(channel_id: int, request: Request, before_id: Optional[int] = None):
-    request_user(request)
+    user = request_user(request)
     if not channel_exists(channel_id):
         raise HTTPException(404, "채널을 찾을 수 없습니다.")
-    messages = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1, before_id, channel_id=channel_id)
+    messages = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1, before_id, channel_id=channel_id, current_user_id=user["id"])
     has_more = len(messages) > PUBLIC_HISTORY_PAGE_SIZE
     messages = messages[-PUBLIC_HISTORY_PAGE_SIZE:]
     users = list_mentionable_users()
@@ -587,6 +594,37 @@ async def api_update_message(message_id: int, request: Request):
     enriched = with_mentions(updated, users)
     await broadcast({"type": "message_edited", "message": enriched})
     return enriched
+
+@app.patch("/api/dms/{dm_id}")
+async def api_update_direct_message(dm_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    data = await read_json_body(request)
+    content = str(data.get("content", "")).strip()
+    if not content:
+        raise HTTPException(400, "메시지 내용을 입력하세요.")
+    if len(content) > MAX_CONTENT_LEN:
+        raise HTTPException(400, f"메시지는 {MAX_CONTENT_LEN}자 이하여야 합니다.")
+    try:
+        updated = update_direct_message_content(dm_id, content, user["id"])
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    if not updated:
+        raise HTTPException(404, "1:1 메시지를 찾을 수 없습니다.")
+
+    payload = {"type": "dm_edited", "message": updated}
+    encoded = json.dumps(payload, ensure_ascii=False)
+
+    sender_targets = list(user_registry.get(updated["from_nick"], set()))
+    recipient_targets = list(user_registry.get(updated["to_nick"], set()))
+    for target_ws in set(sender_targets + recipient_targets):
+        try:
+            await target_ws.send_text(encoded)
+        except Exception:
+            pass
+
+    return updated
 
 @app.post("/api/messages/{message_id}/hide")
 async def api_hide_message(message_id: int, request: Request):
@@ -640,6 +678,77 @@ async def api_move_message(message_id: int, request: Request):
         "message": enriched
     })
     return enriched
+
+@app.post("/api/messages/{message_type}/{message_id}/reactions/toggle")
+async def api_toggle_reaction(message_type: str, message_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    if message_type not in ("channel", "dm"):
+        raise HTTPException(400, "유효하지 않은 메시지 유형입니다.")
+
+    data = await read_json_body(request)
+    emoji = str(data.get("emoji", "")).strip()
+    if not emoji or emoji not in ALLOWED_REACTION_EMOJIS:
+        raise HTTPException(400, "유효하지 않은 이모지입니다.")
+
+    if message_type == "channel":
+        msg = get_message_by_id(message_id, current_user_id=user["id"])
+        if not msg:
+            raise HTTPException(404, "메시지를 찾을 수 없습니다.")
+        if msg.get("is_hidden") and user["role"] != "admin":
+            raise HTTPException(403, "숨겨진 메시지에는 반응할 수 없습니다.")
+
+        toggle_message_reaction("channel", message_id, user["id"], emoji)
+        updated_reactions = get_message_reactions("channel", message_id, current_user_id=user["id"])
+
+        all_reactions = get_message_reactions("channel", message_id, current_user_id=None)
+        await broadcast({
+            "type": "reaction_updated",
+            "message_type": "channel",
+            "message_id": message_id,
+            "channel_id": msg["channel_id"],
+            "reactions": all_reactions,
+        })
+        return {
+            "message_type": "channel",
+            "message_id": message_id,
+            "reactions": updated_reactions,
+        }
+    else:  # dm
+        dm = get_direct_message_by_id(message_id, current_user_id=user["id"])
+        if not dm:
+            raise HTTPException(404, "대화 메시지를 찾을 수 없습니다.")
+        if user["id"] not in (dm["from_user_id"], dm["to_user_id"]):
+            raise HTTPException(403, "대화 참여자만 반응할 수 있습니다.")
+
+        toggle_message_reaction("dm", message_id, user["id"], emoji)
+        user_reactions = get_message_reactions("dm", message_id, current_user_id=user["id"])
+
+        partner_id = dm["to_user_id"] if dm["from_user_id"] == user["id"] else dm["from_user_id"]
+
+        user_event = {
+            "type": "reaction_updated",
+            "message_type": "dm",
+            "message_id": message_id,
+            "reactions": user_reactions,
+        }
+        await send_to_user_id(user["id"], user_event)
+
+        partner_reactions = get_message_reactions("dm", message_id, current_user_id=partner_id)
+        partner_event = {
+            "type": "reaction_updated",
+            "message_type": "dm",
+            "message_id": message_id,
+            "reactions": partner_reactions,
+        }
+        await send_to_user_id(partner_id, partner_event)
+
+        return {
+            "message_type": "dm",
+            "message_id": message_id,
+            "reactions": user_reactions,
+        }
 
 @app.get("/api/read-states")
 async def api_get_read_states(request: Request):
@@ -710,6 +819,173 @@ async def api_set_muted(request: Request):
     await send_to_user_id(user["id"], payload)
     return {"state": updated}
 
+@app.get("/api/conversations/{conv_type}/{conv_id}/pins")
+async def api_get_pins(conv_type: str, conv_id: str, request: Request):
+    user = request_user(request)
+    if conv_type not in ("channel", "dm"):
+        raise HTTPException(400, "유효하지 않은 대화 유형입니다.")
+
+    if conv_type == "channel":
+        try:
+            cid = int(conv_id)
+        except (ValueError, TypeError):
+            raise HTTPException(400, "유효하지 않은 채널 ID입니다.")
+        chan = get_channel_by_id(cid)
+        if not chan:
+            raise HTTPException(404, "채널을 찾을 수 없습니다.")
+        pins = get_pinned_messages("channel", str(cid), current_user_id=user["id"])
+    else:
+        if conv_id.isdigit():
+            partner = get_user_by_id(int(conv_id))
+        else:
+            partner = get_user_by_username(conv_id)
+        if not partner or partner["id"] == user["id"]:
+            raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
+        norm_id = normalize_dm_conversation_id(user["id"], partner["id"])
+        pins = get_pinned_messages("dm", norm_id, current_user_id=user["id"])
+
+    users = list_mentionable_users()
+    enriched_pins = []
+    for pin in pins:
+        p = dict(pin)
+        p["message"] = with_mentions(p["message"], users)
+        enriched_pins.append(p)
+    return {"pins": enriched_pins}
+
+@app.post("/api/conversations/{conv_type}/{conv_id}/pins/{message_id}")
+async def api_pin_message(conv_type: str, conv_id: str, message_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    if conv_type not in ("channel", "dm"):
+        raise HTTPException(400, "유효하지 않은 대화 유형입니다.")
+
+    if conv_type == "channel":
+        try:
+            cid = int(conv_id)
+        except (ValueError, TypeError):
+            raise HTTPException(400, "유효하지 않은 채널 ID입니다.")
+        chan = get_channel_by_id(cid)
+        if not chan:
+            raise HTTPException(404, "채널을 찾을 수 없습니다.")
+        try:
+            pin = pin_message("channel", str(cid), message_id, user["id"])
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+
+        users = list_mentionable_users()
+        pin["message"] = with_mentions(pin["message"], users)
+
+        await broadcast({
+            "type": "pin_updated",
+            "conversation_type": "channel",
+            "conversation_id": str(cid),
+            "message_id": message_id,
+            "is_pinned": True,
+            "pin": pin,
+        })
+        return pin
+    else:
+        if conv_id.isdigit():
+            partner = get_user_by_id(int(conv_id))
+        else:
+            partner = get_user_by_username(conv_id)
+        if not partner or partner["id"] == user["id"]:
+            raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
+        norm_id = normalize_dm_conversation_id(user["id"], partner["id"])
+        try:
+            pin = pin_message("dm", norm_id, message_id, user["id"])
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+
+        users = list_mentionable_users()
+        pin["message"] = with_mentions(pin["message"], users)
+
+        payload = {
+            "type": "pin_updated",
+            "conversation_type": "dm",
+            "conversation_id": norm_id,
+            "partner_id": partner["id"],
+            "partner_username": partner["username"],
+            "sender_id": user["id"],
+            "sender_username": user["username"],
+            "message_id": message_id,
+            "is_pinned": True,
+            "pin": pin,
+        }
+        encoded = json.dumps(payload, ensure_ascii=False)
+        targets = set(user_registry.get(user["username"], set()) | user_registry.get(partner["username"], set()))
+        for target_ws in targets:
+            try:
+                await target_ws.send_text(encoded)
+            except Exception:
+                pass
+        return pin
+
+@app.delete("/api/conversations/{conv_type}/{conv_id}/pins/{message_id}")
+async def api_unpin_message(conv_type: str, conv_id: str, message_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    if conv_type not in ("channel", "dm"):
+        raise HTTPException(400, "유효하지 않은 대화 유형입니다.")
+
+    if conv_type == "channel":
+        try:
+            cid = int(conv_id)
+        except (ValueError, TypeError):
+            raise HTTPException(400, "유효하지 않은 채널 ID입니다.")
+        chan = get_channel_by_id(cid)
+        if not chan:
+            raise HTTPException(404, "채널을 찾을 수 없습니다.")
+        unpinned = unpin_message("channel", str(cid), message_id, user["id"])
+        await broadcast({
+            "type": "pin_updated",
+            "conversation_type": "channel",
+            "conversation_id": str(cid),
+            "message_id": message_id,
+            "is_pinned": False,
+            "pin": None,
+        })
+        return {"success": unpinned}
+    else:
+        if conv_id.isdigit():
+            partner = get_user_by_id(int(conv_id))
+        else:
+            partner = get_user_by_username(conv_id)
+        if not partner or partner["id"] == user["id"]:
+            raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
+        norm_id = normalize_dm_conversation_id(user["id"], partner["id"])
+        try:
+            unpinned = unpin_message("dm", norm_id, message_id, user["id"])
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+
+        payload = {
+            "type": "pin_updated",
+            "conversation_type": "dm",
+            "conversation_id": norm_id,
+            "partner_id": partner["id"],
+            "partner_username": partner["username"],
+            "sender_id": user["id"],
+            "sender_username": user["username"],
+            "message_id": message_id,
+            "is_pinned": False,
+            "pin": None,
+        }
+        encoded = json.dumps(payload, ensure_ascii=False)
+        targets = set(user_registry.get(user["username"], set()) | user_registry.get(partner["username"], set()))
+        for target_ws in targets:
+            try:
+                await target_ws.send_text(encoded)
+            except Exception:
+                pass
+        return {"success": unpinned}
+
 @app.get("/api/messages")
 async def api_messages(request: Request):
     request_user(request)
@@ -718,8 +994,8 @@ async def api_messages(request: Request):
 
 @app.get("/api/history/public")
 async def public_message_history(request: Request, before_id: Optional[int] = None):
-    request_user(request)
-    messages = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1, before_id)
+    user = request_user(request)
+    messages = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1, before_id, current_user_id=user["id"])
     has_more = len(messages) > PUBLIC_HISTORY_PAGE_SIZE
     messages = messages[-PUBLIC_HISTORY_PAGE_SIZE:]
     users = list_mentionable_users()
@@ -994,8 +1270,6 @@ async def websocket_endpoint(ws: WebSocket):
                 if not target_user or not target_user["active"] or target_user["id"]==info.user_id:
                     await ws.send_text(json.dumps({"type":"error","message":"DM 대상을 찾을 수 없습니다."},ensure_ascii=False)); continue
                 targets=list(user_registry.get(target_user["username"],set()))
-                if not targets:
-                    await ws.send_text(json.dumps({"type":"error","message":f"'{target_user['username']}'님이 오프라인 상태입니다."},ensure_ascii=False)); continue
             attachments=claim_attachments(attachment_ids,info.user_id)
             if attachments is None:
                 await ws.send_text(json.dumps({"type":"error","message":"첨부 파일을 사용할 수 없거나 이미 전송했습니다."},ensure_ascii=False)); continue

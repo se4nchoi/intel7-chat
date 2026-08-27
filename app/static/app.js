@@ -32,6 +32,8 @@ const adminRegistrationEnabled = document.getElementById('admin-registration-ena
 const adminRegistrationSave = document.getElementById('admin-registration-save');
 const adminEnrollmentCode = document.getElementById('admin-enrollment-code');
 const adminEnrollmentSave = document.getElementById('admin-enrollment-save');
+const adminUserSearch = document.getElementById('admin-user-search');
+const adminUserSearchEmpty = document.getElementById('admin-user-search-empty');
 const adminUsers = document.getElementById('admin-users');
 const adminError = document.getElementById('admin-error');
 const chatApp = document.getElementById('chat-app');
@@ -88,16 +90,35 @@ const muteHintClose = document.getElementById('mute-hint-close');
 const muteHintTitle = document.getElementById('mute-hint-title');
 const muteHintDesc = document.getElementById('mute-hint-desc');
 const muteHintIcon = document.getElementById('mute-hint-icon');
-const notificationModal = document.getElementById('notification-modal');
-const notificationModalClose = document.getElementById('notification-modal-close');
-const notificationModalCancel = document.getElementById('notification-modal-cancel');
-const notificationModalDesc = document.getElementById('notification-modal-desc');
-const notificationStatusIcon = document.getElementById('notification-status-icon');
-const notificationStatusTitle = document.getElementById('notification-status-title');
-const notificationStatusDesc = document.getElementById('notification-status-desc');
-const notificationToggleBtn = document.getElementById('notification-toggle-btn');
+
+// Message Pins Elements
+const pinnedMessagesBtn = document.getElementById('pinned-messages-btn');
+const pinnedCountBadge = document.getElementById('pinned-count-badge');
+const pinnedMessagesDrawer = document.getElementById('pinned-messages-drawer');
+const pinnedDrawerCount = document.getElementById('pinned-drawer-count');
+const pinnedDrawerClose = document.getElementById('pinned-drawer-close');
+const pinnedMessagesList = document.getElementById('pinned-messages-list');
+
+// Global Notification Modal Elements
+const globalNotificationModal = document.getElementById('global-notification-modal');
+const globalNotificationModalClose = document.getElementById('global-notification-modal-close');
+const globalNotificationModalCancel = document.getElementById('global-notification-modal-cancel');
 const headerNotifBtn = document.getElementById('header-notif-btn');
-const notifConvSection = document.getElementById('notif-conv-section');
+const notifHintPopover = document.getElementById('notif-hint-popover');
+const notifHintClose = document.getElementById('notif-hint-close');
+
+// Conversation Notification Modal Elements
+const convNotificationModal = document.getElementById('conv-notification-modal');
+const convNotificationModalClose = document.getElementById('conv-notification-modal-close');
+const convNotificationModalCancel = document.getElementById('conv-notification-modal-cancel');
+const convNotificationModalTitle = document.getElementById('conv-notification-modal-title');
+const convNotificationModalDesc = document.getElementById('conv-notification-modal-desc');
+const convNotificationStatusIcon = document.getElementById('conv-notification-status-icon');
+const convNotificationStatusTitle = document.getElementById('conv-notification-status-title');
+const convNotificationStatusDesc = document.getElementById('conv-notification-status-desc');
+const convNotificationToggleBtn = document.getElementById('conv-notification-toggle-btn');
+
+// Sound, Desktop & Snooze Settings Elements
 const soundModeInputs = document.querySelectorAll('input[name="sound-mode"]');
 const soundVolumeSlider = document.getElementById('sound-volume-slider');
 const soundVolumeVal = document.getElementById('sound-volume-val');
@@ -116,8 +137,6 @@ const connStatus = document.getElementById('conn-status');
 const myNickBadge = document.getElementById('my-nick-badge');
 const nicknameHintPopover = document.getElementById('nickname-hint-popover');
 const nicknameHintClose = document.getElementById('nickname-hint-close');
-const notifHintPopover = document.getElementById('notif-hint-popover');
-const notifHintClose = document.getElementById('notif-hint-close');
 const charCount = document.getElementById('char-count');
 const nicknameModal = document.getElementById('nickname-modal');
 const nicknameClose = document.getElementById('nickname-close');
@@ -301,7 +320,7 @@ function hideAuthModal() {
 let notifHintTimer = null;
 
 function showNicknameHint() {
-  if (!nicknameHintPopover) return;
+  if (!nicknameHintPopover || !currentUser) return;
   if (nicknameHintTimer) clearTimeout(nicknameHintTimer);
   nicknameHintPopover.classList.remove('hidden');
   nicknameHintTimer = setTimeout(() => {
@@ -309,7 +328,7 @@ function showNicknameHint() {
   }, 6000);
 }
 
-function hideNicknameHint(triggerNext = true) {
+function hideNicknameHint(triggerNext = false) {
   if (nicknameHintTimer) {
     clearTimeout(nicknameHintTimer);
     nicknameHintTimer = null;
@@ -327,17 +346,20 @@ function showNotifHint() {
   if (notifHintTimer) clearTimeout(notifHintTimer);
   notifHintPopover.classList.remove('hidden');
   notifHintTimer = setTimeout(() => {
-    hideNotifHint();
+    hideNotifHint(true);
   }, 6000);
 }
 
-function hideNotifHint() {
+function hideNotifHint(triggerNext = false) {
   if (notifHintTimer) {
     clearTimeout(notifHintTimer);
     notifHintTimer = null;
   }
   if (notifHintPopover) {
     notifHintPopover.classList.add('hidden');
+  }
+  if (triggerNext && currentUser) {
+    showMuteHint();
   }
 }
 
@@ -364,7 +386,6 @@ async function enterChat(user) {
   initWebSocket();
   refreshStorageWarning();
   showNicknameHint();
-  showMuteHint();
 }
 
 async function submitAuth(event) {
@@ -411,7 +432,7 @@ async function submitAuth(event) {
 
 async function logout() {
   hideNicknameHint(false);
-  hideNotifHint();
+  hideNotifHint(false);
   hideMuteHint();
   saveCurrentDraft();
   if (ws) {
@@ -434,7 +455,8 @@ async function logout() {
   adminModal.classList.add('hidden');
   helpModal.classList.add('hidden');
   nicknameModal.classList.add('hidden');
-  if (notificationModal) notificationModal.classList.add('hidden');
+  if (globalNotificationModal) globalNotificationModal.classList.add('hidden');
+  if (convNotificationModal) convNotificationModal.classList.add('hidden');
   if (channelModal) channelModal.classList.add('hidden');
   if (channelEditModal) channelEditModal.classList.add('hidden');
   if (channelSettingsBtn) channelSettingsBtn.classList.add('hidden');
@@ -473,23 +495,54 @@ function storageLine(label, used, limit) {
   return `${label}: ${formatBytes(used)} / ${formatBytes(limit)} (${percent}%)`;
 }
 
+function filterAdminUserRows() {
+  if (!adminUsers) return;
+  const query = (adminUserSearch ? adminUserSearch.value : '').trim().toLowerCase();
+  const rows = adminUsers.querySelectorAll('.admin-user');
+  let visibleCount = 0;
+  rows.forEach(row => {
+    const text = row.dataset.searchText || '';
+    const match = !query || text.includes(query);
+    row.style.display = match ? '' : 'none';
+    if (match) visibleCount++;
+  });
+  if (adminUserSearchEmpty) {
+    adminUserSearchEmpty.classList.toggle('hidden', rows.length === 0 || visibleCount > 0);
+  }
+}
+
+if (adminUserSearch) {
+  adminUserSearch.addEventListener('input', filterAdminUserRows);
+}
+
 function renderAdminUsers(users) {
   adminUsers.replaceChildren();
   users.forEach(user => {
     const savedActive = Boolean(user.active);
     const row = document.createElement('div');
     row.className = `admin-user${savedActive ? '' : ' inactive'}`;
+    const displayName = user.display_name || user.username;
+    row.dataset.username = user.username || '';
+    row.dataset.displayName = displayName;
+    row.dataset.searchText = `${user.username} ${displayName}`.toLowerCase();
 
     const identity = document.createElement('div');
     identity.className = 'admin-user-identity';
     const name = document.createElement('strong');
-    name.textContent = user.username;
+    name.textContent = displayName !== user.username ? `${displayName} (@${user.username})` : user.username;
+
     const details = document.createElement('small');
     details.textContent = `메시지 ${user.message_count}개 · 파일 ${formatBytes(user.attachment_bytes)}`;
-    identity.append(name, details);
+
+    const lastLogin = document.createElement('small');
+    const lastLoginTime = user.last_login ? formatTime(user.last_login) : '기록 없음';
+    const lastLoginIp = user.last_login_ip || '기록 없음';
+    lastLogin.textContent = `최근 로그인: ${lastLoginTime} (${lastLoginIp})`;
+
     const ip = document.createElement('small');
-    ip.textContent = `현재 접속 IP: ${user.current_ip || '없음'}`;
-    identity.append(ip);
+    ip.textContent = `현재 접속 IP: ${user.current_ip || '오프라인'}`;
+
+    identity.append(name, details, lastLogin, ip);
 
     const role = document.createElement('select');
     role.setAttribute('aria-label', `${user.username} 역할`);
@@ -578,6 +631,7 @@ function renderAdminUsers(users) {
     row.append(identity, controls);
     adminUsers.appendChild(row);
   });
+  filterAdminUserRows();
 }
 
 async function loadAdminOverview() {
@@ -604,11 +658,13 @@ async function loadAdminOverview() {
 async function openAdminPanel() {
   adminModal.classList.remove('hidden');
   await loadAdminOverview();
+  if (adminUserSearch) adminUserSearch.focus();
 }
 
 function closeAdminPanel() {
   adminModal.classList.add('hidden');
   adminEnrollmentCode.value = '';
+  if (adminUserSearch) adminUserSearch.value = '';
   adminError.textContent = '';
 }
 
@@ -1044,9 +1100,12 @@ async function toggleMessageHidden(messageId, hidden) {
 }
 
 async function saveEditedMessage(messageId, newContent) {
-  const rawId = String(messageId).replace(/^public:/, '');
+  const strId = String(messageId);
+  const isDm = strId.startsWith('dm:');
+  const rawId = strId.replace(/^(public|dm):/, '');
+  const url = isDm ? `/api/dms/${rawId}` : `/api/messages/${rawId}`;
   try {
-    const response = await fetch(`/api/messages/${rawId}`, {
+    const response = await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: newContent }),
@@ -1188,11 +1247,15 @@ function parseConvKey(convId) {
   return { type: 'channel', id: '1', rawKey: 'channel:1' };
 }
 
+function isChatActiveAndFocused() {
+  return document.visibilityState === 'visible' && document.hasFocus();
+}
+
 function getConvUnreadCount(conv) {
   if (!conv) return 0;
-  if (conv.id === activeConvId) return 0;
+  if (conv.id === activeConvId && isChatActiveAndFocused()) return 0;
   if (conv.type === 'channel') {
-    return userUnreadCounts.get(conv.id) ?? conv.unread ?? 0;
+    return userUnreadCounts.get(conv.id) ?? userUnreadCounts.get(`channel:${conv.channelId}`) ?? conv.unread ?? 0;
   }
   if (conv.type === 'dm') {
     const partnerId = conv.partnerUserId || userDirectory.get(conv.name)?.id;
@@ -1208,6 +1271,51 @@ function getConvUnreadCount(conv) {
     return conv.unread ?? 0;
   }
   return 0;
+}
+
+function setConvUnreadCount(conv, count) {
+  if (!conv) return;
+  const num = Math.max(0, Number(count) || 0);
+  conv.unread = num;
+  userUnreadCounts.set(conv.id, num);
+  if (conv.type === 'channel') {
+    userUnreadCounts.set(`channel:${conv.channelId}`, num);
+  } else if (conv.type === 'dm') {
+    userUnreadCounts.set(`dm:${conv.name}`, num);
+    const partnerId = conv.partnerUserId || userDirectory.get(conv.name)?.id;
+    if (partnerId) {
+      userUnreadCounts.set(`dm:${partnerId}`, num);
+    }
+  }
+}
+
+function incrementConvUnread(conv) {
+  if (!conv) return;
+  const curr = getConvUnreadCount(conv);
+  setConvUnreadCount(conv, curr + 1);
+  renderConversationList();
+}
+
+function clearConvUnread(conv) {
+  if (!conv) return;
+  setConvUnreadCount(conv, 0);
+  renderConversationList();
+}
+
+function applyServerUnreadCounts(counts) {
+  if (!counts || typeof counts !== 'object') return;
+  Object.entries(counts).forEach(([k, v]) => {
+    userUnreadCounts.set(k, v);
+    const conv = findDmConv(k) || conversations.get(k);
+    if (conv) {
+      if (conv.id === activeConvId && isChatActiveAndFocused()) {
+        setConvUnreadCount(conv, 0);
+      } else {
+        setConvUnreadCount(conv, v);
+      }
+    }
+  });
+  renderConversationList();
 }
 
 function getConvState(convId) {
@@ -1230,6 +1338,7 @@ let ackDebounceTimer = null;
 function ackActiveConversationRead() {
   const conv = conversations.get(activeConvId);
   if (!conv || !currentUser) return;
+  if (!isChatActiveAndFocused()) return;
   
   let maxId = 0;
   for (const m of conv.messages) {
@@ -1237,6 +1346,8 @@ function ackActiveConversationRead() {
     if (num > maxId) maxId = num;
   }
   
+  clearConvUnread(conv);
+
   if (maxId <= 0) return;
   
   const parsed = parseConvKey(activeConvId);
@@ -1253,10 +1364,6 @@ function ackActiveConversationRead() {
   };
   userConversationStates.set(parsed.rawKey, updatedState);
   userConversationStates.set(activeConvId, updatedState);
-  userUnreadCounts.set(parsed.rawKey, 0);
-  userUnreadCounts.set(activeConvId, 0);
-  conv.unread = 0;
-  renderConversationList();
 
   clearTimeout(ackDebounceTimer);
   ackDebounceTimer = setTimeout(async () => {
@@ -1272,21 +1379,7 @@ function ackActiveConversationRead() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.unread_counts) {
-        Object.entries(data.unread_counts).forEach(([k, v]) => {
-          userUnreadCounts.set(k, v);
-          const c = findDmConv(k) || conversations.get(k);
-          if (c) {
-            if (c.id === activeConvId) {
-              c.unread = 0;
-              userUnreadCounts.set(k, 0);
-              userUnreadCounts.set(c.id, 0);
-            } else {
-              c.unread = v;
-              userUnreadCounts.set(c.id, v);
-            }
-          }
-        });
-        renderConversationList();
+        applyServerUnreadCounts(data.unread_counts);
       }
     } catch { /* network err */ }
   }, 200);
@@ -1309,6 +1402,7 @@ async function toggleActiveConvMute() {
   userConversationStates.set(parsed.rawKey, updatedState);
   userConversationStates.set(activeConvId, updatedState);
   updateMuteButtonUI();
+  updateConversationNotificationUI();
   renderConversationList();
 
   try {
@@ -1351,12 +1445,12 @@ function hideMuteHint() {
 }
 
 function showMuteHint() {
-  if (!muteHintPopover) return;
+  if (!muteHintPopover || !currentUser) return;
   if (muteHintTimer) clearTimeout(muteHintTimer);
   const isMuted = Boolean(getConvState(activeConvId)?.muted);
-  if (muteHintIcon) muteHintIcon.textContent = isMuted ? '🔕' : '💡';
-  if (muteHintTitle) muteHintTitle.textContent = isMuted ? '알림 음소거 상태' : '알림 설정 가능!';
-  if (muteHintDesc) muteHintDesc.textContent = isMuted ? '여기를 클릭해 음소거를 해제할 수 있습니다' : '여기를 클릭해 대화방 알림을 끄거나 켤 수 있습니다';
+  if (muteHintIcon) muteHintIcon.textContent = isMuted ? '🔕' : '🔔';
+  if (muteHintTitle) muteHintTitle.textContent = isMuted ? '대화방 음소거 상태' : '대화방별 음소거';
+  if (muteHintDesc) muteHintDesc.textContent = isMuted ? '여기를 클릭해 음소거를 해제할 수 있습니다' : '이 채널 또는 DM의 알림만 끌 수 있어요.';
   muteHintPopover.classList.remove('hidden');
   muteHintTimer = setTimeout(() => {
     hideMuteHint();
@@ -1517,14 +1611,14 @@ function setSnooze(durationMinutes) {
   try {
     localStorage.setItem(getSnoozeKey(), String(until));
   } catch { /* storage */ }
-  updateNotificationSettingsUI();
+  updateGlobalNotificationUI();
 }
 
 function clearSnooze() {
   try {
     localStorage.removeItem(getSnoozeKey());
   } catch { /* storage */ }
-  updateNotificationSettingsUI();
+  updateGlobalNotificationUI();
 }
 
 function formatSnoozeRemaining(untilMs) {
@@ -1657,9 +1751,14 @@ function emitAttention({
   }
 
   if (title || body) {
-    const toastTone = (kind === 'mention' || kind === 'reply') ? 'mention' : 'info';
-    const toastMsg = title ? `${title}: ${body}` : body;
-    showToast(toastMsg, toastTone);
+    const toastTone = (kind === 'mention' || kind === 'reply') ? 'mention' : (kind === 'dm' ? 'dm' : 'info');
+    showMessageToast({
+      kind,
+      conversationId,
+      title,
+      body,
+      tone: toastTone,
+    });
   }
 
   if (isImportant && isDesktopNotificationEnabled()) {
@@ -1667,33 +1766,11 @@ function emitAttention({
   }
 }
 
-// --- Notification Modal UI Sync ---
-function updateNotificationSettingsUI() {
+// --- Global Notification Modal UI Sync ---
+function updateGlobalNotificationUI() {
   if (!currentUser) return;
 
-  // 1. Current Conversation Mute Section
-  const conv = conversations.get(activeConvId);
-  if (conv && notifConvSection) {
-    notifConvSection.classList.remove('hidden');
-    const isMuted = Boolean(getConvState(activeConvId)?.muted);
-    const displayName = conv.type === 'channel' ? `#${conv.displayName || conv.name}` : `${displayNickname(conv.name)}`;
-
-    if (notificationModalDesc) notificationModalDesc.textContent = `${displayName} 및 전체 알림 환경을 설정합니다.`;
-    if (notificationStatusIcon) notificationStatusIcon.textContent = isMuted ? '🔕' : '🔔';
-    if (notificationStatusTitle) notificationStatusTitle.textContent = isMuted ? '현재 상태: 알림 음소거됨 (🔕)' : '현재 상태: 알림 켜짐 (🔔)';
-    if (notificationStatusDesc) notificationStatusDesc.textContent = isMuted
-      ? `${displayName}의 새 메시지 도착 시 소리 및 팝업 알림이 표시되지 않습니다.`
-      : `${displayName}에 새 메시지가 도착하면 알림이 정상적으로 표시됩니다.`;
-    if (notificationToggleBtn) {
-      notificationToggleBtn.textContent = isMuted ? '알림 켜기 (음소거 해제)' : '알림 끄기 (음소거)';
-      notificationToggleBtn.className = isMuted ? 'primary-btn notif-toggle-action-btn' : 'caution-btn notif-toggle-action-btn';
-    }
-  } else if (notifConvSection) {
-    notifConvSection.classList.add('hidden');
-    if (notificationModalDesc) notificationModalDesc.textContent = '전체 알림 및 소리 환경을 설정합니다.';
-  }
-
-  // 2. Sound Mode & Volume
+  // 1. Sound Mode & Volume
   const currentSoundMode = getSoundMode();
   soundModeInputs.forEach(input => {
     input.checked = input.value === currentSoundMode;
@@ -1703,7 +1780,7 @@ function updateNotificationSettingsUI() {
   if (soundVolumeSlider) soundVolumeSlider.value = String(Math.round(vol * 100));
   if (soundVolumeVal) soundVolumeVal.textContent = `${Math.round(vol * 100)}%`;
 
-  // 3. Desktop Notifications Context
+  // 2. Desktop Notifications Context
   const { isSecure, hasSupport, permission } = checkDesktopNotificationContext();
   const enabled = isDesktopNotificationEnabled();
 
@@ -1744,7 +1821,7 @@ function updateNotificationSettingsUI() {
     desktopNotifHint.classList.toggle('hidden', isSecure);
   }
 
-  // 4. Snooze Status
+  // 3. Snooze Status
   const snoozed = isSnoozed();
   const until = getSnoozeUntil();
   if (snoozeStatusBadge) {
@@ -1759,43 +1836,116 @@ function updateNotificationSettingsUI() {
   });
 }
 
-function openNotificationModal() {
-  hideNotifHint();
+function openGlobalNotificationModal() {
+  hideNotifHint(false);
   hideMuteHint();
   if (!currentUser) return;
-  updateNotificationSettingsUI();
-  if (notificationModal) notificationModal.classList.remove('hidden');
+  updateGlobalNotificationUI();
+  if (globalNotificationModal) globalNotificationModal.classList.remove('hidden');
 }
 
-function closeNotificationModal() {
-  if (notificationModal) notificationModal.classList.add('hidden');
+function closeGlobalNotificationModal() {
+  if (globalNotificationModal) globalNotificationModal.classList.add('hidden');
   if (currentUser) msgInput.focus();
 }
 
-if (convMuteBtn) {
-  convMuteBtn.addEventListener('click', openNotificationModal);
+// --- Conversation Notification Modal UI Sync ---
+function updateConversationNotificationUI() {
+  if (!currentUser) return;
+  const conv = conversations.get(activeConvId);
+  const isMuted = Boolean(getConvState(activeConvId)?.muted);
+  const displayName = conv ? (conv.type === 'channel' ? `#${conv.displayName || conv.name}` : `${displayNickname(conv.name)}`) : '현재 대화방';
+
+  if (convNotificationModalTitle) {
+    convNotificationModalTitle.textContent = `${displayName} 알림`;
+  }
+  if (convNotificationModalDesc) {
+    convNotificationModalDesc.textContent = `${displayName}의 알림 수신 여부를 설정합니다.`;
+  }
+  if (convNotificationStatusIcon) {
+    convNotificationStatusIcon.textContent = isMuted ? '🔕' : '🔔';
+  }
+  if (convNotificationStatusTitle) {
+    convNotificationStatusTitle.textContent = isMuted ? '현재 상태: 음소거됨 (🔕)' : '현재 상태: 알림 켜짐 (🔔)';
+  }
+  if (convNotificationStatusDesc) {
+    convNotificationStatusDesc.textContent = isMuted
+      ? '새 메시지가 도착해도 소리 및 팝업 알림이 차단되며, 읽지 않은 메시지 배지만 유지됩니다.'
+      : '새 메시지가 도착하면 알림이 정상적으로 표시됩니다.';
+  }
+  if (convNotificationToggleBtn) {
+    convNotificationToggleBtn.textContent = isMuted ? '음소거 해제' : '이 대화방 음소거';
+    convNotificationToggleBtn.className = isMuted ? 'primary-btn notif-toggle-action-btn' : 'caution-btn notif-toggle-action-btn';
+  }
 }
+
+function openConversationNotificationModal() {
+  hideNotifHint(false);
+  hideMuteHint();
+  if (!currentUser) return;
+  updateConversationNotificationUI();
+  if (convNotificationModal) convNotificationModal.classList.remove('hidden');
+}
+
+function closeConversationNotificationModal() {
+  if (convNotificationModal) convNotificationModal.classList.add('hidden');
+  if (currentUser) msgInput.focus();
+}
+
+// Global Notification Event Listeners
 if (headerNotifBtn) {
-  headerNotifBtn.addEventListener('click', openNotificationModal);
+  headerNotifBtn.addEventListener('click', openGlobalNotificationModal);
 }
 if (notifHintClose) {
   notifHintClose.addEventListener('click', event => {
     event.stopPropagation();
-    hideNotifHint();
+    hideNotifHint(false);
   });
 }
 if (notifHintPopover) {
   notifHintPopover.addEventListener('click', () => {
-    hideNotifHint();
-    openNotificationModal();
+    hideNotifHint(false);
+    openGlobalNotificationModal();
   });
 }
-if (notificationToggleBtn) {
-  notificationToggleBtn.addEventListener('click', async () => {
+if (globalNotificationModalClose) globalNotificationModalClose.addEventListener('click', closeGlobalNotificationModal);
+if (globalNotificationModalCancel) globalNotificationModalCancel.addEventListener('click', closeGlobalNotificationModal);
+if (globalNotificationModal) {
+  globalNotificationModal.addEventListener('click', event => {
+    if (event.target === globalNotificationModal) closeGlobalNotificationModal();
+  });
+}
+
+// Conversation Notification Event Listeners
+if (convMuteBtn) {
+  convMuteBtn.addEventListener('click', openConversationNotificationModal);
+}
+if (muteHintClose) {
+  muteHintClose.addEventListener('click', event => {
+    event.stopPropagation();
+    hideMuteHint();
+  });
+}
+if (muteHintPopover) {
+  muteHintPopover.addEventListener('click', () => {
+    hideMuteHint();
+    openConversationNotificationModal();
+  });
+}
+if (convNotificationToggleBtn) {
+  convNotificationToggleBtn.addEventListener('click', async () => {
     await toggleActiveConvMute();
-    updateNotificationSettingsUI();
   });
 }
+if (convNotificationModalClose) convNotificationModalClose.addEventListener('click', closeConversationNotificationModal);
+if (convNotificationModalCancel) convNotificationModalCancel.addEventListener('click', closeConversationNotificationModal);
+if (convNotificationModal) {
+  convNotificationModal.addEventListener('click', event => {
+    if (event.target === convNotificationModal) closeConversationNotificationModal();
+  });
+}
+
+// Sound Preferences & Desktop & Snooze Event Listeners
 if (soundModeInputs) {
   soundModeInputs.forEach(input => {
     input.addEventListener('change', () => {
@@ -1830,7 +1980,7 @@ if (desktopNotifToggleBtn) {
     } else if (permission === 'granted') {
       setDesktopNotificationEnabled(!isDesktopNotificationEnabled());
     }
-    updateNotificationSettingsUI();
+    updateGlobalNotificationUI();
   });
 }
 if (desktopNotifTestBtn) {
@@ -1845,14 +1995,14 @@ if (desktopNotifTestBtn) {
         const res = await Notification.requestPermission();
         if (res === 'granted') {
           setDesktopNotificationEnabled(true);
-          updateNotificationSettingsUI();
+          updateGlobalNotificationUI();
           new Notification('BambooChat 테스트 알림 💬', {
             body: '데스크톱 알림이 정상적으로 작동하고 있습니다! 🎉',
             icon: '/favicon.ico',
           });
           showToast('데스크톱 테스트 알림을 발송했습니다.', 'success');
         } else {
-          updateNotificationSettingsUI();
+          updateGlobalNotificationUI();
           showToast('알림 권한이 허용되지 않았습니다.', 'warning');
         }
       } catch {
@@ -1889,69 +2039,203 @@ if (snoozeResumeBtn) {
     clearSnooze();
   });
 }
-if (notificationModalClose) notificationModalClose.addEventListener('click', closeNotificationModal);
-if (notificationModalCancel) notificationModalCancel.addEventListener('click', closeNotificationModal);
-if (notificationModal) {
-  notificationModal.addEventListener('click', event => {
-    if (event.target === notificationModal) closeNotificationModal();
-  });
-}
-if (muteHintClose) {
-  muteHintClose.addEventListener('click', event => {
-    event.stopPropagation();
-    hideMuteHint();
-  });
-}
-if (muteHintPopover) {
-  muteHintPopover.addEventListener('click', () => {
-    hideMuteHint();
-    openNotificationModal();
-  });
-}
 
-const COLLAPSED_SECTIONS_KEY = 'bamboochat_collapsed_sections';
+// --- Message Pins (Iteration 5) ---
+let activePinnedMessages = [];
+let pinFetchSeq = 0;
+let pinFetchAbortController = null;
 
-function loadCollapsedSections() {
+async function fetchActivePinnedMessages(options = {}) {
+  const { autoOpen = false, preserveOpen = false } = options;
+  if (pinFetchAbortController) {
+    pinFetchAbortController.abort();
+    pinFetchAbortController = null;
+  }
+  const currentSeq = ++pinFetchSeq;
+  const targetConvId = activeConvId;
+
+  if (!targetConvId || !currentUser) {
+    activePinnedMessages = [];
+    updatePinnedUI({ autoOpen: false, preserveOpen: false });
+    return;
+  }
+
+  const parsed = parseConvKey(targetConvId);
+  pinFetchAbortController = new AbortController();
   try {
-    const raw = localStorage.getItem(COLLAPSED_SECTIONS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
+    const res = await fetch(`/api/conversations/${parsed.type}/${parsed.id}/pins`, {
+      signal: pinFetchAbortController.signal,
+    });
+    if (currentSeq !== pinFetchSeq || activeConvId !== targetConvId) {
+      return;
+    }
+    if (res.ok) {
+      const data = await res.json();
+      activePinnedMessages = Array.isArray(data.pins) ? data.pins : [];
+    } else {
+      activePinnedMessages = [];
+    }
+  } catch (err) {
+    if (err.name === 'AbortError' || currentSeq !== pinFetchSeq || activeConvId !== targetConvId) {
+      return;
+    }
+    activePinnedMessages = [];
+  }
+  if (currentSeq !== pinFetchSeq || activeConvId !== targetConvId) {
+    return;
+  }
+  updatePinnedUI({ autoOpen, preserveOpen });
+}
+
+function updatePinnedUI(options = {}) {
+  const { autoOpen = false, preserveOpen = false } = options;
+  const count = activePinnedMessages.length;
+  if (pinnedCountBadge) {
+    pinnedCountBadge.textContent = String(count);
+    pinnedCountBadge.classList.toggle('hidden', count === 0);
+  }
+  if (pinnedDrawerCount) {
+    pinnedDrawerCount.textContent = `${count}개`;
+  }
+  if (pinnedMessagesBtn) {
+    pinnedMessagesBtn.classList.toggle('has-pins', count > 0);
+  }
+  if (pinnedMessagesDrawer) {
+    if (count === 0) {
+      pinnedMessagesDrawer.classList.add('hidden');
+    } else if (autoOpen) {
+      pinnedMessagesDrawer.classList.remove('hidden');
+    } else if (preserveOpen) {
+      // Keep current drawer visibility state intact
+    }
+  }
+  renderPinnedDrawerList();
+}
+
+function renderPinnedDrawerList() {
+  if (!pinnedMessagesList) return;
+  pinnedMessagesList.replaceChildren();
+
+  if (activePinnedMessages.length === 0) {
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'pinned-empty';
+    emptyEl.textContent = '고정된 메시지가 없습니다.';
+    pinnedMessagesList.appendChild(emptyEl);
+    return;
+  }
+
+  activePinnedMessages.forEach(pin => {
+    const item = document.createElement('div');
+    item.className = 'pinned-item';
+
+    const metaRow = document.createElement('div');
+    metaRow.className = 'pinned-item-meta';
+
+    const authorSpan = document.createElement('strong');
+    authorSpan.className = 'pinned-item-author';
+    const authorNick = pin.message.nickname || pin.message.from_nick || '사용자';
+    authorSpan.textContent = displayNickname(authorNick);
+    metaRow.appendChild(authorSpan);
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'pinned-item-time';
+    timeSpan.textContent = formatTime(pin.message.created_at || pin.pinned_at);
+    metaRow.appendChild(timeSpan);
+
+    const unpinBtn = document.createElement('button');
+    unpinBtn.type = 'button';
+    unpinBtn.className = 'pinned-item-unpin';
+    unpinBtn.title = '고정 해제';
+    unpinBtn.textContent = '✕';
+    unpinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleMessagePin(pin.message);
+    });
+    metaRow.appendChild(unpinBtn);
+
+    item.appendChild(metaRow);
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'pinned-item-content';
+    contentDiv.textContent = pin.message.content || '(첨부파일)';
+    item.appendChild(contentDiv);
+
+    const footerDiv = document.createElement('div');
+    footerDiv.className = 'pinned-item-footer';
+    const pinnerName = pin.pinned_by?.display_name || pin.pinned_by?.username || '사용자';
+    footerDiv.textContent = `📌 ${pinnerName}님이 고정함`;
+    item.appendChild(footerDiv);
+
+    item.addEventListener('click', () => {
+      jumpToMessage(pin.message.message_id);
+    });
+
+    pinnedMessagesList.appendChild(item);
+  });
+}
+
+function jumpToMessage(formattedId) {
+  if (!formattedId) return;
+  const row = messageListEl?.querySelector(`.msg-row[data-message-id="${formattedId}"]`);
+  if (row) {
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.classList.remove('highlight-flash');
+    void row.offsetWidth;
+    row.classList.add('highlight-flash');
+    setTimeout(() => row.classList.remove('highlight-flash'), 2000);
+  } else {
+    showToast('메시지가 현재 화면에 로드되지 않았습니다. (이전 메시지 더보기를 이용해주세요)', 'info');
   }
 }
 
-function persistCollapsedSections(state) {
+async function toggleMessagePin(msg) {
+  if (!msg || !currentUser) return;
+  const rawId = typeof msg.message_id === 'string' ? msg.message_id.replace(/^(public|dm):/, '') : String(msg.id || '');
+  const numId = Number(rawId);
+  if (!numId) return;
+
+  const parsed = parseConvKey(activeConvId);
+  const convType = parsed.type;
+  const convId = parsed.id;
+  const currentlyPinned = Boolean(msg.is_pinned);
+
   try {
-    localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(state));
-  } catch { /* storage unavailable */ }
-}
-
-function applyCollapsedSections() {
-  const state = loadCollapsedSections();
-  document.querySelectorAll('.sidebar-section[data-section]').forEach(section => {
-    const name = section.dataset.section;
-    const isCollapsed = Boolean(state[name]);
-    section.classList.toggle('collapsed', isCollapsed);
-    const btn = section.querySelector('.section-toggle-btn');
-    if (btn) btn.setAttribute('aria-expanded', String(!isCollapsed));
-  });
-}
-
-document.querySelectorAll('.section-toggle-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const section = btn.closest('.sidebar-section');
-    if (!section) return;
-    const isCollapsed = section.classList.toggle('collapsed');
-    btn.setAttribute('aria-expanded', String(!isCollapsed));
-    const name = section.dataset.section;
-    if (name) {
-      const state = loadCollapsedSections();
-      if (isCollapsed) state[name] = true;
-      else delete state[name];
-      persistCollapsedSections(state);
+    if (currentlyPinned) {
+      const res = await fetch(`/api/conversations/${convType}/${convId}/pins/${numId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || '고정 해제에 실패했습니다.');
+      }
+      showToast('메시지 고정을 해제했습니다.', 'info');
+    } else {
+      const res = await fetch(`/api/conversations/${convType}/${convId}/pins/${numId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || '메시지 고정에 실패했습니다.');
+      }
+      showToast('메시지를 고정했습니다.', 'success');
     }
+  } catch (err) {
+    showToast(err.message || '요청을 처리하지 못했습니다.', 'error');
+  }
+}
+
+if (pinnedMessagesBtn && pinnedMessagesDrawer) {
+  pinnedMessagesBtn.addEventListener('click', () => {
+    pinnedMessagesDrawer.classList.toggle('hidden');
   });
-});
+}
+if (pinnedDrawerClose && pinnedMessagesDrawer) {
+  pinnedDrawerClose.addEventListener('click', () => {
+    pinnedMessagesDrawer.classList.add('hidden');
+  });
+}
 
 sidebarToggle.addEventListener('click', () => {
   const open = sidebar.classList.toggle('open');
@@ -1961,7 +2245,9 @@ sidebarToggle.addEventListener('click', () => {
 sidebarBackdrop.addEventListener('click', closeSidebar);
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
-    if (notificationModal && !notificationModal.classList.contains('hidden')) closeNotificationModal();
+    if (pinnedMessagesDrawer && !pinnedMessagesDrawer.classList.contains('hidden')) pinnedMessagesDrawer.classList.add('hidden');
+    else if (globalNotificationModal && !globalNotificationModal.classList.contains('hidden')) closeGlobalNotificationModal();
+    else if (convNotificationModal && !convNotificationModal.classList.contains('hidden')) closeConversationNotificationModal();
     else if (channelEditModal && !channelEditModal.classList.contains('hidden')) closeChannelEditModal();
     else if (!channelModal.classList.contains('hidden')) closeChannelModal();
     else if (!nicknameModal.classList.contains('hidden')) closeNicknameModal();
@@ -2031,10 +2317,7 @@ function switchConversation(id) {
   activeConvId = id;
   closeMentionMenu();
   const conv = conversations.get(id);
-  conv.unread = 0;
-  userUnreadCounts.set(id, 0);
-  const parsed = parseConvKey(id);
-  if (parsed.rawKey) userUnreadCounts.set(parsed.rawKey, 0);
+  clearConvUnread(conv);
   const isAdmin = currentUser && currentUser.role === 'admin';
   if (channelSettingsBtn) {
     channelSettingsBtn.classList.toggle('hidden', !(conv.type === 'channel' && isAdmin));
@@ -2061,6 +2344,8 @@ function switchConversation(id) {
   loadActiveDraft();
   renderComposerPreviews();
   renderMessages();
+  if (pinnedMessagesDrawer) pinnedMessagesDrawer.classList.add('hidden');
+  fetchActivePinnedMessages({ autoOpen: true });
   ackActiveConversationRead();
   renderConversationList();
   updateLoadOlderButton();
@@ -2201,7 +2486,7 @@ function renderOnlineList(users) {
     item.setAttribute('aria-label', `${displayName} ${online ? '온라인' : '오프라인'}`);
     item.title = `${displayName} (@${nick}) — ${online ? '온라인' : '오프라인'}`;
     item.append(dot, nickElement);
-    if (nick !== myNickname && online) {
+    if (nick !== myNickname) {
       const openDm = () => {
         getOrCreateDm(nick, user.id);
         renderConversationList();
@@ -2533,6 +2818,11 @@ function createAttachmentEntry(attachment) {
     image.src = attachment.url;
     image.alt = attachment.name;
     image.loading = 'lazy';
+    image.addEventListener('load', () => {
+      if (isNearBottom(200)) {
+        scrollBottom();
+      }
+    });
     card.appendChild(image);
   }
   const icon = document.createElement('span');
@@ -2615,9 +2905,155 @@ async function deleteOwnedAttachment(attachmentId) {
   }
 }
 
+const REACTION_PALETTE = ['👍', '❤️', '😂', '😮', '😢', '👏', '✅', '❌', '👀'];
+
+let activeReactionPicker = null;
+
+function closeReactionPicker() {
+  if (activeReactionPicker) {
+    activeReactionPicker.remove();
+    activeReactionPicker = null;
+  }
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.reaction-picker-popover') && !e.target.closest('.msg-action-react-btn')) {
+    closeReactionPicker();
+  }
+});
+
+function openReactionPicker(msg, anchorBtn) {
+  if (activeReactionPicker && activeReactionPicker.dataset.msgId === msg.message_id) {
+    closeReactionPicker();
+    return;
+  }
+  closeReactionPicker();
+  const picker = document.createElement('div');
+  picker.className = 'reaction-picker-popover';
+  picker.dataset.msgId = msg.message_id;
+
+  REACTION_PALETTE.forEach(emoji => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'reaction-picker-emoji-btn';
+    btn.textContent = emoji;
+    const isReacted = Array.isArray(msg.reactions) && msg.reactions.some(r => r.emoji === emoji && (r.reacted_by_me || r.users?.some(u => Number(u.id) === myUserId)));
+    if (isReacted) btn.classList.add('active');
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      closeReactionPicker();
+      await toggleReaction(msg, emoji);
+    });
+    picker.appendChild(btn);
+  });
+
+  const parentShell = anchorBtn.closest('.message-actions') || anchorBtn.parentElement;
+  parentShell.appendChild(picker);
+  activeReactionPicker = picker;
+}
+
+function renderMessageReactions(msg, container) {
+  container.replaceChildren();
+  const reactions = Array.isArray(msg.reactions) ? msg.reactions : [];
+  if (!reactions.length) {
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+
+  reactions.forEach(r => {
+    if (!r.count || r.count <= 0) return;
+    const isReactedByMe = Boolean(r.reacted_by_me || r.users?.some(u => Number(u.id) === myUserId));
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = `reaction-pill${isReactedByMe ? ' reacted-by-me' : ''}`;
+
+    const emojiSpan = document.createElement('span');
+    emojiSpan.className = 'reaction-pill-emoji';
+    emojiSpan.textContent = r.emoji;
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'reaction-pill-count';
+    countSpan.textContent = r.count;
+
+    pill.append(emojiSpan, countSpan);
+
+    if (Array.isArray(r.users) && r.users.length) {
+      const names = r.users.map(u => u.display_name || u.username);
+      const tooltipText = names.length <= 3
+        ? `${names.join(', ')}님이 반응함`
+        : `${names.slice(0, 3).join(', ')} 외 ${names.length - 3}명이 반응함`;
+      pill.title = tooltipText;
+    }
+
+    pill.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await toggleReaction(msg, r.emoji);
+    });
+
+    container.appendChild(pill);
+  });
+}
+
+async function toggleReaction(msg, emoji) {
+  if (!currentUser || !msg.message_id) return;
+  const isChat = msg.msgType === 'chat';
+  const msgType = isChat ? 'channel' : 'dm';
+  const rawId = isChat
+    ? Number(String(msg.message_id).replace(/^public:/, ''))
+    : Number(String(msg.message_id).replace(/^dm:/, ''));
+  if (!rawId || isNaN(rawId)) return;
+
+  try {
+    const res = await fetch(`/api/messages/${msgType}/${rawId}/reactions/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.detail || '반응을 변경하지 못했습니다.');
+    }
+    msg.reactions = data.reactions;
+    updateMessageReactionsInDOM(msg.message_id, data.reactions);
+  } catch (err) {
+    showToast(err.message || '반응 처리에 실패했습니다.', 'error');
+  }
+}
+
+function updateMessageReactionsInDOM(messageId, reactions) {
+  const row = document.querySelector(`.msg-row[data-message-id="${messageId}"]`);
+  if (!row) return;
+  const container = row.querySelector('.message-reactions-row');
+  if (!container) return;
+
+  for (const [convId, conv] of conversations.entries()) {
+    const m = conv.messages.find(item => item.message_id === messageId);
+    if (m) m.reactions = reactions;
+  }
+  renderMessageReactions({ reactions }, container);
+}
+
 function createMessageActions(msg) {
   const actions = document.createElement('div');
   actions.className = 'message-actions';
+
+  const isHidden = Boolean(msg.is_hidden);
+  const isAdmin = currentUser?.role === 'admin';
+  if (msg.message_id && (!isHidden || isAdmin)) {
+    const reactBtn = document.createElement('button');
+    reactBtn.type = 'button';
+    reactBtn.className = 'msg-action-react-btn';
+    reactBtn.textContent = '😀+';
+    reactBtn.title = '반응 남기기';
+    reactBtn.setAttribute('aria-label', '반응 남기기');
+    reactBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openReactionPicker(msg, reactBtn);
+    });
+    actions.appendChild(reactBtn);
+  }
+
   const replyButton = document.createElement('button');
   replyButton.type = 'button';
   replyButton.textContent = '답장';
@@ -2634,7 +3070,6 @@ function createMessageActions(msg) {
 
   if (msg.msgType === 'chat' && msg.message_id) {
     const isAuthor = (msg.author_id != null && Number(msg.author_id) === myUserId) || msg.nickname === myNickname;
-    const isAdmin = currentUser?.role === 'admin';
     if ((isAuthor || isAdmin) && !msg.is_hidden) {
       const editButton = document.createElement('button');
       editButton.type = 'button';
@@ -2658,6 +3093,29 @@ function createMessageActions(msg) {
       moveButton.addEventListener('click', () => openMoveMessageModal(msg));
       actions.appendChild(moveButton);
     }
+  } else if (msg.msgType === 'dm' && msg.message_id) {
+    const isSender = (msg.from_user_id != null && Number(msg.from_user_id) === myUserId) || msg.from_nick === myNickname;
+    if (isSender) {
+      const editButton = document.createElement('button');
+      editButton.type = 'button';
+      editButton.textContent = '수정';
+      editButton.addEventListener('click', () => {
+        const row = document.querySelector(`.msg-row[data-message-id="${msg.message_id}"]`);
+        if (row) enterInlineEditMode(row, msg);
+      });
+      actions.appendChild(editButton);
+    }
+  }
+
+  // Pin / Unpin button for channel and dm messages
+  if ((msg.msgType === 'chat' || msg.msgType === 'dm') && msg.message_id) {
+    const pinButton = document.createElement('button');
+    pinButton.type = 'button';
+    pinButton.className = 'msg-action-pin-btn';
+    pinButton.textContent = msg.is_pinned ? '고정 해제' : '고정';
+    pinButton.title = msg.is_pinned ? '메시지 고정 해제' : '메시지 고정';
+    pinButton.addEventListener('click', () => toggleMessagePin(msg));
+    actions.appendChild(pinButton);
   }
 
   return actions;
@@ -2718,6 +3176,7 @@ function appendMessageNode(msg, previousMsg = null) {
   row.className = `msg-row ${isChat ? (isOwn ? 'own' : 'other') : (isOwn ? 'dm-own' : 'dm-recv')}${grouped ? ' grouped' : ''}`;
   if (messageNeedsMyAttention(msg)) row.classList.add('attention-for-me');
   if (msg.is_hidden) row.classList.add('hidden-msg');
+  if (msg.is_pinned) row.classList.add('pinned');
   if (msg.message_id) row.dataset.messageId = msg.message_id;
 
   if (isChat && !grouped) {
@@ -2747,6 +3206,12 @@ function appendMessageNode(msg, previousMsg = null) {
       movedBadge.textContent = fromChan ? `#${fromChan.display_name}에서 이동됨` : '이동됨';
       meta.appendChild(movedBadge);
     }
+    if (msg.is_pinned) {
+      const pinBadge = document.createElement('span');
+      pinBadge.className = 'pinned-indicator-badge';
+      pinBadge.textContent = '📌 고정됨';
+      meta.appendChild(pinBadge);
+    }
     row.appendChild(meta);
   } else if (!isChat && !grouped) {
     const label = document.createElement('div');
@@ -2761,7 +3226,14 @@ function appendMessageNode(msg, previousMsg = null) {
     time.className = 'dm-time';
     time.dateTime = msg.created_at || '';
     time.textContent = formatTime(msg.created_at);
-    row.append(label, time);
+    label.appendChild(time);
+    if (msg.is_pinned) {
+      const pinBadge = document.createElement('span');
+      pinBadge.className = 'pinned-indicator-badge';
+      pinBadge.textContent = '📌 고정됨';
+      label.appendChild(pinBadge);
+    }
+    row.appendChild(label);
   }
 
   const shell = document.createElement('div');
@@ -2815,6 +3287,12 @@ function appendMessageNode(msg, previousMsg = null) {
   });
   shell.append(bubble, actions);
   row.appendChild(shell);
+
+  const reactionsRow = document.createElement('div');
+  reactionsRow.className = 'message-reactions-row';
+  renderMessageReactions(msg, reactionsRow);
+  row.appendChild(reactionsRow);
+
   messageListEl.appendChild(row);
 }
 
@@ -2868,6 +3346,8 @@ function publicMessageFromData(data) {
     attachment_removed: Boolean(data.attachment_removed),
     mentions: Array.isArray(data.mentions) ? data.mentions : [],
     mentioned_user_ids: Array.isArray(data.mentioned_user_ids) ? data.mentioned_user_ids : [],
+    reactions: Array.isArray(data.reactions) ? data.reactions : [],
+    is_pinned: Boolean(data.is_pinned),
   };
 }
 
@@ -2887,6 +3367,8 @@ function directMessageFromData(data) {
     attachment_removed: Boolean(data.attachment_removed),
     edited_at: data.edited_at || null,
     is_hidden: Boolean(data.is_hidden),
+    reactions: Array.isArray(data.reactions) ? data.reactions : [],
+    is_pinned: Boolean(data.is_pinned),
   };
 }
 
@@ -2944,7 +3426,7 @@ async function loadOlderMessages() {
   }
 }
 
-function addMessage(convId, msg, { markUnread = true } = {}) {
+function addMessage(convId, msg) {
   const conv = conversations.get(convId);
   if (!conv) return false;
   if (msg.message_id && conv.messageIds.has(msg.message_id)) return false;
@@ -2960,9 +3442,6 @@ function addMessage(convId, msg, { markUnread = true } = {}) {
   if (convId === activeConvId) {
     appendMessageNode(msg, previousMsg);
     scrollBottom();
-  } else if (markUnread) {
-    conv.unread += 1;
-    renderConversationList();
   }
   return true;
 }
@@ -2976,8 +3455,22 @@ function addSystemMessage(convId, text) {
   addMessage(convId, { msgType: 'system', content: text });
 }
 
+function isNearBottom(threshold = 120) {
+  if (!messageListEl) return true;
+  return (messageListEl.scrollHeight - messageListEl.scrollTop - messageListEl.clientHeight) <= threshold;
+}
+
 function scrollBottom() {
+  if (!messageListEl) return;
   messageListEl.scrollTop = messageListEl.scrollHeight;
+  requestAnimationFrame(() => {
+    if (messageListEl) {
+      messageListEl.scrollTop = messageListEl.scrollHeight;
+      requestAnimationFrame(() => {
+        if (messageListEl) messageListEl.scrollTop = messageListEl.scrollHeight;
+      });
+    }
+  });
 }
 
 function resizeComposer() {
@@ -3462,6 +3955,60 @@ async function copyText(text, successMessage) {
   }
 }
 
+function showMessageToast({ kind = 'ordinary', conversationId = null, title = '', body = '', tone = 'info' } = {}) {
+  const toast = document.createElement('div');
+  toast.className = `toast message-toast ${kind} ${tone}`;
+  if (conversationId) {
+    toast.title = '클릭하여 해당 대화방으로 이동';
+  }
+
+  const headerRow = document.createElement('div');
+  headerRow.className = 'toast-header-row';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'toast-title';
+  titleEl.textContent = title || '새 메시지';
+  headerRow.appendChild(titleEl);
+
+  let badgeText = '';
+  if (kind === 'dm') badgeText = '1:1 대화';
+  else if (kind === 'mention') badgeText = '멘션';
+  else if (kind === 'reply') badgeText = '답장';
+
+  if (badgeText) {
+    const badgeEl = document.createElement('span');
+    badgeEl.className = 'toast-badge';
+    badgeEl.textContent = badgeText;
+    headerRow.appendChild(badgeEl);
+  }
+
+  toast.appendChild(headerRow);
+
+  if (body) {
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'toast-body';
+    bodyEl.textContent = body;
+    toast.appendChild(bodyEl);
+  }
+
+  if (conversationId) {
+    const hintEl = document.createElement('div');
+    hintEl.className = 'toast-hint';
+    hintEl.textContent = '클릭하여 바로 가기 ↗';
+    toast.appendChild(hintEl);
+
+    toast.addEventListener('click', () => {
+      switchConversation(conversationId);
+      toast.remove();
+    });
+  }
+
+  toastRegion.replaceChildren(toast);
+  setTimeout(() => {
+    if (toast.parentNode) toast.remove();
+  }, 5500);
+}
+
 function showToast(message, tone = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast ${tone}`;
@@ -3575,6 +4122,24 @@ function initWebSocket() {
         }
         break;
       }
+      case 'dm_edited': {
+        if (data.message) {
+          const editedMsg = data.message;
+          const partnerNick = editedMsg.from_nick === myNickname ? editedMsg.to_nick : editedMsg.from_nick;
+          const conv = findDmConv(partnerNick) || conversations.get(partnerNick);
+          if (conv) {
+            const idx = conv.messages.findIndex(m => m.message_id === editedMsg.message_id);
+            if (idx >= 0) {
+              conv.messages[idx].content = editedMsg.content;
+              conv.messages[idx].edited_at = editedMsg.edited_at;
+              if (activeConvId === conv.id) {
+                renderMessages();
+              }
+            }
+          }
+        }
+        break;
+      }
       case 'message_hidden': {
         if (data.message) {
           const hiddenMsg = data.message;
@@ -3621,6 +4186,57 @@ function initWebSocket() {
         }
         break;
       }
+      case 'reaction_updated': {
+        const msgType = data.message_type;
+        const msgId = Number(data.message_id);
+        const formattedId = msgType === 'channel' ? `public:${msgId}` : `dm:${msgId}`;
+        const newReactions = Array.isArray(data.reactions) ? data.reactions : [];
+
+        for (const [convId, conv] of conversations.entries()) {
+          const m = conv.messages.find(item => item.message_id === formattedId);
+          if (m) {
+            m.reactions = newReactions;
+          }
+        }
+
+        updateMessageReactionsInDOM(formattedId, newReactions);
+        break;
+      }
+      case 'pin_updated': {
+        const msgId = Number(data.message_id);
+        const formattedId = data.conversation_type === 'channel' ? `public:${msgId}` : `dm:${msgId}`;
+        const isPinned = Boolean(data.is_pinned);
+
+        for (const [convId, conv] of conversations.entries()) {
+          const m = conv.messages.find(item => item.message_id === formattedId);
+          if (m) {
+            m.is_pinned = isPinned;
+          }
+        }
+
+        const row = messageListEl.querySelector(`.msg-row[data-message-id="${formattedId}"]`);
+        if (row) {
+          row.classList.toggle('pinned', isPinned);
+          const pinBadge = row.querySelector('.pinned-indicator-badge');
+          if (isPinned && !pinBadge) {
+            const badge = document.createElement('span');
+            badge.className = 'pinned-indicator-badge';
+            badge.textContent = '📌 고정됨';
+            const meta = row.querySelector('.msg-meta') || row.querySelector('.dm-label');
+            if (meta) meta.appendChild(badge);
+          } else if (!isPinned && pinBadge) {
+            pinBadge.remove();
+          }
+          const pinBtn = row.querySelector('.msg-action-pin-btn');
+          if (pinBtn) {
+            pinBtn.textContent = isPinned ? '고정 해제' : '고정';
+            pinBtn.title = isPinned ? '메시지 고정 해제' : '메시지 고정';
+          }
+        }
+
+        fetchActivePinnedMessages({ preserveOpen: true });
+        break;
+      }
       case 'read_state_updated': {
         if (data.state) {
           const key = `${data.state.conversation_type}:${data.state.conversation_id}`;
@@ -3631,21 +4247,7 @@ function initWebSocket() {
           }
         }
         if (data.unread_counts && typeof data.unread_counts === 'object') {
-          Object.entries(data.unread_counts).forEach(([k, v]) => {
-            userUnreadCounts.set(k, v);
-            const conv = findDmConv(k) || conversations.get(k);
-            if (conv) {
-              if (conv.id === activeConvId) {
-                conv.unread = 0;
-                userUnreadCounts.set(k, 0);
-                userUnreadCounts.set(conv.id, 0);
-              } else {
-                conv.unread = v;
-                userUnreadCounts.set(conv.id, v);
-              }
-            }
-          });
-          renderConversationList();
+          applyServerUnreadCounts(data.unread_counts);
         }
         break;
       }
@@ -3676,15 +4278,18 @@ function initWebSocket() {
           renderConversationList();
         }
         const chatMessage = publicMessageFromData(data);
-        const added = addMessage(targetConvId, chatMessage, { markUnread: !data.history });
-        if (targetConvId === activeConvId) {
-          ackActiveConversationRead();
-        } else {
-          const currCnt = userUnreadCounts.get(targetConvId) || 0;
-          userUnreadCounts.set(targetConvId, currCnt + 1);
-          renderConversationList();
-        }
+        const added = addMessage(targetConvId, chatMessage);
         const isOwn = data.nickname === myNickname || (myUserId !== null && Number(data.author_id) === myUserId);
+        const shouldAutoRead = targetConvId === activeConvId && isChatActiveAndFocused();
+
+        if (shouldAutoRead) {
+          ackActiveConversationRead();
+        } else if (!isOwn && !data.history) {
+          const chanConv = conversations.get(targetConvId);
+          if (chanConv) {
+            incrementConvUnread(chanConv);
+          }
+        }
         if (!data.history && added && !isOwn) {
           const senderDisplay = displayNickname(data.nickname);
           const chanObj = channelsDirectory.get(chanId);
@@ -3734,20 +4339,16 @@ function initWebSocket() {
         const partnerUserId = data.from_nick === myNickname ? data.to_user_id : data.from_user_id;
         const conv = getOrCreateDm(partner, partnerUserId);
         const targetConvId = conv.id;
-        renderConversationList();
-        const added = addMessage(targetConvId, directMessageFromData(data), { markUnread: !data.history });
-        if (targetConvId === activeConvId) {
-          conv.unread = 0;
-          userUnreadCounts.set(targetConvId, 0);
-          if (partnerUserId) userUnreadCounts.set(`dm:${partnerUserId}`, 0);
-          ackActiveConversationRead();
-        } else if (added && !data.history) {
-          const currCnt = getConvUnreadCount(conv);
-          userUnreadCounts.set(targetConvId, currCnt);
-          if (partnerUserId) userUnreadCounts.set(`dm:${partnerUserId}`, currCnt);
-          renderConversationList();
-        }
+        const added = addMessage(targetConvId, directMessageFromData(data));
         const isOwn = data.from_nick === myNickname || (myUserId !== null && Number(data.from_user_id) === myUserId);
+        const shouldAutoRead = targetConvId === activeConvId && isChatActiveAndFocused();
+
+        if (shouldAutoRead) {
+          clearConvUnread(conv);
+          ackActiveConversationRead();
+        } else if (!isOwn && !data.history && added) {
+          incrementConvUnread(conv);
+        }
         const senderDisplay = displayNickname(data.from_nick);
         const contentPreview = (data.content || '파일 전송').slice(0, 50);
 
@@ -3782,25 +4383,15 @@ function initWebSocket() {
           });
         }
         if (data.unread_counts && typeof data.unread_counts === 'object') {
-          Object.entries(data.unread_counts).forEach(([k, v]) => {
-            userUnreadCounts.set(k, v);
-            const conv = findDmConv(k) || conversations.get(k);
-            if (conv) {
-              if (conv.id === activeConvId) {
-                conv.unread = 0;
-                userUnreadCounts.set(k, 0);
-                userUnreadCounts.set(conv.id, 0);
-              } else {
-                conv.unread = v;
-                userUnreadCounts.set(conv.id, v);
-              }
-            }
-          });
+          applyServerUnreadCounts(data.unread_counts);
         }
-        ackActiveConversationRead();
+        if (isChatActiveAndFocused()) {
+          ackActiveConversationRead();
+        }
         updateMuteButtonUI();
         renderConversationList();
         updateLoadOlderButton();
+        fetchActivePinnedMessages({ autoOpen: true });
         break;
       }
       case 'attachment_deleted':
@@ -3869,9 +4460,127 @@ function scheduleReconnect() {
   }, RECONNECT_DELAY);
 }
 
+function checkAndAckActiveConversation() {
+  if (isChatActiveAndFocused() && activeConvId) {
+    const conv = conversations.get(activeConvId);
+    if (conv) {
+      ackActiveConversationRead();
+    }
+  }
+}
+
+// --- Sidebar Section Collapse & Draggable Sliders ---
+const SIDEBAR_SIZES_STORAGE_KEY = 'bamboochat_sidebar_sizes';
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'bamboochat_sidebar_collapsed';
+
+function initSidebarSections() {
+  // 1. Toggle Collapse / Expand
+  const toggleButtons = document.querySelectorAll('.section-toggle-btn');
+  toggleButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const section = btn.closest('.sidebar-section');
+      if (!section) return;
+      const isCollapsed = section.classList.toggle('collapsed');
+      btn.setAttribute('aria-expanded', String(!isCollapsed));
+      if (!isCollapsed) {
+        try {
+          const sizes = JSON.parse(localStorage.getItem(SIDEBAR_SIZES_STORAGE_KEY) || '{}');
+          const secName = section.dataset.section;
+          if (secName && sizes[secName] && sizes[secName] >= 50) {
+            section.style.flex = `0 0 ${sizes[secName]}px`;
+          }
+        } catch { /* storage */ }
+      }
+      saveSidebarState();
+    });
+  });
+
+  // 2. Draggable Splitter Sliders
+  const sliders = document.querySelectorAll('.sidebar-slider');
+  sliders.forEach(slider => {
+    slider.addEventListener('pointerdown', event => {
+      const prevSection = slider.previousElementSibling;
+      const nextSection = slider.nextElementSibling;
+      if (!prevSection || !nextSection) return;
+      if (prevSection.classList.contains('collapsed') || nextSection.classList.contains('collapsed')) return;
+
+      event.preventDefault();
+      slider.classList.add('is-dragging');
+      slider.setPointerCapture(event.pointerId);
+
+      const startY = event.clientY;
+      const startPrevHeight = prevSection.getBoundingClientRect().height;
+      const startNextHeight = nextSection.getBoundingClientRect().height;
+
+      const onPointerMove = moveEvent => {
+        const deltaY = moveEvent.clientY - startY;
+        const newPrevHeight = Math.max(50, startPrevHeight + deltaY);
+        const newNextHeight = Math.max(50, startNextHeight - deltaY);
+
+        prevSection.style.flex = `0 0 ${newPrevHeight}px`;
+        nextSection.style.flex = `0 0 ${newNextHeight}px`;
+      };
+
+      const onPointerUp = upEvent => {
+        slider.classList.remove('is-dragging');
+        try {
+          slider.releasePointerCapture(upEvent.pointerId);
+        } catch { /* already released */ }
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        saveSidebarState();
+      };
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+    });
+  });
+
+  restoreSidebarState();
+}
+
+function saveSidebarState() {
+  try {
+    const collapsed = [];
+    const sizes = {};
+    document.querySelectorAll('.sidebar-section').forEach(sec => {
+      const secName = sec.dataset.section;
+      if (!secName) return;
+      if (sec.classList.contains('collapsed')) {
+        collapsed.push(secName);
+      } else {
+        sizes[secName] = sec.getBoundingClientRect().height;
+      }
+    });
+    localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed));
+    localStorage.setItem(SIDEBAR_SIZES_STORAGE_KEY, JSON.stringify(sizes));
+  } catch { /* storage */ }
+}
+
+function restoreSidebarState() {
+  try {
+    const collapsed = JSON.parse(localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) || '[]');
+    const sizes = JSON.parse(localStorage.getItem(SIDEBAR_SIZES_STORAGE_KEY) || '{}');
+
+    document.querySelectorAll('.sidebar-section').forEach(sec => {
+      const secName = sec.dataset.section;
+      if (!secName) return;
+      const btn = sec.querySelector('.section-toggle-btn');
+      if (collapsed.includes(secName)) {
+        sec.classList.add('collapsed');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+      } else if (sizes[secName] && sizes[secName] >= 50) {
+        sec.style.flex = `0 0 ${sizes[secName]}px`;
+      }
+    });
+  } catch { /* storage */ }
+}
+
+window.addEventListener('focus', checkAndAckActiveConversation);
+document.addEventListener('visibilitychange', checkAndAckActiveConversation);
 window.addEventListener('beforeunload', saveCurrentDraft);
 resizeComposer();
 updateCharCount();
 setConnected(false);
-applyCollapsedSections();
+initSidebarSections();
 bootstrapAuth();
