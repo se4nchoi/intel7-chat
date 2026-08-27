@@ -1996,50 +1996,6 @@ if (snoozeResumeBtn) {
   });
 }
 
-const COLLAPSED_SECTIONS_KEY = 'bamboochat_collapsed_sections';
-
-function loadCollapsedSections() {
-  try {
-    const raw = localStorage.getItem(COLLAPSED_SECTIONS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function persistCollapsedSections(state) {
-  try {
-    localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(state));
-  } catch { /* storage unavailable */ }
-}
-
-function applyCollapsedSections() {
-  const state = loadCollapsedSections();
-  document.querySelectorAll('.sidebar-section[data-section]').forEach(section => {
-    const name = section.dataset.section;
-    const isCollapsed = Boolean(state[name]);
-    section.classList.toggle('collapsed', isCollapsed);
-    const btn = section.querySelector('.section-toggle-btn');
-    if (btn) btn.setAttribute('aria-expanded', String(!isCollapsed));
-  });
-}
-
-document.querySelectorAll('.section-toggle-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const section = btn.closest('.sidebar-section');
-    if (!section) return;
-    const isCollapsed = section.classList.toggle('collapsed');
-    btn.setAttribute('aria-expanded', String(!isCollapsed));
-    const name = section.dataset.section;
-    if (name) {
-      const state = loadCollapsedSections();
-      if (isCollapsed) state[name] = true;
-      else delete state[name];
-      persistCollapsedSections(state);
-    }
-  });
-});
-
 sidebarToggle.addEventListener('click', () => {
   const open = sidebar.classList.toggle('open');
   sidebarToggle.setAttribute('aria-expanded', String(open));
@@ -4219,6 +4175,15 @@ function initSidebarSections() {
       if (!section) return;
       const isCollapsed = section.classList.toggle('collapsed');
       btn.setAttribute('aria-expanded', String(!isCollapsed));
+      if (!isCollapsed) {
+        try {
+          const sizes = JSON.parse(localStorage.getItem(SIDEBAR_SIZES_STORAGE_KEY) || '{}');
+          const secName = section.dataset.section;
+          if (secName && sizes[secName] && sizes[secName] >= 50) {
+            section.style.flex = `0 0 ${sizes[secName]}px`;
+          }
+        } catch { /* storage */ }
+      }
       saveSidebarState();
     });
   });
