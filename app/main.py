@@ -818,8 +818,6 @@ async def api_set_muted(request: Request):
 
 @app.get("/api/conversations/{conv_type}/{conv_id}/pins")
 async def api_get_pins(conv_type: str, conv_id: str, request: Request):
-    if not request_origin_is_allowed(request):
-        raise HTTPException(403, "허용되지 않은 요청입니다.")
     user = request_user(request)
     if conv_type not in ("channel", "dm"):
         raise HTTPException(400, "유효하지 않은 대화 유형입니다.")

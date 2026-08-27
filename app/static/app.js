@@ -2007,10 +2007,10 @@ if (snoozeResumeBtn) {
 // --- Message Pins (Iteration 5) ---
 let activePinnedMessages = [];
 
-async function fetchActivePinnedMessages() {
+async function fetchActivePinnedMessages(options = { forceOpen: true }) {
   if (!activeConvId || !currentUser) {
     activePinnedMessages = [];
-    updatePinnedUI();
+    updatePinnedUI({ forceOpen: false });
     return;
   }
   const parsed = parseConvKey(activeConvId);
@@ -2025,10 +2025,11 @@ async function fetchActivePinnedMessages() {
   } catch {
     activePinnedMessages = [];
   }
-  updatePinnedUI();
+  updatePinnedUI(options);
 }
 
-function updatePinnedUI() {
+function updatePinnedUI(options = {}) {
+  const { forceOpen = true } = options;
   const count = activePinnedMessages.length;
   if (pinnedCountBadge) {
     pinnedCountBadge.textContent = String(count);
@@ -2039,6 +2040,13 @@ function updatePinnedUI() {
   }
   if (pinnedMessagesBtn) {
     pinnedMessagesBtn.classList.toggle('has-pins', count > 0);
+  }
+  if (pinnedMessagesDrawer) {
+    if (count === 0) {
+      pinnedMessagesDrawer.classList.add('hidden');
+    } else if (forceOpen) {
+      pinnedMessagesDrawer.classList.remove('hidden');
+    }
   }
   renderPinnedDrawerList();
 }
