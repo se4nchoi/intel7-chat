@@ -279,3 +279,28 @@ class TestReadStateWebSocketSync:
         assert "dm:alice" not in unread_counts
         assert unread_counts[f"dm:{user_alice['id']}"] == 2
 
+    def test_own_messages_not_counted_in_unread(self):
+        client_alice, user_alice = session_client("alice")
+        client_bob, user_bob = session_client("bob")
+
+        # Alice sends messages to general channel
+        database.save_message("alice", "Alice msg 1", user_id=user_alice["id"], channel_id=1)
+        database.save_message("alice", "Alice msg 2", user_id=user_alice["id"], channel_id=1)
+
+        # Alice sends DM to Bob
+        database.save_direct_message(user_alice, user_bob, "Alice to Bob DM")
+
+        # Alice's unread counts should be 0 for both channel:1 and dm:bob
+        resp_alice = client_alice.get("/api/read-states", headers=ORIGIN)
+        assert resp_alice.status_code == 200
+        alice_unreads = resp_alice.json()["unread_counts"]
+        assert alice_unreads.get("channel:1", 0) == 0
+        assert alice_unreads.get(f"dm:{user_bob['id']}", 0) == 0
+
+        # Bob's unread counts should be 2 for channel:1 and 1 for dm:alice
+        resp_bob = client_bob.get("/api/read-states", headers=ORIGIN)
+        assert resp_bob.status_code == 200
+        bob_unreads = resp_bob.json()["unread_counts"]
+        assert bob_unreads.get("channel:1") == 2
+        assert bob_unreads.get(f"dm:{user_alice['id']}") == 1
+

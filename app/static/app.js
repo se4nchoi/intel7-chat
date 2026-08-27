@@ -1203,11 +1203,15 @@ function parseConvKey(convId) {
   return { type: 'channel', id: '1', rawKey: 'channel:1' };
 }
 
+function isChatActiveAndFocused() {
+  return document.visibilityState === 'visible' && document.hasFocus();
+}
+
 function getConvUnreadCount(conv) {
   if (!conv) return 0;
-  if (conv.id === activeConvId) return 0;
+  if (conv.id === activeConvId && isChatActiveAndFocused()) return 0;
   if (conv.type === 'channel') {
-    return userUnreadCounts.get(conv.id) ?? conv.unread ?? 0;
+    return userUnreadCounts.get(conv.id) ?? userUnreadCounts.get(`channel:${conv.channelId}`) ?? conv.unread ?? 0;
   }
   if (conv.type === 'dm') {
     const partnerId = conv.partnerUserId || userDirectory.get(conv.name)?.id;
@@ -1223,6 +1227,51 @@ function getConvUnreadCount(conv) {
     return conv.unread ?? 0;
   }
   return 0;
+}
+
+function setConvUnreadCount(conv, count) {
+  if (!conv) return;
+  const num = Math.max(0, Number(count) || 0);
+  conv.unread = num;
+  userUnreadCounts.set(conv.id, num);
+  if (conv.type === 'channel') {
+    userUnreadCounts.set(`channel:${conv.channelId}`, num);
+  } else if (conv.type === 'dm') {
+    userUnreadCounts.set(`dm:${conv.name}`, num);
+    const partnerId = conv.partnerUserId || userDirectory.get(conv.name)?.id;
+    if (partnerId) {
+      userUnreadCounts.set(`dm:${partnerId}`, num);
+    }
+  }
+}
+
+function incrementConvUnread(conv) {
+  if (!conv) return;
+  const curr = getConvUnreadCount(conv);
+  setConvUnreadCount(conv, curr + 1);
+  renderConversationList();
+}
+
+function clearConvUnread(conv) {
+  if (!conv) return;
+  setConvUnreadCount(conv, 0);
+  renderConversationList();
+}
+
+function applyServerUnreadCounts(counts) {
+  if (!counts || typeof counts !== 'object') return;
+  Object.entries(counts).forEach(([k, v]) => {
+    userUnreadCounts.set(k, v);
+    const conv = findDmConv(k) || conversations.get(k);
+    if (conv) {
+      if (conv.id === activeConvId && isChatActiveAndFocused()) {
+        setConvUnreadCount(conv, 0);
+      } else {
+        setConvUnreadCount(conv, v);
+      }
+    }
+  });
+  renderConversationList();
 }
 
 function getConvState(convId) {
@@ -1245,6 +1294,7 @@ let ackDebounceTimer = null;
 function ackActiveConversationRead() {
   const conv = conversations.get(activeConvId);
   if (!conv || !currentUser) return;
+  if (!isChatActiveAndFocused()) return;
   
   let maxId = 0;
   for (const m of conv.messages) {
@@ -1252,6 +1302,8 @@ function ackActiveConversationRead() {
     if (num > maxId) maxId = num;
   }
   
+  clearConvUnread(conv);
+
   if (maxId <= 0) return;
   
   const parsed = parseConvKey(activeConvId);
@@ -1268,10 +1320,6 @@ function ackActiveConversationRead() {
   };
   userConversationStates.set(parsed.rawKey, updatedState);
   userConversationStates.set(activeConvId, updatedState);
-  userUnreadCounts.set(parsed.rawKey, 0);
-  userUnreadCounts.set(activeConvId, 0);
-  conv.unread = 0;
-  renderConversationList();
 
   clearTimeout(ackDebounceTimer);
   ackDebounceTimer = setTimeout(async () => {
@@ -1287,21 +1335,7 @@ function ackActiveConversationRead() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.unread_counts) {
-        Object.entries(data.unread_counts).forEach(([k, v]) => {
-          userUnreadCounts.set(k, v);
-          const c = findDmConv(k) || conversations.get(k);
-          if (c) {
-            if (c.id === activeConvId) {
-              c.unread = 0;
-              userUnreadCounts.set(k, 0);
-              userUnreadCounts.set(c.id, 0);
-            } else {
-              c.unread = v;
-              userUnreadCounts.set(c.id, v);
-            }
-          }
-        });
-        renderConversationList();
+        applyServerUnreadCounts(data.unread_counts);
       }
     } catch { /* network err */ }
   }, 200);
@@ -2080,10 +2114,7 @@ function switchConversation(id) {
   activeConvId = id;
   closeMentionMenu();
   const conv = conversations.get(id);
-  conv.unread = 0;
-  userUnreadCounts.set(id, 0);
-  const parsed = parseConvKey(id);
-  if (parsed.rawKey) userUnreadCounts.set(parsed.rawKey, 0);
+  clearConvUnread(conv);
   const isAdmin = currentUser && currentUser.role === 'admin';
   if (channelSettingsBtn) {
     channelSettingsBtn.classList.toggle('hidden', !(conv.type === 'channel' && isAdmin));
@@ -3898,21 +3929,7 @@ function initWebSocket() {
           }
         }
         if (data.unread_counts && typeof data.unread_counts === 'object') {
-          Object.entries(data.unread_counts).forEach(([k, v]) => {
-            userUnreadCounts.set(k, v);
-            const conv = findDmConv(k) || conversations.get(k);
-            if (conv) {
-              if (conv.id === activeConvId) {
-                conv.unread = 0;
-                userUnreadCounts.set(k, 0);
-                userUnreadCounts.set(conv.id, 0);
-              } else {
-                conv.unread = v;
-                userUnreadCounts.set(conv.id, v);
-              }
-            }
-          });
-          renderConversationList();
+          applyServerUnreadCounts(data.unread_counts);
         }
         break;
       }
@@ -3943,15 +3960,18 @@ function initWebSocket() {
           renderConversationList();
         }
         const chatMessage = publicMessageFromData(data);
-        const added = addMessage(targetConvId, chatMessage, { markUnread: !data.history });
-        if (targetConvId === activeConvId) {
-          ackActiveConversationRead();
-        } else {
-          const currCnt = userUnreadCounts.get(targetConvId) || 0;
-          userUnreadCounts.set(targetConvId, currCnt + 1);
-          renderConversationList();
-        }
+        const added = addMessage(targetConvId, chatMessage);
         const isOwn = data.nickname === myNickname || (myUserId !== null && Number(data.author_id) === myUserId);
+        const shouldAutoRead = targetConvId === activeConvId && isChatActiveAndFocused();
+
+        if (shouldAutoRead) {
+          ackActiveConversationRead();
+        } else if (!isOwn && !data.history) {
+          const chanConv = conversations.get(targetConvId);
+          if (chanConv) {
+            incrementConvUnread(chanConv);
+          }
+        }
         if (!data.history && added && !isOwn) {
           const senderDisplay = displayNickname(data.nickname);
           const chanObj = channelsDirectory.get(chanId);
@@ -4001,20 +4021,16 @@ function initWebSocket() {
         const partnerUserId = data.from_nick === myNickname ? data.to_user_id : data.from_user_id;
         const conv = getOrCreateDm(partner, partnerUserId);
         const targetConvId = conv.id;
-        renderConversationList();
-        const added = addMessage(targetConvId, directMessageFromData(data), { markUnread: !data.history });
-        if (targetConvId === activeConvId) {
-          conv.unread = 0;
-          userUnreadCounts.set(targetConvId, 0);
-          if (partnerUserId) userUnreadCounts.set(`dm:${partnerUserId}`, 0);
-          ackActiveConversationRead();
-        } else if (added && !data.history) {
-          const currCnt = getConvUnreadCount(conv);
-          userUnreadCounts.set(targetConvId, currCnt);
-          if (partnerUserId) userUnreadCounts.set(`dm:${partnerUserId}`, currCnt);
-          renderConversationList();
-        }
+        const added = addMessage(targetConvId, directMessageFromData(data));
         const isOwn = data.from_nick === myNickname || (myUserId !== null && Number(data.from_user_id) === myUserId);
+        const shouldAutoRead = targetConvId === activeConvId && isChatActiveAndFocused();
+
+        if (shouldAutoRead) {
+          clearConvUnread(conv);
+          ackActiveConversationRead();
+        } else if (!isOwn && !data.history && added) {
+          incrementConvUnread(conv);
+        }
         const senderDisplay = displayNickname(data.from_nick);
         const contentPreview = (data.content || '파일 전송').slice(0, 50);
 
@@ -4049,22 +4065,11 @@ function initWebSocket() {
           });
         }
         if (data.unread_counts && typeof data.unread_counts === 'object') {
-          Object.entries(data.unread_counts).forEach(([k, v]) => {
-            userUnreadCounts.set(k, v);
-            const conv = findDmConv(k) || conversations.get(k);
-            if (conv) {
-              if (conv.id === activeConvId) {
-                conv.unread = 0;
-                userUnreadCounts.set(k, 0);
-                userUnreadCounts.set(conv.id, 0);
-              } else {
-                conv.unread = v;
-                userUnreadCounts.set(conv.id, v);
-              }
-            }
-          });
+          applyServerUnreadCounts(data.unread_counts);
         }
-        ackActiveConversationRead();
+        if (isChatActiveAndFocused()) {
+          ackActiveConversationRead();
+        }
         updateMuteButtonUI();
         renderConversationList();
         updateLoadOlderButton();
@@ -4136,6 +4141,17 @@ function scheduleReconnect() {
   }, RECONNECT_DELAY);
 }
 
+function checkAndAckActiveConversation() {
+  if (isChatActiveAndFocused() && activeConvId) {
+    const conv = conversations.get(activeConvId);
+    if (conv) {
+      ackActiveConversationRead();
+    }
+  }
+}
+
+window.addEventListener('focus', checkAndAckActiveConversation);
+document.addEventListener('visibilitychange', checkAndAckActiveConversation);
 window.addEventListener('beforeunload', saveCurrentDraft);
 resizeComposer();
 updateCharCount();

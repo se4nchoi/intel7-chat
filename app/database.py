@@ -993,18 +993,20 @@ def get_user_unread_counts(user_id: int) -> Dict[str, int]:
             FROM user_conversation_state WHERE user_id = ?""", (user_id,)).fetchall():
             states[f"{r[0]}:{r[1]}"] = int(r[2])
         
-        # Channels
+        # Channels (exclude messages authored by user_id)
         chans = conn.execute("SELECT id FROM channels WHERE archived = 0").fetchall()
         for chan in chans:
             cid = chan[0]
             key = f"channel:{cid}"
             last_read = states.get(key, 0)
-            cnt = conn.execute("SELECT COUNT(*) FROM messages WHERE channel_id = ? AND id > ?", (cid, last_read)).fetchone()[0]
+            cnt = conn.execute("""SELECT COUNT(*) FROM messages
+                WHERE channel_id = ? AND id > ? AND (user_id IS NULL OR user_id != ?)""",
+                (cid, last_read, user_id)).fetchone()[0]
             unread_counts[key] = cnt
             
-        # DMs (conversations where this user is recipient and message is unread)
+        # DMs (conversations where this user is recipient and message is unread from sender_id)
         dm_rows = conn.execute("""SELECT sender_user_id, id FROM direct_messages
-            WHERE recipient_user_id = ? ORDER BY id ASC""", (user_id,)).fetchall()
+            WHERE recipient_user_id = ? AND sender_user_id != ? ORDER BY id ASC""", (user_id, user_id)).fetchall()
         
         # Group by partner (sender)
         for sender_id, msg_id in dm_rows:
