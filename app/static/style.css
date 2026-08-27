@@ -2657,6 +2657,65 @@ kbd {
   background: rgba(239, 68, 68, 0.25) !important;
 }
 
+/* Conversation Notification Modal Box */
+.modal-box.conv-notif-modal-box {
+  width: min(480px, 94vw);
+  max-width: 480px;
+  max-height: min(450px, 90vh);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 20px rgba(79, 142, 247, 0.15);
+  overflow: hidden;
+}
+
+.conv-notif-modal-box .admin-panel-header {
+  padding: 18px 22px 14px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.conv-notif-modal-box .admin-panel-header h2 {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px 0;
+  text-align: left;
+}
+
+.conv-notif-modal-box .admin-panel-header .modal-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin: 0;
+  text-align: left;
+}
+
+.conv-notification-modal-body {
+  padding: 20px 22px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.conv-notif-modal-box button {
+  width: auto;
+  height: auto;
+  padding: 7px 14px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.3;
+}
+
 .notif-modal-actions {
   margin-top: 8px;
   padding-top: 14px;
@@ -2665,7 +2724,8 @@ kbd {
   justify-content: flex-end;
 }
 
-.notif-settings-modal-box #notification-modal-cancel {
+.notif-settings-modal-box #global-notification-modal-cancel,
+.conv-notif-modal-box #conv-notification-modal-cancel {
   background: var(--surface2) !important;
   color: var(--text-muted) !important;
   border: 1px solid var(--border) !important;
@@ -2673,8 +2733,10 @@ kbd {
   font-size: 0.84rem !important;
 }
 
-.notif-settings-modal-box #notification-modal-cancel:hover {
+.notif-settings-modal-box #global-notification-modal-cancel:hover,
+.conv-notif-modal-box #conv-notification-modal-cancel:hover {
   background: var(--surface3) !important;
   color: var(--text) !important;
 }
+
 

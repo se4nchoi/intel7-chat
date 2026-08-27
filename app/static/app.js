@@ -88,16 +88,27 @@ const muteHintClose = document.getElementById('mute-hint-close');
 const muteHintTitle = document.getElementById('mute-hint-title');
 const muteHintDesc = document.getElementById('mute-hint-desc');
 const muteHintIcon = document.getElementById('mute-hint-icon');
-const notificationModal = document.getElementById('notification-modal');
-const notificationModalClose = document.getElementById('notification-modal-close');
-const notificationModalCancel = document.getElementById('notification-modal-cancel');
-const notificationModalDesc = document.getElementById('notification-modal-desc');
-const notificationStatusIcon = document.getElementById('notification-status-icon');
-const notificationStatusTitle = document.getElementById('notification-status-title');
-const notificationStatusDesc = document.getElementById('notification-status-desc');
-const notificationToggleBtn = document.getElementById('notification-toggle-btn');
+
+// Global Notification Modal Elements
+const globalNotificationModal = document.getElementById('global-notification-modal');
+const globalNotificationModalClose = document.getElementById('global-notification-modal-close');
+const globalNotificationModalCancel = document.getElementById('global-notification-modal-cancel');
 const headerNotifBtn = document.getElementById('header-notif-btn');
-const notifConvSection = document.getElementById('notif-conv-section');
+const notifHintPopover = document.getElementById('notif-hint-popover');
+const notifHintClose = document.getElementById('notif-hint-close');
+
+// Conversation Notification Modal Elements
+const convNotificationModal = document.getElementById('conv-notification-modal');
+const convNotificationModalClose = document.getElementById('conv-notification-modal-close');
+const convNotificationModalCancel = document.getElementById('conv-notification-modal-cancel');
+const convNotificationModalTitle = document.getElementById('conv-notification-modal-title');
+const convNotificationModalDesc = document.getElementById('conv-notification-modal-desc');
+const convNotificationStatusIcon = document.getElementById('conv-notification-status-icon');
+const convNotificationStatusTitle = document.getElementById('conv-notification-status-title');
+const convNotificationStatusDesc = document.getElementById('conv-notification-status-desc');
+const convNotificationToggleBtn = document.getElementById('conv-notification-toggle-btn');
+
+// Sound, Desktop & Snooze Settings Elements
 const soundModeInputs = document.querySelectorAll('input[name="sound-mode"]');
 const soundVolumeSlider = document.getElementById('sound-volume-slider');
 const soundVolumeVal = document.getElementById('sound-volume-val');
@@ -301,7 +312,7 @@ function hideAuthModal() {
 let notifHintTimer = null;
 
 function showNicknameHint() {
-  if (!nicknameHintPopover) return;
+  if (!nicknameHintPopover || !currentUser) return;
   if (nicknameHintTimer) clearTimeout(nicknameHintTimer);
   nicknameHintPopover.classList.remove('hidden');
   nicknameHintTimer = setTimeout(() => {
@@ -309,7 +320,7 @@ function showNicknameHint() {
   }, 6000);
 }
 
-function hideNicknameHint(triggerNext = true) {
+function hideNicknameHint(triggerNext = false) {
   if (nicknameHintTimer) {
     clearTimeout(nicknameHintTimer);
     nicknameHintTimer = null;
@@ -327,17 +338,20 @@ function showNotifHint() {
   if (notifHintTimer) clearTimeout(notifHintTimer);
   notifHintPopover.classList.remove('hidden');
   notifHintTimer = setTimeout(() => {
-    hideNotifHint();
+    hideNotifHint(true);
   }, 6000);
 }
 
-function hideNotifHint() {
+function hideNotifHint(triggerNext = false) {
   if (notifHintTimer) {
     clearTimeout(notifHintTimer);
     notifHintTimer = null;
   }
   if (notifHintPopover) {
     notifHintPopover.classList.add('hidden');
+  }
+  if (triggerNext && currentUser) {
+    showMuteHint();
   }
 }
 
@@ -364,7 +378,6 @@ async function enterChat(user) {
   initWebSocket();
   refreshStorageWarning();
   showNicknameHint();
-  showMuteHint();
 }
 
 async function submitAuth(event) {
@@ -411,7 +424,7 @@ async function submitAuth(event) {
 
 async function logout() {
   hideNicknameHint(false);
-  hideNotifHint();
+  hideNotifHint(false);
   hideMuteHint();
   saveCurrentDraft();
   if (ws) {
@@ -434,7 +447,8 @@ async function logout() {
   adminModal.classList.add('hidden');
   helpModal.classList.add('hidden');
   nicknameModal.classList.add('hidden');
-  if (notificationModal) notificationModal.classList.add('hidden');
+  if (globalNotificationModal) globalNotificationModal.classList.add('hidden');
+  if (convNotificationModal) convNotificationModal.classList.add('hidden');
   if (channelModal) channelModal.classList.add('hidden');
   if (channelEditModal) channelEditModal.classList.add('hidden');
   if (channelSettingsBtn) channelSettingsBtn.classList.add('hidden');
@@ -1309,6 +1323,7 @@ async function toggleActiveConvMute() {
   userConversationStates.set(parsed.rawKey, updatedState);
   userConversationStates.set(activeConvId, updatedState);
   updateMuteButtonUI();
+  updateConversationNotificationUI();
   renderConversationList();
 
   try {
@@ -1351,12 +1366,12 @@ function hideMuteHint() {
 }
 
 function showMuteHint() {
-  if (!muteHintPopover) return;
+  if (!muteHintPopover || !currentUser) return;
   if (muteHintTimer) clearTimeout(muteHintTimer);
   const isMuted = Boolean(getConvState(activeConvId)?.muted);
-  if (muteHintIcon) muteHintIcon.textContent = isMuted ? '🔕' : '💡';
-  if (muteHintTitle) muteHintTitle.textContent = isMuted ? '알림 음소거 상태' : '알림 설정 가능!';
-  if (muteHintDesc) muteHintDesc.textContent = isMuted ? '여기를 클릭해 음소거를 해제할 수 있습니다' : '여기를 클릭해 대화방 알림을 끄거나 켤 수 있습니다';
+  if (muteHintIcon) muteHintIcon.textContent = isMuted ? '🔕' : '🔔';
+  if (muteHintTitle) muteHintTitle.textContent = isMuted ? '대화방 음소거 상태' : '대화방별 음소거';
+  if (muteHintDesc) muteHintDesc.textContent = isMuted ? '여기를 클릭해 음소거를 해제할 수 있습니다' : '이 채널 또는 DM의 알림만 끌 수 있어요.';
   muteHintPopover.classList.remove('hidden');
   muteHintTimer = setTimeout(() => {
     hideMuteHint();
@@ -1517,14 +1532,14 @@ function setSnooze(durationMinutes) {
   try {
     localStorage.setItem(getSnoozeKey(), String(until));
   } catch { /* storage */ }
-  updateNotificationSettingsUI();
+  updateGlobalNotificationUI();
 }
 
 function clearSnooze() {
   try {
     localStorage.removeItem(getSnoozeKey());
   } catch { /* storage */ }
-  updateNotificationSettingsUI();
+  updateGlobalNotificationUI();
 }
 
 function formatSnoozeRemaining(untilMs) {
@@ -1667,33 +1682,11 @@ function emitAttention({
   }
 }
 
-// --- Notification Modal UI Sync ---
-function updateNotificationSettingsUI() {
+// --- Global Notification Modal UI Sync ---
+function updateGlobalNotificationUI() {
   if (!currentUser) return;
 
-  // 1. Current Conversation Mute Section
-  const conv = conversations.get(activeConvId);
-  if (conv && notifConvSection) {
-    notifConvSection.classList.remove('hidden');
-    const isMuted = Boolean(getConvState(activeConvId)?.muted);
-    const displayName = conv.type === 'channel' ? `#${conv.displayName || conv.name}` : `${displayNickname(conv.name)}`;
-
-    if (notificationModalDesc) notificationModalDesc.textContent = `${displayName} 및 전체 알림 환경을 설정합니다.`;
-    if (notificationStatusIcon) notificationStatusIcon.textContent = isMuted ? '🔕' : '🔔';
-    if (notificationStatusTitle) notificationStatusTitle.textContent = isMuted ? '현재 상태: 알림 음소거됨 (🔕)' : '현재 상태: 알림 켜짐 (🔔)';
-    if (notificationStatusDesc) notificationStatusDesc.textContent = isMuted
-      ? `${displayName}의 새 메시지 도착 시 소리 및 팝업 알림이 표시되지 않습니다.`
-      : `${displayName}에 새 메시지가 도착하면 알림이 정상적으로 표시됩니다.`;
-    if (notificationToggleBtn) {
-      notificationToggleBtn.textContent = isMuted ? '알림 켜기 (음소거 해제)' : '알림 끄기 (음소거)';
-      notificationToggleBtn.className = isMuted ? 'primary-btn notif-toggle-action-btn' : 'caution-btn notif-toggle-action-btn';
-    }
-  } else if (notifConvSection) {
-    notifConvSection.classList.add('hidden');
-    if (notificationModalDesc) notificationModalDesc.textContent = '전체 알림 및 소리 환경을 설정합니다.';
-  }
-
-  // 2. Sound Mode & Volume
+  // 1. Sound Mode & Volume
   const currentSoundMode = getSoundMode();
   soundModeInputs.forEach(input => {
     input.checked = input.value === currentSoundMode;
@@ -1703,7 +1696,7 @@ function updateNotificationSettingsUI() {
   if (soundVolumeSlider) soundVolumeSlider.value = String(Math.round(vol * 100));
   if (soundVolumeVal) soundVolumeVal.textContent = `${Math.round(vol * 100)}%`;
 
-  // 3. Desktop Notifications Context
+  // 2. Desktop Notifications Context
   const { isSecure, hasSupport, permission } = checkDesktopNotificationContext();
   const enabled = isDesktopNotificationEnabled();
 
@@ -1744,7 +1737,7 @@ function updateNotificationSettingsUI() {
     desktopNotifHint.classList.toggle('hidden', isSecure);
   }
 
-  // 4. Snooze Status
+  // 3. Snooze Status
   const snoozed = isSnoozed();
   const until = getSnoozeUntil();
   if (snoozeStatusBadge) {
@@ -1759,43 +1752,116 @@ function updateNotificationSettingsUI() {
   });
 }
 
-function openNotificationModal() {
-  hideNotifHint();
+function openGlobalNotificationModal() {
+  hideNotifHint(false);
   hideMuteHint();
   if (!currentUser) return;
-  updateNotificationSettingsUI();
-  if (notificationModal) notificationModal.classList.remove('hidden');
+  updateGlobalNotificationUI();
+  if (globalNotificationModal) globalNotificationModal.classList.remove('hidden');
 }
 
-function closeNotificationModal() {
-  if (notificationModal) notificationModal.classList.add('hidden');
+function closeGlobalNotificationModal() {
+  if (globalNotificationModal) globalNotificationModal.classList.add('hidden');
   if (currentUser) msgInput.focus();
 }
 
-if (convMuteBtn) {
-  convMuteBtn.addEventListener('click', openNotificationModal);
+// --- Conversation Notification Modal UI Sync ---
+function updateConversationNotificationUI() {
+  if (!currentUser) return;
+  const conv = conversations.get(activeConvId);
+  const isMuted = Boolean(getConvState(activeConvId)?.muted);
+  const displayName = conv ? (conv.type === 'channel' ? `#${conv.displayName || conv.name}` : `${displayNickname(conv.name)}`) : '현재 대화방';
+
+  if (convNotificationModalTitle) {
+    convNotificationModalTitle.textContent = `${displayName} 알림`;
+  }
+  if (convNotificationModalDesc) {
+    convNotificationModalDesc.textContent = `${displayName}의 알림 수신 여부를 설정합니다.`;
+  }
+  if (convNotificationStatusIcon) {
+    convNotificationStatusIcon.textContent = isMuted ? '🔕' : '🔔';
+  }
+  if (convNotificationStatusTitle) {
+    convNotificationStatusTitle.textContent = isMuted ? '현재 상태: 음소거됨 (🔕)' : '현재 상태: 알림 켜짐 (🔔)';
+  }
+  if (convNotificationStatusDesc) {
+    convNotificationStatusDesc.textContent = isMuted
+      ? '새 메시지가 도착해도 소리 및 팝업 알림이 차단되며, 읽지 않은 메시지 배지만 유지됩니다.'
+      : '새 메시지가 도착하면 알림이 정상적으로 표시됩니다.';
+  }
+  if (convNotificationToggleBtn) {
+    convNotificationToggleBtn.textContent = isMuted ? '음소거 해제' : '이 대화방 음소거';
+    convNotificationToggleBtn.className = isMuted ? 'primary-btn notif-toggle-action-btn' : 'caution-btn notif-toggle-action-btn';
+  }
 }
+
+function openConversationNotificationModal() {
+  hideNotifHint(false);
+  hideMuteHint();
+  if (!currentUser) return;
+  updateConversationNotificationUI();
+  if (convNotificationModal) convNotificationModal.classList.remove('hidden');
+}
+
+function closeConversationNotificationModal() {
+  if (convNotificationModal) convNotificationModal.classList.add('hidden');
+  if (currentUser) msgInput.focus();
+}
+
+// Global Notification Event Listeners
 if (headerNotifBtn) {
-  headerNotifBtn.addEventListener('click', openNotificationModal);
+  headerNotifBtn.addEventListener('click', openGlobalNotificationModal);
 }
 if (notifHintClose) {
   notifHintClose.addEventListener('click', event => {
     event.stopPropagation();
-    hideNotifHint();
+    hideNotifHint(false);
   });
 }
 if (notifHintPopover) {
   notifHintPopover.addEventListener('click', () => {
-    hideNotifHint();
-    openNotificationModal();
+    hideNotifHint(false);
+    openGlobalNotificationModal();
   });
 }
-if (notificationToggleBtn) {
-  notificationToggleBtn.addEventListener('click', async () => {
+if (globalNotificationModalClose) globalNotificationModalClose.addEventListener('click', closeGlobalNotificationModal);
+if (globalNotificationModalCancel) globalNotificationModalCancel.addEventListener('click', closeGlobalNotificationModal);
+if (globalNotificationModal) {
+  globalNotificationModal.addEventListener('click', event => {
+    if (event.target === globalNotificationModal) closeGlobalNotificationModal();
+  });
+}
+
+// Conversation Notification Event Listeners
+if (convMuteBtn) {
+  convMuteBtn.addEventListener('click', openConversationNotificationModal);
+}
+if (muteHintClose) {
+  muteHintClose.addEventListener('click', event => {
+    event.stopPropagation();
+    hideMuteHint();
+  });
+}
+if (muteHintPopover) {
+  muteHintPopover.addEventListener('click', () => {
+    hideMuteHint();
+    openConversationNotificationModal();
+  });
+}
+if (convNotificationToggleBtn) {
+  convNotificationToggleBtn.addEventListener('click', async () => {
     await toggleActiveConvMute();
-    updateNotificationSettingsUI();
   });
 }
+if (convNotificationModalClose) convNotificationModalClose.addEventListener('click', closeConversationNotificationModal);
+if (convNotificationModalCancel) convNotificationModalCancel.addEventListener('click', closeConversationNotificationModal);
+if (convNotificationModal) {
+  convNotificationModal.addEventListener('click', event => {
+    if (event.target === convNotificationModal) closeConversationNotificationModal();
+  });
+}
+
+// Sound Preferences & Desktop & Snooze Event Listeners
 if (soundModeInputs) {
   soundModeInputs.forEach(input => {
     input.addEventListener('change', () => {
@@ -1830,7 +1896,7 @@ if (desktopNotifToggleBtn) {
     } else if (permission === 'granted') {
       setDesktopNotificationEnabled(!isDesktopNotificationEnabled());
     }
-    updateNotificationSettingsUI();
+    updateGlobalNotificationUI();
   });
 }
 if (desktopNotifTestBtn) {
@@ -1845,14 +1911,14 @@ if (desktopNotifTestBtn) {
         const res = await Notification.requestPermission();
         if (res === 'granted') {
           setDesktopNotificationEnabled(true);
-          updateNotificationSettingsUI();
+          updateGlobalNotificationUI();
           new Notification('BambooChat 테스트 알림 💬', {
             body: '데스크톱 알림이 정상적으로 작동하고 있습니다! 🎉',
             icon: '/favicon.ico',
           });
           showToast('데스크톱 테스트 알림을 발송했습니다.', 'success');
         } else {
-          updateNotificationSettingsUI();
+          updateGlobalNotificationUI();
           showToast('알림 권한이 허용되지 않았습니다.', 'warning');
         }
       } catch {
@@ -1887,25 +1953,6 @@ if (snoozeButtons) {
 if (snoozeResumeBtn) {
   snoozeResumeBtn.addEventListener('click', () => {
     clearSnooze();
-  });
-}
-if (notificationModalClose) notificationModalClose.addEventListener('click', closeNotificationModal);
-if (notificationModalCancel) notificationModalCancel.addEventListener('click', closeNotificationModal);
-if (notificationModal) {
-  notificationModal.addEventListener('click', event => {
-    if (event.target === notificationModal) closeNotificationModal();
-  });
-}
-if (muteHintClose) {
-  muteHintClose.addEventListener('click', event => {
-    event.stopPropagation();
-    hideMuteHint();
-  });
-}
-if (muteHintPopover) {
-  muteHintPopover.addEventListener('click', () => {
-    hideMuteHint();
-    openNotificationModal();
   });
 }
 
@@ -1961,7 +2008,8 @@ sidebarToggle.addEventListener('click', () => {
 sidebarBackdrop.addEventListener('click', closeSidebar);
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
-    if (notificationModal && !notificationModal.classList.contains('hidden')) closeNotificationModal();
+    if (globalNotificationModal && !globalNotificationModal.classList.contains('hidden')) closeGlobalNotificationModal();
+    else if (convNotificationModal && !convNotificationModal.classList.contains('hidden')) closeConversationNotificationModal();
     else if (channelEditModal && !channelEditModal.classList.contains('hidden')) closeChannelEditModal();
     else if (!channelModal.classList.contains('hidden')) closeChannelModal();
     else if (!nicknameModal.classList.contains('hidden')) closeNicknameModal();
