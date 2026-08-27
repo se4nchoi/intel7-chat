@@ -240,6 +240,10 @@ def _migrate_v7(conn: sqlite3.Connection) -> None:
     )""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_pinned_conv ON pinned_messages(conversation_type, conversation_id)")
 
+def _migrate_v8(conn: sqlite3.Connection) -> None:
+    """Add last_login_ip column to users table."""
+    _add_column_if_missing(conn, "users", "last_login_ip", "TEXT")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -248,6 +252,7 @@ _MIGRATIONS = [
     _migrate_v5,
     _migrate_v6,
     _migrate_v7,
+    _migrate_v8,
 ]
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -304,7 +309,7 @@ def update_display_name(user_id: int, display_name: str) -> Optional[Dict[str, A
 def list_users() -> List[Dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute("""SELECT u.id, u.username, u.display_name, u.uuid,
-            u.role, u.active, u.created_at, u.last_login,
+            u.role, u.active, u.created_at, u.last_login, u.last_login_ip,
             (SELECT COUNT(*) FROM messages m WHERE m.user_id=u.id) AS message_count,
             (SELECT COALESCE(SUM(a.size), 0) FROM attachments a
              WHERE a.uploader_user_id=u.id) AS attachment_bytes
@@ -342,13 +347,16 @@ def delete_user_sessions(user_id: int) -> None:
         conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
         conn.commit()
 
-def create_session(session_hash: str, user_id: int, expires_at: str) -> None:
+def create_session(session_hash: str, user_id: int, expires_at: str, client_ip: Optional[str] = None) -> None:
     now = utc_now()
     with get_connection() as conn:
         conn.execute("DELETE FROM sessions WHERE user_id=? OR expires_at<=?", (user_id, now))
         conn.execute("INSERT INTO sessions(token_hash,user_id,created_at,expires_at) VALUES(?,?,?,?)",
                      (session_hash, user_id, now, expires_at))
-        conn.execute("UPDATE users SET last_login=? WHERE id=?", (now, user_id))
+        if client_ip is not None:
+            conn.execute("UPDATE users SET last_login=?, last_login_ip=? WHERE id=?", (now, client_ip, user_id))
+        else:
+            conn.execute("UPDATE users SET last_login=? WHERE id=?", (now, user_id))
         conn.commit()
 
 def get_session_user(session_hash: str) -> Optional[Dict[str, Any]]:

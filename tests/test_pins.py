@@ -39,11 +39,11 @@ def session_client(username="student", role="student"):
 
 
 class TestPinSchema:
-    def test_schema_version_reaches_v7(self):
+    def test_schema_version_reaches_v8(self):
         with database.get_connection() as conn:
             version = database._get_schema_version(conn)
-        assert version >= 7
-        assert len(database._MIGRATIONS) >= 7
+        assert version >= 8
+        assert len(database._MIGRATIONS) >= 8
 
     def test_pinned_messages_table_structure(self):
         with database.get_connection() as conn:

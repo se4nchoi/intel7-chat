@@ -32,6 +32,8 @@ const adminRegistrationEnabled = document.getElementById('admin-registration-ena
 const adminRegistrationSave = document.getElementById('admin-registration-save');
 const adminEnrollmentCode = document.getElementById('admin-enrollment-code');
 const adminEnrollmentSave = document.getElementById('admin-enrollment-save');
+const adminUserSearch = document.getElementById('admin-user-search');
+const adminUserSearchEmpty = document.getElementById('admin-user-search-empty');
 const adminUsers = document.getElementById('admin-users');
 const adminError = document.getElementById('admin-error');
 const chatApp = document.getElementById('chat-app');
@@ -493,23 +495,54 @@ function storageLine(label, used, limit) {
   return `${label}: ${formatBytes(used)} / ${formatBytes(limit)} (${percent}%)`;
 }
 
+function filterAdminUserRows() {
+  if (!adminUsers) return;
+  const query = (adminUserSearch ? adminUserSearch.value : '').trim().toLowerCase();
+  const rows = adminUsers.querySelectorAll('.admin-user');
+  let visibleCount = 0;
+  rows.forEach(row => {
+    const text = row.dataset.searchText || '';
+    const match = !query || text.includes(query);
+    row.style.display = match ? '' : 'none';
+    if (match) visibleCount++;
+  });
+  if (adminUserSearchEmpty) {
+    adminUserSearchEmpty.classList.toggle('hidden', rows.length === 0 || visibleCount > 0);
+  }
+}
+
+if (adminUserSearch) {
+  adminUserSearch.addEventListener('input', filterAdminUserRows);
+}
+
 function renderAdminUsers(users) {
   adminUsers.replaceChildren();
   users.forEach(user => {
     const savedActive = Boolean(user.active);
     const row = document.createElement('div');
     row.className = `admin-user${savedActive ? '' : ' inactive'}`;
+    const displayName = user.display_name || user.username;
+    row.dataset.username = user.username || '';
+    row.dataset.displayName = displayName;
+    row.dataset.searchText = `${user.username} ${displayName}`.toLowerCase();
 
     const identity = document.createElement('div');
     identity.className = 'admin-user-identity';
     const name = document.createElement('strong');
-    name.textContent = user.username;
+    name.textContent = displayName !== user.username ? `${displayName} (@${user.username})` : user.username;
+
     const details = document.createElement('small');
     details.textContent = `메시지 ${user.message_count}개 · 파일 ${formatBytes(user.attachment_bytes)}`;
-    identity.append(name, details);
+
+    const lastLogin = document.createElement('small');
+    const lastLoginTime = user.last_login ? formatTime(user.last_login) : '기록 없음';
+    const lastLoginIp = user.last_login_ip || '기록 없음';
+    lastLogin.textContent = `최근 로그인: ${lastLoginTime} (${lastLoginIp})`;
+
     const ip = document.createElement('small');
-    ip.textContent = `현재 접속 IP: ${user.current_ip || '없음'}`;
-    identity.append(ip);
+    ip.textContent = `현재 접속 IP: ${user.current_ip || '오프라인'}`;
+
+    identity.append(name, details, lastLogin, ip);
 
     const role = document.createElement('select');
     role.setAttribute('aria-label', `${user.username} 역할`);
@@ -598,6 +631,7 @@ function renderAdminUsers(users) {
     row.append(identity, controls);
     adminUsers.appendChild(row);
   });
+  filterAdminUserRows();
 }
 
 async function loadAdminOverview() {
@@ -624,11 +658,13 @@ async function loadAdminOverview() {
 async function openAdminPanel() {
   adminModal.classList.remove('hidden');
   await loadAdminOverview();
+  if (adminUserSearch) adminUserSearch.focus();
 }
 
 function closeAdminPanel() {
   adminModal.classList.add('hidden');
   adminEnrollmentCode.value = '';
+  if (adminUserSearch) adminUserSearch.value = '';
   adminError.textContent = '';
 }
 
@@ -2007,10 +2043,11 @@ if (snoozeResumeBtn) {
 // --- Message Pins (Iteration 5) ---
 let activePinnedMessages = [];
 
-async function fetchActivePinnedMessages(options = { preserveOpen: false }) {
+async function fetchActivePinnedMessages(options = {}) {
+  const { autoOpen = false, preserveOpen = false } = options;
   if (!activeConvId || !currentUser) {
     activePinnedMessages = [];
-    updatePinnedUI({ preserveOpen: false });
+    updatePinnedUI({ autoOpen: false, preserveOpen: false });
     return;
   }
   const parsed = parseConvKey(activeConvId);
@@ -2025,11 +2062,11 @@ async function fetchActivePinnedMessages(options = { preserveOpen: false }) {
   } catch {
     activePinnedMessages = [];
   }
-  updatePinnedUI(options);
+  updatePinnedUI({ autoOpen, preserveOpen });
 }
 
 function updatePinnedUI(options = {}) {
-  const { preserveOpen = false } = options;
+  const { autoOpen = false, preserveOpen = false } = options;
   const count = activePinnedMessages.length;
   if (pinnedCountBadge) {
     pinnedCountBadge.textContent = String(count);
@@ -2044,8 +2081,10 @@ function updatePinnedUI(options = {}) {
   if (pinnedMessagesDrawer) {
     if (count === 0) {
       pinnedMessagesDrawer.classList.add('hidden');
-    } else if (!preserveOpen && !pinnedMessagesDrawer.classList.contains('user-opened')) {
-      // By default keep closed; user clicks 📌 button to toggle
+    } else if (autoOpen) {
+      pinnedMessagesDrawer.classList.remove('hidden');
+    } else if (preserveOpen) {
+      // Keep current drawer visibility state intact
     }
   }
   renderPinnedDrawerList();
@@ -2284,7 +2323,7 @@ function switchConversation(id) {
   renderComposerPreviews();
   renderMessages();
   if (pinnedMessagesDrawer) pinnedMessagesDrawer.classList.add('hidden');
-  fetchActivePinnedMessages();
+  fetchActivePinnedMessages({ autoOpen: true });
   ackActiveConversationRead();
   renderConversationList();
   updateLoadOlderButton();
@@ -4173,7 +4212,7 @@ function initWebSocket() {
           }
         }
 
-        fetchActivePinnedMessages();
+        fetchActivePinnedMessages({ preserveOpen: true });
         break;
       }
       case 'read_state_updated': {
@@ -4330,7 +4369,7 @@ function initWebSocket() {
         updateMuteButtonUI();
         renderConversationList();
         updateLoadOlderButton();
-        fetchActivePinnedMessages();
+        fetchActivePinnedMessages({ autoOpen: true });
         break;
       }
       case 'attachment_deleted':

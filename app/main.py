@@ -250,7 +250,9 @@ def account_public(user: dict) -> dict:
             "display_name": user.get("display_name") or user["username"],
             "role": user["role"],
             "active": bool(user["active"]), "created_at": user["created_at"],
-            "last_login": user.get("last_login"), "message_count": user.get("message_count", 0),
+            "last_login": user.get("last_login"),
+            "last_login_ip": user.get("last_login_ip"),
+            "message_count": user.get("message_count", 0),
             "attachment_bytes": user.get("attachment_bytes", 0),
             "current_ip": current_user_ip(user["id"])}
 
@@ -375,7 +377,8 @@ async def register(request: Request):
         raise HTTPException(409,"이미 사용 중인 아이디입니다.") from exc
     raw=new_session_token()
     expiry=(datetime.now(timezone.utc)+timedelta(hours=CONFIG.session_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    create_session(token_hash(raw),user["id"],expiry)
+    ip=get_client_ip(request)
+    create_session(token_hash(raw),user["id"],expiry,client_ip=ip)
     user=get_session_user(token_hash(raw))
     response=JSONResponse(public_user(user),status_code=201)
     set_session_cookie(response,raw,request)
@@ -403,7 +406,7 @@ async def login(request: Request):
         update_password_hash(user["id"],await asyncio.to_thread(hash_secret,password))
     raw=new_session_token()
     expiry=(datetime.now(timezone.utc)+timedelta(hours=CONFIG.session_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    create_session(token_hash(raw),user["id"],expiry)
+    create_session(token_hash(raw),user["id"],expiry,client_ip=ip)
     user=get_session_user(token_hash(raw))
     response=JSONResponse(public_user(user))
     set_session_cookie(response,raw,request)

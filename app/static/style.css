@@ -401,6 +401,12 @@ button {
   border-radius: 20px;
   font-weight: 600;
   white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  outline: none;
 }
 .conn-status.connected    { background: rgba(52,211,153,.15); color: var(--success); }
 .conn-status.disconnected { background: rgba(249,115,22,.15);  color: var(--danger);  }
@@ -1922,8 +1928,46 @@ kbd {
   flex-direction: column;
   overflow: hidden;
 }
+.admin-users-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.admin-users-header h3 {
+  margin: 0;
+  white-space: nowrap;
+}
+.admin-search-wrap {
+  flex: 0 1 260px;
+}
+.admin-search-input {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition: border-color .15s;
+}
+.admin-search-input:focus {
+  border-color: var(--accent);
+}
+.admin-search-empty {
+  padding: 20px 12px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  background: var(--surface2);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
 .admin-help {
-  margin: -5px 0 9px;
+  margin: 0 0 9px;
   color: var(--text-dim);
   font-size: .75rem;
 }

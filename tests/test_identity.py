@@ -498,3 +498,84 @@ class TestMentionableUsers:
         found = [u for u in users if u["username"] == "mentionable1"]
         assert len(found) == 1
         assert found[0]["display_name"] == "표시이름"
+
+
+# ==========================================================================
+# Iteration: Last Login IP & Admin Overview & Schema v8
+# ==========================================================================
+
+class TestLastLoginAndIP:
+    def test_schema_version_reaches_v8(self):
+        with database.get_connection() as conn:
+            version = database._get_schema_version(conn)
+        assert version >= 8
+        assert len(database._MIGRATIONS) >= 8
+
+    def test_migration_v8_is_idempotent(self):
+        with database.get_connection() as conn:
+            database._migrate_v8(conn)
+            database._migrate_v8(conn)
+            info = conn.execute("PRAGMA table_info(users)").fetchall()
+            cols = {col[1]: col[2] for col in info}
+            assert "last_login_ip" in cols
+
+    def test_successful_login_records_last_login_and_ip(self):
+        client = TestClient(main.app)
+        pwd = "testpassword123"
+        user = database.create_user("ipuser", hash_secret(pwd))
+
+        # Perform login
+        resp = client.post("/api/auth/login", headers=ORIGIN, json={"username": "ipuser", "password": pwd})
+        assert resp.status_code == 200
+
+        # Check DB recorded last_login and last_login_ip
+        with database.get_connection() as conn:
+            row = conn.execute("SELECT last_login, last_login_ip FROM users WHERE id=?", (user["id"],)).fetchone()
+            assert row["last_login"] is not None
+            assert row["last_login_ip"] == "testclient"  # default testclient host
+
+    def test_legacy_users_with_null_ip_remain_valid(self):
+        user = database.create_user("legacyuser", hash_secret("pass123"))
+        # Force last_login_ip to None
+        with database.get_connection() as conn:
+            conn.execute("UPDATE users SET last_login_ip=NULL WHERE id=?", (user["id"],))
+            conn.commit()
+
+        # Admin overview can read it
+        admin_client, _ = session_client("adminuser", role="admin")
+        overview = admin_client.get("/api/admin/overview", headers=ORIGIN).json()
+        users = {u["username"]: u for u in overview["users"]}
+        assert users["legacyuser"]["last_login_ip"] is None
+
+    def test_admin_overview_exposes_last_login_ip_and_non_admin_does_not(self):
+        client_admin, admin_user = session_client("adminuser", role="admin")
+        client_student, student_user = session_client("studentuser", role="student")
+
+        # Admin overview exposes it
+        overview = client_admin.get("/api/admin/overview", headers=ORIGIN).json()
+        for u in overview["users"]:
+            assert "last_login_ip" in u
+
+        # Non-admin endpoints (e.g. /api/auth/me) do NOT expose it
+        me_resp = client_student.get("/api/auth/me", headers=ORIGIN).json()
+        assert "last_login_ip" not in me_resp
+        assert "current_ip" not in me_resp
+
+
+class TestUIElements:
+    def test_connection_indicator_is_passive_span_not_button(self):
+        client = TestClient(main.app)
+        resp = client.get("/")
+        assert resp.status_code == 200
+        html = resp.text
+        # Assert conn-status is a span with role status and aria-live
+        assert re.search(r'<span[^>]+id="conn-status"[^>]+role="status"', html) is not None
+        assert not re.search(r'<button[^>]+id="conn-status"', html)
+
+    def test_admin_user_search_input_present(self):
+        client = TestClient(main.app)
+        resp = client.get("/")
+        assert resp.status_code == 200
+        html = resp.text
+        assert 'id="admin-user-search"' in html
+        assert 'id="admin-user-search-empty"' in html
