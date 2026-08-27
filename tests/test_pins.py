@@ -66,7 +66,7 @@ class TestChannelPins:
         raw_id = int(msg["message_id"].replace("public:", ""))
 
         # Initially no pins
-        resp = client_bob.get("/api/conversations/channel/1/pins", headers=ORIGIN)
+        resp = client_bob.get("/api/conversations/channel/1/pins")
         assert resp.status_code == 200
         assert resp.json()["pins"] == []
 
@@ -82,7 +82,7 @@ class TestChannelPins:
         assert pin_data["message"]["is_pinned"] is True
 
         # Check list pins
-        list_resp = client_alice.get("/api/conversations/channel/1/pins", headers=ORIGIN)
+        list_resp = client_alice.get("/api/conversations/channel/1/pins")
         assert list_resp.status_code == 200
         pins = list_resp.json()["pins"]
         assert len(pins) == 1
@@ -99,7 +99,7 @@ class TestChannelPins:
         assert unpin_resp.json()["success"] is True
 
         # Verify list pins is empty
-        list_resp2 = client_bob.get("/api/conversations/channel/1/pins", headers=ORIGIN)
+        list_resp2 = client_bob.get("/api/conversations/channel/1/pins")
         assert list_resp2.json()["pins"] == []
 
         # Verify recent messages include is_pinned: False
@@ -110,6 +110,27 @@ class TestChannelPins:
         client, user = session_client("alice")
         resp = client.post("/api/conversations/channel/1/pins/999999", headers=ORIGIN)
         assert resp.status_code == 404
+
+    def test_delete_channel_cleans_up_pinned_messages(self):
+        client_admin, admin_user = session_client("admin", role="admin")
+        chan = database.create_channel("project-x", "Project X", "Test channel")
+        chan_id = chan["id"]
+
+        msg = database.save_message("admin", "프로젝트 핀 메시지", user_id=admin_user["id"], channel_id=chan_id)
+        raw_id = int(msg["message_id"].replace("public:", ""))
+
+        # Pin the message
+        client_admin.post(f"/api/conversations/channel/{chan_id}/pins/{raw_id}", headers=ORIGIN)
+        assert len(database.get_pinned_messages("channel", str(chan_id))) == 1
+
+        # Delete the channel
+        database.delete_channel(chan_id)
+
+        # Verify pinned_messages for that channel are deleted
+        assert len(database.get_pinned_messages("channel", str(chan_id))) == 0
+        with database.get_connection() as conn:
+            cnt = conn.execute("SELECT COUNT(*) FROM pinned_messages WHERE conversation_type='channel' AND conversation_id=?", (str(chan_id),)).fetchone()[0]
+            assert cnt == 0
 
 
 class TestDMPins:
@@ -130,7 +151,7 @@ class TestDMPins:
         assert pin_data["pinned_by"]["username"] == "bob"
 
         # Alice queries pins using partner user ID
-        list_resp = client_alice.get(f"/api/conversations/dm/{user_bob['id']}/pins", headers=ORIGIN)
+        list_resp = client_alice.get(f"/api/conversations/dm/{user_bob['id']}/pins")
         assert list_resp.status_code == 200
         pins = list_resp.json()["pins"]
         assert len(pins) == 1
@@ -150,7 +171,7 @@ class TestDMPins:
         assert unpin_resp.json()["success"] is True
 
         # Verify Bob also sees 0 pins
-        list_resp_bob = client_bob.get(f"/api/conversations/dm/alice/pins", headers=ORIGIN)
+        list_resp_bob = client_bob.get(f"/api/conversations/dm/alice/pins")
         assert list_resp_bob.json()["pins"] == []
 
 
@@ -163,17 +184,14 @@ class TestPinWebSocketSync:
         raw_id = int(msg["message_id"].replace("public:", ""))
 
         with client_bob.websocket_connect("/ws", headers=ORIGIN) as ws_bob:
-            # Drain initial history
             while True:
                 evt = ws_bob.receive_json()
                 if evt.get("type") == "history_ready":
                     break
 
-            # Alice pins message
             pin_resp = client_alice.post(f"/api/conversations/channel/1/pins/{raw_id}", headers=ORIGIN)
             assert pin_resp.status_code == 200
 
-            # Bob receives pin_updated
             event = ws_bob.receive_json()
             assert event["type"] == "pin_updated"
             assert event["conversation_type"] == "channel"
@@ -182,12 +200,57 @@ class TestPinWebSocketSync:
             assert event["is_pinned"] is True
             assert event["pin"]["pinned_by"]["username"] == "alice"
 
-            # Alice unpins message
             unpin_resp = client_alice.delete(f"/api/conversations/channel/1/pins/{raw_id}", headers=ORIGIN)
             assert unpin_resp.status_code == 200
 
-            # Bob receives pin_updated with is_pinned = False
             event2 = ws_bob.receive_json()
             assert event2["type"] == "pin_updated"
             assert event2["is_pinned"] is False
             assert event2["message_id"] == raw_id
+
+    def test_dm_pin_websocket_isolated_to_participants(self):
+        client_alice, user_alice = session_client("alice")
+        client_bob, user_bob = session_client("bob")
+        client_charlie, user_charlie = session_client("charlie")
+
+        dm = database.save_direct_message(user_alice, user_bob, "오직 앨리스와 밥만 보는 메시지")
+        raw_dm_id = int(dm["message_id"].replace("dm:", ""))
+
+        with client_bob.websocket_connect("/ws", headers=ORIGIN) as ws_bob:
+            while True:
+                if ws_bob.receive_json().get("type") == "history_ready":
+                    break
+
+            with client_charlie.websocket_connect("/ws", headers=ORIGIN) as ws_charlie:
+                while True:
+                    if ws_charlie.receive_json().get("type") == "history_ready":
+                        break
+
+                # Alice pins DM with Bob
+                pin_resp = client_alice.post(f"/api/conversations/dm/bob/pins/{raw_dm_id}", headers=ORIGIN)
+                assert pin_resp.status_code == 200
+
+                # Bob receives pin_updated
+                while True:
+                    evt_bob = ws_bob.receive_json()
+                    if evt_bob.get("type") in ("pin_updated", "chat"):
+                        break
+                assert evt_bob["type"] == "pin_updated"
+                assert evt_bob["conversation_type"] == "dm"
+                assert evt_bob["message_id"] == raw_dm_id
+                assert evt_bob["is_pinned"] is True
+
+                # Charlie sends a public chat message to produce an event on his socket
+                ws_charlie.send_json({
+                    "type": "chat",
+                    "channel_id": 1,
+                    "content": "Charlie msg",
+                })
+
+                # The next event Charlie receives MUST be the public message, NOT the DM pin
+                while True:
+                    evt_c = ws_charlie.receive_json()
+                    if evt_c.get("type") in ("chat", "pin_updated"):
+                        break
+                assert evt_c["type"] == "chat"
+                assert evt_c["content"] == "Charlie msg"

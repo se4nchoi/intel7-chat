@@ -485,6 +485,7 @@ def delete_channel(channel_id: int) -> Optional[List[str]]:
                         conn.execute("DELETE FROM attachments WHERE id=?", (att_id,))
             conn.execute(f"DELETE FROM messages WHERE id IN ({marks})", msg_ids)
         conn.execute("DELETE FROM user_conversation_state WHERE conversation_type='channel' AND conversation_id=?", (str(channel_id),))
+        conn.execute("DELETE FROM pinned_messages WHERE conversation_type='channel' AND conversation_id=?", (str(channel_id),))
         conn.execute("DELETE FROM channels WHERE id=?", (channel_id,))
         conn.commit()
     return stored_files_to_remove

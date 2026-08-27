@@ -2007,10 +2007,10 @@ if (snoozeResumeBtn) {
 // --- Message Pins (Iteration 5) ---
 let activePinnedMessages = [];
 
-async function fetchActivePinnedMessages(options = { forceOpen: true }) {
+async function fetchActivePinnedMessages(options = { preserveOpen: false }) {
   if (!activeConvId || !currentUser) {
     activePinnedMessages = [];
-    updatePinnedUI({ forceOpen: false });
+    updatePinnedUI({ preserveOpen: false });
     return;
   }
   const parsed = parseConvKey(activeConvId);
@@ -2029,7 +2029,7 @@ async function fetchActivePinnedMessages(options = { forceOpen: true }) {
 }
 
 function updatePinnedUI(options = {}) {
-  const { forceOpen = true } = options;
+  const { preserveOpen = false } = options;
   const count = activePinnedMessages.length;
   if (pinnedCountBadge) {
     pinnedCountBadge.textContent = String(count);
@@ -2044,8 +2044,8 @@ function updatePinnedUI(options = {}) {
   if (pinnedMessagesDrawer) {
     if (count === 0) {
       pinnedMessagesDrawer.classList.add('hidden');
-    } else if (forceOpen) {
-      pinnedMessagesDrawer.classList.remove('hidden');
+    } else if (!preserveOpen && !pinnedMessagesDrawer.classList.contains('user-opened')) {
+      // By default keep closed; user clicks 📌 button to toggle
     }
   }
   renderPinnedDrawerList();
