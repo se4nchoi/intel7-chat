@@ -89,6 +89,14 @@ const muteHintTitle = document.getElementById('mute-hint-title');
 const muteHintDesc = document.getElementById('mute-hint-desc');
 const muteHintIcon = document.getElementById('mute-hint-icon');
 
+// Message Pins Elements
+const pinnedMessagesBtn = document.getElementById('pinned-messages-btn');
+const pinnedCountBadge = document.getElementById('pinned-count-badge');
+const pinnedMessagesDrawer = document.getElementById('pinned-messages-drawer');
+const pinnedDrawerCount = document.getElementById('pinned-drawer-count');
+const pinnedDrawerClose = document.getElementById('pinned-drawer-close');
+const pinnedMessagesList = document.getElementById('pinned-messages-list');
+
 // Global Notification Modal Elements
 const globalNotificationModal = document.getElementById('global-notification-modal');
 const globalNotificationModalClose = document.getElementById('global-notification-modal-close');
@@ -1996,6 +2004,170 @@ if (snoozeResumeBtn) {
   });
 }
 
+// --- Message Pins (Iteration 5) ---
+let activePinnedMessages = [];
+
+async function fetchActivePinnedMessages() {
+  if (!activeConvId || !currentUser) {
+    activePinnedMessages = [];
+    updatePinnedUI();
+    return;
+  }
+  const parsed = parseConvKey(activeConvId);
+  try {
+    const res = await fetch(`/api/conversations/${parsed.type}/${parsed.id}/pins`);
+    if (res.ok) {
+      const data = await res.json();
+      activePinnedMessages = Array.isArray(data.pins) ? data.pins : [];
+    } else {
+      activePinnedMessages = [];
+    }
+  } catch {
+    activePinnedMessages = [];
+  }
+  updatePinnedUI();
+}
+
+function updatePinnedUI() {
+  const count = activePinnedMessages.length;
+  if (pinnedCountBadge) {
+    pinnedCountBadge.textContent = String(count);
+    pinnedCountBadge.classList.toggle('hidden', count === 0);
+  }
+  if (pinnedDrawerCount) {
+    pinnedDrawerCount.textContent = `${count}개`;
+  }
+  if (pinnedMessagesBtn) {
+    pinnedMessagesBtn.classList.toggle('has-pins', count > 0);
+  }
+  renderPinnedDrawerList();
+}
+
+function renderPinnedDrawerList() {
+  if (!pinnedMessagesList) return;
+  pinnedMessagesList.replaceChildren();
+
+  if (activePinnedMessages.length === 0) {
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'pinned-empty';
+    emptyEl.textContent = '고정된 메시지가 없습니다.';
+    pinnedMessagesList.appendChild(emptyEl);
+    return;
+  }
+
+  activePinnedMessages.forEach(pin => {
+    const item = document.createElement('div');
+    item.className = 'pinned-item';
+    
+    const metaRow = document.createElement('div');
+    metaRow.className = 'pinned-item-meta';
+
+    const authorSpan = document.createElement('strong');
+    authorSpan.className = 'pinned-item-author';
+    const authorNick = pin.message.nickname || pin.message.from_nick || '사용자';
+    authorSpan.textContent = displayNickname(authorNick);
+    metaRow.appendChild(authorSpan);
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'pinned-item-time';
+    timeSpan.textContent = formatTime(pin.message.created_at || pin.pinned_at);
+    metaRow.appendChild(timeSpan);
+
+    const unpinBtn = document.createElement('button');
+    unpinBtn.type = 'button';
+    unpinBtn.className = 'pinned-item-unpin';
+    unpinBtn.title = '고정 해제';
+    unpinBtn.textContent = '✕';
+    unpinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleMessagePin(pin.message);
+    });
+    metaRow.appendChild(unpinBtn);
+
+    item.appendChild(metaRow);
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'pinned-item-content';
+    contentDiv.textContent = pin.message.content || '(첨부파일)';
+    item.appendChild(contentDiv);
+
+    const footerDiv = document.createElement('div');
+    footerDiv.className = 'pinned-item-footer';
+    const pinnerName = pin.pinned_by?.display_name || pin.pinned_by?.username || '사용자';
+    footerDiv.textContent = `📌 ${pinnerName}님이 고정함`;
+    item.appendChild(footerDiv);
+
+    item.addEventListener('click', () => {
+      jumpToMessage(pin.message.message_id);
+    });
+
+    pinnedMessagesList.appendChild(item);
+  });
+}
+
+function jumpToMessage(formattedId) {
+  if (!formattedId) return;
+  const row = messageListEl?.querySelector(`.msg-row[data-message-id="${formattedId}"]`);
+  if (row) {
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.classList.remove('highlight-flash');
+    void row.offsetWidth;
+    row.classList.add('highlight-flash');
+    setTimeout(() => row.classList.remove('highlight-flash'), 2000);
+  } else {
+    showToast('메시지가 현재 화면에 로드되지 않았습니다. (이전 메시지 더보기를 이용해주세요)', 'info');
+  }
+}
+
+async function toggleMessagePin(msg) {
+  if (!msg || !currentUser) return;
+  const rawId = typeof msg.message_id === 'string' ? msg.message_id.replace(/^(public|dm):/, '') : String(msg.id || '');
+  const numId = Number(rawId);
+  if (!numId) return;
+  
+  const parsed = parseConvKey(activeConvId);
+  const convType = parsed.type;
+  const convId = parsed.id;
+  const currentlyPinned = Boolean(msg.is_pinned);
+
+  try {
+    if (currentlyPinned) {
+      const res = await fetch(`/api/conversations/${convType}/${convId}/pins/${numId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || '고정 해제에 실패했습니다.');
+      }
+      showToast('메시지 고정을 해제했습니다.', 'info');
+    } else {
+      const res = await fetch(`/api/conversations/${convType}/${convId}/pins/${numId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || '메시지 고정에 실패했습니다.');
+      }
+      showToast('메시지를 고정했습니다.', 'success');
+    }
+  } catch (err) {
+    showToast(err.message || '요청을 처리하지 못했습니다.', 'error');
+  }
+}
+
+if (pinnedMessagesBtn && pinnedMessagesDrawer) {
+  pinnedMessagesBtn.addEventListener('click', () => {
+    pinnedMessagesDrawer.classList.toggle('hidden');
+  });
+}
+if (pinnedDrawerClose && pinnedMessagesDrawer) {
+  pinnedDrawerClose.addEventListener('click', () => {
+    pinnedMessagesDrawer.classList.add('hidden');
+  });
+}
+
 sidebarToggle.addEventListener('click', () => {
   const open = sidebar.classList.toggle('open');
   sidebarToggle.setAttribute('aria-expanded', String(open));
@@ -2004,7 +2176,8 @@ sidebarToggle.addEventListener('click', () => {
 sidebarBackdrop.addEventListener('click', closeSidebar);
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
-    if (globalNotificationModal && !globalNotificationModal.classList.contains('hidden')) closeGlobalNotificationModal();
+    if (pinnedMessagesDrawer && !pinnedMessagesDrawer.classList.contains('hidden')) pinnedMessagesDrawer.classList.add('hidden');
+    else if (globalNotificationModal && !globalNotificationModal.classList.contains('hidden')) closeGlobalNotificationModal();
     else if (convNotificationModal && !convNotificationModal.classList.contains('hidden')) closeConversationNotificationModal();
     else if (channelEditModal && !channelEditModal.classList.contains('hidden')) closeChannelEditModal();
     else if (!channelModal.classList.contains('hidden')) closeChannelModal();
@@ -2102,6 +2275,8 @@ function switchConversation(id) {
   loadActiveDraft();
   renderComposerPreviews();
   renderMessages();
+  if (pinnedMessagesDrawer) pinnedMessagesDrawer.classList.add('hidden');
+  fetchActivePinnedMessages();
   ackActiveConversationRead();
   renderConversationList();
   updateLoadOlderButton();
@@ -2863,6 +3038,17 @@ function createMessageActions(msg) {
     }
   }
 
+  // Pin / Unpin button for channel and dm messages
+  if ((msg.msgType === 'chat' || msg.msgType === 'dm') && msg.message_id) {
+    const pinButton = document.createElement('button');
+    pinButton.type = 'button';
+    pinButton.className = 'msg-action-pin-btn';
+    pinButton.textContent = msg.is_pinned ? '고정 해제' : '고정';
+    pinButton.title = msg.is_pinned ? '메시지 고정 해제' : '메시지 고정';
+    pinButton.addEventListener('click', () => toggleMessagePin(msg));
+    actions.appendChild(pinButton);
+  }
+
   return actions;
 }
 
@@ -2921,6 +3107,7 @@ function appendMessageNode(msg, previousMsg = null) {
   row.className = `msg-row ${isChat ? (isOwn ? 'own' : 'other') : (isOwn ? 'dm-own' : 'dm-recv')}${grouped ? ' grouped' : ''}`;
   if (messageNeedsMyAttention(msg)) row.classList.add('attention-for-me');
   if (msg.is_hidden) row.classList.add('hidden-msg');
+  if (msg.is_pinned) row.classList.add('pinned');
   if (msg.message_id) row.dataset.messageId = msg.message_id;
 
   if (isChat && !grouped) {
@@ -2950,6 +3137,12 @@ function appendMessageNode(msg, previousMsg = null) {
       movedBadge.textContent = fromChan ? `#${fromChan.display_name}에서 이동됨` : '이동됨';
       meta.appendChild(movedBadge);
     }
+    if (msg.is_pinned) {
+      const pinBadge = document.createElement('span');
+      pinBadge.className = 'pinned-indicator-badge';
+      pinBadge.textContent = '📌 고정됨';
+      meta.appendChild(pinBadge);
+    }
     row.appendChild(meta);
   } else if (!isChat && !grouped) {
     const label = document.createElement('div');
@@ -2964,7 +3157,14 @@ function appendMessageNode(msg, previousMsg = null) {
     time.className = 'dm-time';
     time.dateTime = msg.created_at || '';
     time.textContent = formatTime(msg.created_at);
-    row.append(label, time);
+    label.appendChild(time);
+    if (msg.is_pinned) {
+      const pinBadge = document.createElement('span');
+      pinBadge.className = 'pinned-indicator-badge';
+      pinBadge.textContent = '📌 고정됨';
+      label.appendChild(pinBadge);
+    }
+    row.appendChild(label);
   }
 
   const shell = document.createElement('div');
@@ -3078,6 +3278,7 @@ function publicMessageFromData(data) {
     mentions: Array.isArray(data.mentions) ? data.mentions : [],
     mentioned_user_ids: Array.isArray(data.mentioned_user_ids) ? data.mentioned_user_ids : [],
     reactions: Array.isArray(data.reactions) ? data.reactions : [],
+    is_pinned: Boolean(data.is_pinned),
   };
 }
 
@@ -3098,6 +3299,7 @@ function directMessageFromData(data) {
     edited_at: data.edited_at || null,
     is_hidden: Boolean(data.is_hidden),
     reactions: Array.isArray(data.reactions) ? data.reactions : [],
+    is_pinned: Boolean(data.is_pinned),
   };
 }
 
@@ -3931,6 +4133,41 @@ function initWebSocket() {
         updateMessageReactionsInDOM(formattedId, newReactions);
         break;
       }
+      case 'pin_updated': {
+        const msgId = Number(data.message_id);
+        const formattedId = data.conversation_type === 'channel' ? `public:${msgId}` : `dm:${msgId}`;
+        const isPinned = Boolean(data.is_pinned);
+
+        for (const [convId, conv] of conversations.entries()) {
+          const m = conv.messages.find(item => item.message_id === formattedId);
+          if (m) {
+            m.is_pinned = isPinned;
+          }
+        }
+
+        const row = messageListEl.querySelector(`.msg-row[data-message-id="${formattedId}"]`);
+        if (row) {
+          row.classList.toggle('pinned', isPinned);
+          const pinBadge = row.querySelector('.pinned-indicator-badge');
+          if (isPinned && !pinBadge) {
+            const badge = document.createElement('span');
+            badge.className = 'pinned-indicator-badge';
+            badge.textContent = '📌 고정됨';
+            const meta = row.querySelector('.msg-meta') || row.querySelector('.dm-label');
+            if (meta) meta.appendChild(badge);
+          } else if (!isPinned && pinBadge) {
+            pinBadge.remove();
+          }
+          const pinBtn = row.querySelector('.msg-action-pin-btn');
+          if (pinBtn) {
+            pinBtn.textContent = isPinned ? '고정 해제' : '고정';
+            pinBtn.title = isPinned ? '메시지 고정 해제' : '메시지 고정';
+          }
+        }
+
+        fetchActivePinnedMessages();
+        break;
+      }
       case 'read_state_updated': {
         if (data.state) {
           const key = `${data.state.conversation_type}:${data.state.conversation_id}`;
@@ -4085,6 +4322,7 @@ function initWebSocket() {
         updateMuteButtonUI();
         renderConversationList();
         updateLoadOlderButton();
+        fetchActivePinnedMessages();
         break;
       }
       case 'attachment_deleted':

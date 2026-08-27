@@ -226,6 +226,20 @@ def _migrate_v6(conn: sqlite3.Connection) -> None:
     """Add edited_at column to direct_messages."""
     _add_column_if_missing(conn, "direct_messages", "edited_at", "TEXT")
 
+def _migrate_v7(conn: sqlite3.Connection) -> None:
+    """Create pinned_messages table for channel and DM message pins."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS pinned_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_type TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        message_id INTEGER NOT NULL,
+        pinned_by_user_id INTEGER NOT NULL,
+        pinned_at TEXT NOT NULL,
+        UNIQUE(conversation_type, conversation_id, message_id),
+        FOREIGN KEY(pinned_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_pinned_conv ON pinned_messages(conversation_type, conversation_id)")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -233,6 +247,7 @@ _MIGRATIONS = [
     _migrate_v4,
     _migrate_v5,
     _migrate_v6,
+    _migrate_v7,
 ]
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -587,7 +602,7 @@ def get_message_reactions(
         res = get_reactions_for_messages(conn, message_type, [message_id], current_user_id)
         return res.get(message_id, [])
 
-def _message_public(row: sqlite3.Row, attachments: List[Dict[str, Any]], reactions: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+def _message_public(row: sqlite3.Row, attachments: List[Dict[str, Any]], reactions: Optional[List[Dict[str, Any]]] = None, is_pinned: bool = False) -> Dict[str, Any]:
     reply = None
     if row["reply_nickname"] or row["reply_content"]:
         reply = {"nickname": row["reply_nickname"] or "", "content": row["reply_content"] or ""}
@@ -602,7 +617,8 @@ def _message_public(row: sqlite3.Row, attachments: List[Dict[str, Any]], reactio
             "created_at": row["created_at"], "edited_at": edited_at, "is_hidden": is_hidden,
             "moved_from_channel_id": moved_from, "reply": reply, "attachment": live,
             "attachments": attachments, "attachment_removed": bool(attachments and not live),
-            "reactions": reactions if reactions is not None else []}
+            "reactions": reactions if reactions is not None else [],
+            "is_pinned": bool(is_pinned)}
 
 def get_message_by_id(message_id: int, current_user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
@@ -611,7 +627,11 @@ def get_message_by_id(message_id: int, current_user_id: Optional[int] = None) ->
             return None
         attachments = _message_attachments(conn, [message_id]).get(message_id, [])
         reactions = get_reactions_for_messages(conn, "channel", [message_id], current_user_id).get(message_id, [])
-        return _message_public(row, attachments, reactions)
+        pinned = conn.execute(
+            "SELECT 1 FROM pinned_messages WHERE conversation_type='channel' AND message_id=?",
+            (message_id,)
+        ).fetchone() is not None
+        return _message_public(row, attachments, reactions, is_pinned=pinned)
 
 def update_message_content(message_id: int, new_content: str, user_id: int, is_admin: bool = False) -> Optional[Dict[str, Any]]:
     now = utc_now()
@@ -688,7 +708,11 @@ def get_recent_messages(limit: int = 100, before_id: Optional[int] = None,
         msg_ids = [row["id"] for row in rows]
         items = _message_attachments(conn, msg_ids)
         reactions = get_reactions_for_messages(conn, "channel", msg_ids, current_user_id)
-    return [_message_public(row, items[row["id"]], reactions.get(row["id"], [])) for row in rows]
+        pinned_ids = {r[0] for r in conn.execute(
+            "SELECT message_id FROM pinned_messages WHERE conversation_type='channel' AND conversation_id=?",
+            (str(channel_id),)
+        ).fetchall()}
+    return [_message_public(row, items[row["id"]], reactions.get(row["id"], []), is_pinned=(row["id"] in pinned_ids)) for row in rows]
 
 def _direct_message_attachments(conn: sqlite3.Connection,
                                 ids: List[int]) -> Dict[int, List[Dict[str, Any]]]:
@@ -718,7 +742,8 @@ def _direct_message_attachments(conn: sqlite3.Connection,
 
 def _direct_message_public(row: sqlite3.Row,
                            attachments: List[Dict[str, Any]],
-                           reactions: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                           reactions: Optional[List[Dict[str, Any]]] = None,
+                           is_pinned: bool = False) -> Dict[str, Any]:
     reply = None
     if row["reply_nickname"] or row["reply_content"]:
         reply = {"nickname": row["reply_nickname"] or "",
@@ -732,7 +757,8 @@ def _direct_message_public(row: sqlite3.Row,
             "created_at": row["created_at"], "edited_at": edited_at, "reply": reply, "attachment": live,
             "attachments": attachments,
             "attachment_removed": bool(attachments and not live),
-            "reactions": reactions if reactions is not None else []}
+            "reactions": reactions if reactions is not None else [],
+            "is_pinned": bool(is_pinned)}
 
 def get_direct_message_by_id(dm_id: int, current_user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
@@ -741,7 +767,11 @@ def get_direct_message_by_id(dm_id: int, current_user_id: Optional[int] = None) 
             return None
         items = _direct_message_attachments(conn, [dm_id]).get(dm_id, [])
         reactions = get_reactions_for_messages(conn, "dm", [dm_id], current_user_id).get(dm_id, [])
-        return _direct_message_public(row, items, reactions)
+        pinned = conn.execute(
+            "SELECT 1 FROM pinned_messages WHERE conversation_type='dm' AND message_id=?",
+            (dm_id,)
+        ).fetchone() is not None
+        return _direct_message_public(row, items, reactions, is_pinned=pinned)
 
 def update_direct_message_content(dm_id: int, new_content: str, user_id: int) -> Optional[Dict[str, Any]]:
     now = utc_now()
@@ -815,7 +845,12 @@ def get_direct_messages_between(user_id: int, partner_user_id: int, limit: int =
         msg_ids = [row["id"] for row in rows]
         items = _direct_message_attachments(conn, msg_ids)
         reactions = get_reactions_for_messages(conn, "dm", msg_ids, user_id)
-    return [_direct_message_public(row, items[row["id"]], reactions.get(row["id"], [])) for row in rows]
+        norm_id = normalize_dm_conversation_id(user_id, partner_user_id)
+        pinned_ids = {r[0] for r in conn.execute(
+            "SELECT message_id FROM pinned_messages WHERE conversation_type='dm' AND conversation_id=?",
+            (norm_id,)
+        ).fetchall()}
+    return [_direct_message_public(row, items[row["id"]], reactions.get(row["id"], []), is_pinned=(row["id"] in pinned_ids)) for row in rows]
 
 def attachment_is_visible_to_user(attachment_id: str, user_id: int) -> bool:
     with get_connection() as conn:
@@ -1016,3 +1051,186 @@ def get_user_unread_counts(user_id: int) -> Dict[str, int]:
                 unread_counts[key] = unread_counts.get(key, 0) + 1
         
     return unread_counts
+
+
+# --- Message Pins (Iteration 5) ---
+
+def normalize_dm_conversation_id(user_id_1: int, user_id_2: int) -> str:
+    """Normalizes DM conversation key by sorting user IDs (e.g. '1:2')."""
+    return f"{min(user_id_1, user_id_2)}:{max(user_id_1, user_id_2)}"
+
+def pin_message(
+    conversation_type: str,
+    conversation_id: str,
+    message_id: int,
+    pinned_by_user_id: int,
+) -> Dict[str, Any]:
+    """Pins a channel or DM message. Returns pinned message details."""
+    now = utc_now()
+    with get_connection() as conn:
+        if conversation_type == "channel":
+            chan_id = int(conversation_id)
+            row = conn.execute("SELECT * FROM messages WHERE id = ? AND channel_id = ? AND is_hidden = 0", (message_id, chan_id)).fetchone()
+            if not row:
+                raise ValueError("고정할 메시지를 찾을 수 없습니다.")
+        elif conversation_type == "dm":
+            row = conn.execute("SELECT * FROM direct_messages WHERE id = ?", (message_id,)).fetchone()
+            if not row:
+                raise ValueError("고정할 DM 메시지를 찾을 수 없습니다.")
+            if row["sender_user_id"] != pinned_by_user_id and row["recipient_user_id"] != pinned_by_user_id:
+                raise PermissionError("본인이 참여한 1:1 대화의 메시지만 고정할 수 있습니다.")
+            norm_id = normalize_dm_conversation_id(row["sender_user_id"], row["recipient_user_id"])
+            conversation_id = norm_id
+        else:
+            raise ValueError(f"Invalid conversation_type: {conversation_type}")
+
+        conn.execute("""
+            INSERT OR REPLACE INTO pinned_messages
+            (conversation_type, conversation_id, message_id, pinned_by_user_id, pinned_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (conversation_type, str(conversation_id), message_id, pinned_by_user_id, now))
+        conn.commit()
+
+        p_user = conn.execute("SELECT id, username, display_name FROM users WHERE id = ?", (pinned_by_user_id,)).fetchone()
+        pinned_by_info = {
+            "id": p_user["id"],
+            "username": p_user["username"],
+            "display_name": p_user["display_name"] or p_user["username"],
+        } if p_user else {"id": pinned_by_user_id, "username": "unknown", "display_name": "unknown"}
+
+        if conversation_type == "channel":
+            atts = _message_attachments(conn, [message_id]).get(message_id, [])
+            reactions = get_reactions_for_messages(conn, "channel", [message_id], pinned_by_user_id).get(message_id, [])
+            msg_obj = _message_public(row, atts, reactions, is_pinned=True)
+        else:
+            atts = _direct_message_attachments(conn, [message_id]).get(message_id, [])
+            reactions = get_reactions_for_messages(conn, "dm", [message_id], pinned_by_user_id).get(message_id, [])
+            msg_obj = _direct_message_public(row, atts, reactions, is_pinned=True)
+
+        return {
+            "conversation_type": conversation_type,
+            "conversation_id": str(conversation_id),
+            "message_id": message_id,
+            "pinned_at": now,
+            "pinned_by": pinned_by_info,
+            "message": msg_obj,
+        }
+
+def unpin_message(
+    conversation_type: str,
+    conversation_id: str,
+    message_id: int,
+    user_id: int,
+) -> bool:
+    """Unpins a channel or DM message."""
+    with get_connection() as conn:
+        if conversation_type == "dm":
+            row = conn.execute("SELECT * FROM direct_messages WHERE id = ?", (message_id,)).fetchone()
+            if not row:
+                return False
+            if row["sender_user_id"] != user_id and row["recipient_user_id"] != user_id:
+                raise PermissionError("본인이 참여한 1:1 대화의 메시지만 고정 해제할 수 있습니다.")
+            conversation_id = normalize_dm_conversation_id(row["sender_user_id"], row["recipient_user_id"])
+        
+        cur = conn.execute("""
+            DELETE FROM pinned_messages
+            WHERE conversation_type = ? AND conversation_id = ? AND message_id = ?
+        """, (conversation_type, str(conversation_id), message_id))
+        conn.commit()
+        return cur.rowcount > 0
+
+def get_pinned_messages(
+    conversation_type: str,
+    conversation_id: str,
+    current_user_id: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Lists all pinned messages in a channel or DM."""
+    results = []
+    with get_connection() as conn:
+        if conversation_type == "channel":
+            rows = conn.execute("""
+                SELECT pm.message_id, pm.pinned_at, pm.pinned_by_user_id,
+                       u.username as p_username, u.display_name as p_display_name,
+                       m.*
+                FROM pinned_messages pm
+                JOIN messages m ON pm.message_id = m.id
+                LEFT JOIN users u ON pm.pinned_by_user_id = u.id
+                WHERE pm.conversation_type = 'channel' AND pm.conversation_id = ? AND m.is_hidden = 0
+                ORDER BY pm.pinned_at DESC
+            """, (str(conversation_id),)).fetchall()
+            
+            if not rows:
+                return []
+            
+            msg_ids = [r["message_id"] for r in rows]
+            atts_map = _message_attachments(conn, msg_ids)
+            reactions_map = get_reactions_for_messages(conn, "channel", msg_ids, current_user_id)
+
+            for r in rows:
+                mid = r["message_id"]
+                msg_atts = atts_map.get(mid, [])
+                msg_reactions = reactions_map.get(mid, [])
+                msg_obj = _message_public(r, msg_atts, msg_reactions, is_pinned=True)
+                pinned_by = {
+                    "id": r["pinned_by_user_id"],
+                    "username": r["p_username"] or "unknown",
+                    "display_name": r["p_display_name"] or r["p_username"] or "unknown",
+                }
+                results.append({
+                    "conversation_type": "channel",
+                    "conversation_id": str(conversation_id),
+                    "message_id": mid,
+                    "pinned_at": r["pinned_at"],
+                    "pinned_by": pinned_by,
+                    "message": msg_obj,
+                })
+        elif conversation_type == "dm":
+            rows = conn.execute("""
+                SELECT pm.message_id, pm.pinned_at, pm.pinned_by_user_id,
+                       u.username as p_username, u.display_name as p_display_name,
+                       dm.*
+                FROM pinned_messages pm
+                JOIN direct_messages dm ON pm.message_id = dm.id
+                LEFT JOIN users u ON pm.pinned_by_user_id = u.id
+                WHERE pm.conversation_type = 'dm' AND pm.conversation_id = ?
+                ORDER BY pm.pinned_at DESC
+            """, (str(conversation_id),)).fetchall()
+
+            if not rows:
+                return []
+
+            msg_ids = [r["message_id"] for r in rows]
+            atts_map = _direct_message_attachments(conn, msg_ids)
+            reactions_map = get_reactions_for_messages(conn, "dm", msg_ids, current_user_id)
+
+            for r in rows:
+                mid = r["message_id"]
+                msg_atts = atts_map.get(mid, [])
+                msg_reactions = reactions_map.get(mid, [])
+                msg_obj = _direct_message_public(r, msg_atts, msg_reactions, is_pinned=True)
+                pinned_by = {
+                    "id": r["pinned_by_user_id"],
+                    "username": r["p_username"] or "unknown",
+                    "display_name": r["p_display_name"] or r["p_username"] or "unknown",
+                }
+                results.append({
+                    "conversation_type": "dm",
+                    "conversation_id": str(conversation_id),
+                    "message_id": mid,
+                    "pinned_at": r["pinned_at"],
+                    "pinned_by": pinned_by,
+                    "message": msg_obj,
+                })
+    return results
+
+def get_pinned_message_ids(
+    conversation_type: str,
+    conversation_id: str,
+) -> Set[int]:
+    """Returns set of pinned message IDs for a conversation."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT message_id FROM pinned_messages
+            WHERE conversation_type = ? AND conversation_id = ?
+        """, (conversation_type, str(conversation_id))).fetchall()
+        return {r[0] for r in rows}

@@ -152,9 +152,22 @@
                 <button id="mute-hint-close" class="hint-close-btn" type="button" aria-label="닫기">×</button>
               </div>
             </div>
+            <button id="pinned-messages-btn" class="icon-btn pinned-messages-btn" type="button" title="고정된 메시지 보기" aria-label="고정된 메시지 보기">
+              <span>📌</span><span id="pinned-count-badge" class="pinned-count-badge hidden">0</span>
+            </button>
             <span id="chat-area-desc" class="chat-area-desc"></span>
           </div>
           <span id="retention-note" class="retention-note">⚠️ HTTP LAN · 암호화되지 않음 · 민감정보 공유 금지</span>
+        </div>
+        <div id="pinned-messages-drawer" class="pinned-messages-drawer hidden" aria-label="고정된 메시지 목록">
+          <div class="pinned-drawer-header">
+            <div class="pinned-drawer-title">
+              <span>📌 고정된 메시지</span>
+              <span id="pinned-drawer-count" class="pinned-drawer-count">0개</span>
+            </div>
+            <button id="pinned-drawer-close" class="icon-btn pinned-drawer-close" type="button" title="닫기" aria-label="닫기">✕</button>
+          </div>
+          <div id="pinned-messages-list" class="pinned-messages-list"></div>
         </div>
         <main id="message-list" class="message-list" role="log" aria-live="polite" aria-relevant="additions">
           <button id="load-older-btn" class="load-older-btn hidden" type="button">↑ 이전 메시지 더 불러오기</button>

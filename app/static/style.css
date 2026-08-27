@@ -2453,6 +2453,217 @@ kbd {
   flex-shrink: 0;
 }
 
+/* ── Message Pins ── */
+.pinned-messages-btn {
+  background: transparent;
+  border: none;
+  font-size: 0.88rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity .15s, background .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+  flex-shrink: 0;
+  position: relative;
+}
+.pinned-messages-btn:hover {
+  opacity: 1;
+  background: var(--surface2);
+}
+.pinned-messages-btn.has-pins {
+  opacity: 0.95;
+  color: var(--accent);
+}
+.pinned-count-badge {
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.64rem;
+  font-weight: 700;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Pinned Messages Drawer / Panel */
+.pinned-messages-drawer {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  animation: pinnedDrawerSlideDown .2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 19;
+  flex-shrink: 0;
+}
+@keyframes pinnedDrawerSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.pinned-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+.pinned-drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.pinned-drawer-count {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--surface3);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.pinned-drawer-close {
+  background: transparent;
+  border: none;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.pinned-drawer-close:hover {
+  background: var(--surface3);
+  color: var(--text);
+}
+.pinned-messages-list {
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+}
+.pinned-empty {
+  text-align: center;
+  padding: 24px 12px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+.pinned-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, transform .12s;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pinned-item:hover {
+  border-color: var(--accent);
+  background: var(--surface2);
+  transform: translateY(-1px);
+}
+.pinned-item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pinned-item-author {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.pinned-item-time {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+.pinned-item-unpin {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 0.8rem;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: opacity .15s, color .15s;
+}
+.pinned-item-unpin:hover {
+  opacity: 1;
+  color: var(--danger, #e53935);
+}
+.pinned-item-content {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.pinned-item-footer {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* Pinned badge in chat messages */
+.pinned-indicator-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(99, 102, 241, 0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+}
+
+/* Highlight flash animation when clicking pinned message */
+.msg-row.highlight-flash .msg-bubble {
+  animation: highlightFlash 2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes highlightFlash {
+  0% {
+    box-shadow: 0 0 0 3px var(--accent), 0 0 16px var(--accent);
+    transform: scale(1.02);
+  }
+  70% {
+    box-shadow: 0 0 0 2px var(--accent), 0 0 8px var(--accent);
+    transform: scale(1.005);
+  }
+  100% {
+    box-shadow: none;
+    transform: scale(1);
+  }
+}
+
 .load-older-btn {
   display: block;
   margin: 8px auto 16px auto;
