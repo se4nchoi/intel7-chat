@@ -1707,9 +1707,14 @@ function emitAttention({
   }
 
   if (title || body) {
-    const toastTone = (kind === 'mention' || kind === 'reply') ? 'mention' : 'info';
-    const toastMsg = title ? `${title}: ${body}` : body;
-    showToast(toastMsg, toastTone);
+    const toastTone = (kind === 'mention' || kind === 'reply') ? 'mention' : (kind === 'dm' ? 'dm' : 'info');
+    showMessageToast({
+      kind,
+      conversationId,
+      title,
+      body,
+      tone: toastTone,
+    });
   }
 
   if (isImportant && isDesktopNotificationEnabled()) {
@@ -3194,7 +3199,7 @@ async function loadOlderMessages() {
   }
 }
 
-function addMessage(convId, msg, { markUnread = true } = {}) {
+function addMessage(convId, msg) {
   const conv = conversations.get(convId);
   if (!conv) return false;
   if (msg.message_id && conv.messageIds.has(msg.message_id)) return false;
@@ -3210,9 +3215,6 @@ function addMessage(convId, msg, { markUnread = true } = {}) {
   if (convId === activeConvId) {
     appendMessageNode(msg, previousMsg);
     scrollBottom();
-  } else if (markUnread) {
-    conv.unread += 1;
-    renderConversationList();
   }
   return true;
 }
@@ -3726,6 +3728,55 @@ async function copyText(text, successMessage) {
   }
 }
 
+function showMessageToast({ kind = 'ordinary', conversationId = null, title = '', body = '', tone = 'info' } = {}) {
+  const toast = document.createElement('div');
+  toast.className = `toast message-toast ${kind} ${tone}`;
+  if (conversationId) {
+    toast.title = '클릭하여 해당 대화방으로 이동';
+  }
+
+  const headerRow = document.createElement('div');
+  headerRow.className = 'toast-header-row';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'toast-title';
+  titleEl.textContent = title || '새 메시지';
+  headerRow.appendChild(titleEl);
+
+  let badgeText = '';
+  if (kind === 'dm') badgeText = '1:1 대화';
+  else if (kind === 'mention') badgeText = '멘션';
+  else if (kind === 'reply') badgeText = '답장';
+  
+  if (badgeText) {
+    const badgeEl = document.createElement('span');
+    badgeEl.className = 'toast-badge';
+    badgeEl.textContent = badgeText;
+    headerRow.appendChild(badgeEl);
+  }
+
+  toast.appendChild(headerRow);
+
+  if (body) {
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'toast-body';
+    bodyEl.textContent = body;
+    toast.appendChild(bodyEl);
+  }
+
+  if (conversationId) {
+    toast.addEventListener('click', () => {
+      switchConversation(conversationId);
+      toast.remove();
+    });
+  }
+
+  toastRegion.replaceChildren(toast);
+  setTimeout(() => {
+    if (toast.parentNode) toast.remove();
+  }, 4500);
+}
+
 function showToast(message, tone = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast ${tone}`;
@@ -4150,11 +4201,109 @@ function checkAndAckActiveConversation() {
   }
 }
 
+// --- Sidebar Section Collapse & Draggable Sliders ---
+const SIDEBAR_SIZES_STORAGE_KEY = 'bamboochat_sidebar_sizes';
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'bamboochat_sidebar_collapsed';
+
+function initSidebarSections() {
+  // 1. Toggle Collapse / Expand
+  const toggleButtons = document.querySelectorAll('.section-toggle-btn');
+  toggleButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const section = btn.closest('.sidebar-section');
+      if (!section) return;
+      const isCollapsed = section.classList.toggle('collapsed');
+      btn.setAttribute('aria-expanded', String(!isCollapsed));
+      saveSidebarState();
+    });
+  });
+
+  // 2. Draggable Splitter Sliders
+  const sliders = document.querySelectorAll('.sidebar-slider');
+  sliders.forEach(slider => {
+    slider.addEventListener('pointerdown', event => {
+      const prevSection = slider.previousElementSibling;
+      const nextSection = slider.nextElementSibling;
+      if (!prevSection || !nextSection) return;
+      if (prevSection.classList.contains('collapsed') || nextSection.classList.contains('collapsed')) return;
+
+      event.preventDefault();
+      slider.classList.add('is-dragging');
+      slider.setPointerCapture(event.pointerId);
+
+      const startY = event.clientY;
+      const startPrevHeight = prevSection.getBoundingClientRect().height;
+      const startNextHeight = nextSection.getBoundingClientRect().height;
+
+      const onPointerMove = moveEvent => {
+        const deltaY = moveEvent.clientY - startY;
+        const newPrevHeight = Math.max(50, startPrevHeight + deltaY);
+        const newNextHeight = Math.max(50, startNextHeight - deltaY);
+        
+        prevSection.style.flex = `0 0 ${newPrevHeight}px`;
+        nextSection.style.flex = `0 0 ${newNextHeight}px`;
+      };
+
+      const onPointerUp = upEvent => {
+        slider.classList.remove('is-dragging');
+        try {
+          slider.releasePointerCapture(upEvent.pointerId);
+        } catch { /* already released */ }
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        saveSidebarState();
+      };
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+    });
+  });
+
+  restoreSidebarState();
+}
+
+function saveSidebarState() {
+  try {
+    const collapsed = [];
+    const sizes = {};
+    document.querySelectorAll('.sidebar-section').forEach(sec => {
+      const secName = sec.dataset.section;
+      if (!secName) return;
+      if (sec.classList.contains('collapsed')) {
+        collapsed.push(secName);
+      } else {
+        sizes[secName] = sec.getBoundingClientRect().height;
+      }
+    });
+    localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed));
+    localStorage.setItem(SIDEBAR_SIZES_STORAGE_KEY, JSON.stringify(sizes));
+  } catch { /* storage */ }
+}
+
+function restoreSidebarState() {
+  try {
+    const collapsed = JSON.parse(localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) || '[]');
+    const sizes = JSON.parse(localStorage.getItem(SIDEBAR_SIZES_STORAGE_KEY) || '{}');
+    
+    document.querySelectorAll('.sidebar-section').forEach(sec => {
+      const secName = sec.dataset.section;
+      if (!secName) return;
+      const btn = sec.querySelector('.section-toggle-btn');
+      if (collapsed.includes(secName)) {
+        sec.classList.add('collapsed');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+      } else if (sizes[secName] && sizes[secName] >= 50) {
+        sec.style.flex = `0 0 ${sizes[secName]}px`;
+      }
+    });
+  } catch { /* storage */ }
+}
+
 window.addEventListener('focus', checkAndAckActiveConversation);
 document.addEventListener('visibilitychange', checkAndAckActiveConversation);
 window.addEventListener('beforeunload', saveCurrentDraft);
 resizeComposer();
 updateCharCount();
 setConnected(false);
-applyCollapsedSections();
+initSidebarSections();
 bootstrapAuth();

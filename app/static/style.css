@@ -429,31 +429,92 @@ button {
 }
 
 /* 사이드바 섹션 */
-.sidebar-section { display: flex; flex-direction: column; }
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 42px;
+  overflow: hidden;
+}
 
 .sidebar-channels {
-  flex-shrink: 0;
-  max-height: 40%;
-  overflow-y: auto;
-  overflow-x: hidden;
+  flex: 1 1 35%;
+  min-height: 42px;
 }
-
-.sidebar-dms {
-  flex-shrink: 0;
-  max-height: 35%;
-  overflow-y: auto;
-  overflow-x: hidden;
-  border-top: 1px solid var(--border);
-}
-
-.sidebar-online {
+.sidebar-channels .channel-list {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  border-top: 1px solid var(--border);
+  min-height: 0;
 }
 
-.sidebar-divider { display: none; } /* 대신 border-top 사용 */
+.sidebar-dms {
+  flex: 1 1 30%;
+  min-height: 42px;
+}
+.sidebar-dms .dm-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+.sidebar-online {
+  flex: 1 1 35%;
+  min-height: 42px;
+}
+.sidebar-online .online-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+.sidebar-slider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 10px;
+  margin: -5px 0;
+  cursor: row-resize;
+  z-index: 10;
+  position: relative;
+  touch-action: none;
+  user-select: none;
+  background: transparent;
+  transition: background .15s;
+}
+.sidebar-slider::before {
+  content: '';
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+  position: absolute;
+}
+.sidebar-slider::after {
+  content: '';
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  z-index: 1;
+  transition: background .15s, transform .15s;
+}
+.sidebar-slider:hover::after,
+.sidebar-slider.is-dragging::after {
+  background: var(--accent);
+  transform: scaleX(1.3);
+}
+.sidebar-slider:hover,
+.sidebar-slider.is-dragging {
+  background: rgba(79, 142, 247, 0.12);
+}
 
 .sidebar-section-header {
   display: flex;
@@ -522,8 +583,8 @@ button {
 }
 
 .sidebar-section.collapsed {
-  flex-shrink: 0;
-  max-height: 42px;
+  flex: 0 0 42px !important;
+  max-height: 42px !important;
 }
 
 .sidebar-section-title {
@@ -1499,8 +1560,14 @@ kbd {
   position: fixed;
   transform: translateX(-50%);
   z-index: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
 }
 .toast {
+  pointer-events: auto;
   background: var(--surface3);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1508,6 +1575,9 @@ kbd {
   color: var(--text);
   max-width: min(420px, 90vw);
   padding: 9px 14px;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  animation: toastIn .2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .toast.error { border-color: rgba(248, 113, 113, .55); }
 .toast.success { border-color: rgba(52, 211, 153, .5); }
@@ -1515,6 +1585,53 @@ kbd {
 .toast.mention {
   border-color: rgba(79, 142, 247, .7);
   box-shadow: 0 8px 28px rgba(0, 0, 0, .35), 0 0 0 1px rgba(79, 142, 247, .18);
+}
+.toast.message-toast {
+  cursor: pointer;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--surface2);
+  min-width: min(320px, 85vw);
+  transition: transform .15s, border-color .15s, box-shadow .15s;
+}
+.toast.message-toast:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, .45);
+}
+.toast-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.toast-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.toast.message-toast.dm .toast-title {
+  color: var(--dm-accent);
+}
+.toast-badge {
+  font-size: 0.68rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--text-dim);
+}
+.toast-body {
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 @media (hover: none) {
