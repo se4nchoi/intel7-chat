@@ -3765,6 +3765,11 @@ function showMessageToast({ kind = 'ordinary', conversationId = null, title = ''
   }
 
   if (conversationId) {
+    const hintEl = document.createElement('div');
+    hintEl.className = 'toast-hint';
+    hintEl.textContent = '클릭하여 바로 가기 ↗';
+    toast.appendChild(hintEl);
+
     toast.addEventListener('click', () => {
       switchConversation(conversationId);
       toast.remove();
@@ -3774,7 +3779,7 @@ function showMessageToast({ kind = 'ordinary', conversationId = null, title = ''
   toastRegion.replaceChildren(toast);
   setTimeout(() => {
     if (toast.parentNode) toast.remove();
-  }, 4500);
+  }, 5500);
 }
 
 function showToast(message, tone = 'info') {
