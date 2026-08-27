@@ -2582,6 +2582,11 @@ function createAttachmentEntry(attachment) {
     image.src = attachment.url;
     image.alt = attachment.name;
     image.loading = 'lazy';
+    image.addEventListener('load', () => {
+      if (isNearBottom(200)) {
+        scrollBottom();
+      }
+    });
     card.appendChild(image);
   }
   const icon = document.createElement('span');
@@ -3190,8 +3195,22 @@ function addSystemMessage(convId, text) {
   addMessage(convId, { msgType: 'system', content: text });
 }
 
+function isNearBottom(threshold = 120) {
+  if (!messageListEl) return true;
+  return (messageListEl.scrollHeight - messageListEl.scrollTop - messageListEl.clientHeight) <= threshold;
+}
+
 function scrollBottom() {
+  if (!messageListEl) return;
   messageListEl.scrollTop = messageListEl.scrollHeight;
+  requestAnimationFrame(() => {
+    if (messageListEl) {
+      messageListEl.scrollTop = messageListEl.scrollHeight;
+      requestAnimationFrame(() => {
+        if (messageListEl) messageListEl.scrollTop = messageListEl.scrollHeight;
+      });
+    }
+  });
 }
 
 function resizeComposer() {

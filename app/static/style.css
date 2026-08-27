@@ -780,7 +780,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
