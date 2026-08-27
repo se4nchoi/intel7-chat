@@ -39,7 +39,8 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     get_message_by_id, update_message_content, set_message_hidden, move_message_channel,
     get_user_conversation_states, update_user_read_state, set_conversation_muted, get_user_unread_counts,
     update_display_name, update_password_hash,
-    ALLOWED_REACTION_EMOJIS, toggle_message_reaction, get_message_reactions, get_direct_message_by_id)
+    ALLOWED_REACTION_EMOJIS, toggle_message_reaction, get_message_reactions, get_direct_message_by_id,
+    update_direct_message_content)
 
 CONFIG = load_config()
 configure_storage(CONFIG.data_path, CONFIG.database_limit_bytes)
@@ -590,6 +591,37 @@ async def api_update_message(message_id: int, request: Request):
     await broadcast({"type": "message_edited", "message": enriched})
     return enriched
 
+@app.patch("/api/dms/{dm_id}")
+async def api_update_direct_message(dm_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    data = await read_json_body(request)
+    content = str(data.get("content", "")).strip()
+    if not content:
+        raise HTTPException(400, "메시지 내용을 입력하세요.")
+    if len(content) > MAX_CONTENT_LEN:
+        raise HTTPException(400, f"메시지는 {MAX_CONTENT_LEN}자 이하여야 합니다.")
+    try:
+        updated = update_direct_message_content(dm_id, content, user["id"])
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    if not updated:
+        raise HTTPException(404, "1:1 메시지를 찾을 수 없습니다.")
+    
+    payload = {"type": "dm_edited", "message": updated}
+    encoded = json.dumps(payload, ensure_ascii=False)
+    
+    sender_targets = list(user_registry.get(updated["from_nick"], set()))
+    recipient_targets = list(user_registry.get(updated["to_nick"], set()))
+    for target_ws in set(sender_targets + recipient_targets):
+        try:
+            await target_ws.send_text(encoded)
+        except Exception:
+            pass
+            
+    return updated
+
 @app.post("/api/messages/{message_id}/hide")
 async def api_hide_message(message_id: int, request: Request):
     if not request_origin_is_allowed(request):
@@ -1067,8 +1099,6 @@ async def websocket_endpoint(ws: WebSocket):
                 if not target_user or not target_user["active"] or target_user["id"]==info.user_id:
                     await ws.send_text(json.dumps({"type":"error","message":"DM 대상을 찾을 수 없습니다."},ensure_ascii=False)); continue
                 targets=list(user_registry.get(target_user["username"],set()))
-                if not targets:
-                    await ws.send_text(json.dumps({"type":"error","message":f"'{target_user['username']}'님이 오프라인 상태입니다."},ensure_ascii=False)); continue
             attachments=claim_attachments(attachment_ids,info.user_id)
             if attachments is None:
                 await ws.send_text(json.dumps({"type":"error","message":"첨부 파일을 사용할 수 없거나 이미 전송했습니다."},ensure_ascii=False)); continue

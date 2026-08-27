@@ -222,12 +222,17 @@ def _migrate_v5(conn: sqlite3.Connection) -> None:
     )""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_reactions_target ON message_reactions(message_type, message_id)")
 
+def _migrate_v6(conn: sqlite3.Connection) -> None:
+    """Add edited_at column to direct_messages."""
+    _add_column_if_missing(conn, "direct_messages", "edited_at", "TEXT")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
     _migrate_v3,
     _migrate_v4,
     _migrate_v5,
+    _migrate_v6,
 ]
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -719,10 +724,12 @@ def _direct_message_public(row: sqlite3.Row,
         reply = {"nickname": row["reply_nickname"] or "",
                  "content": row["reply_content"] or ""}
     live = next((item for item in attachments if not item.get("removed")), None)
+    keys = row.keys() if hasattr(row, 'keys') else row
+    edited_at = row["edited_at"] if "edited_at" in keys else None
     return {"message_id": f"dm:{row['id']}", "from_nick": row["sender_nickname"],
             "from_user_id": row["sender_user_id"], "to_nick": row["recipient_nickname"],
             "to_user_id": row["recipient_user_id"], "content": row["content"],
-            "created_at": row["created_at"], "reply": reply, "attachment": live,
+            "created_at": row["created_at"], "edited_at": edited_at, "reply": reply, "attachment": live,
             "attachments": attachments,
             "attachment_removed": bool(attachments and not live),
             "reactions": reactions if reactions is not None else []}
@@ -735,6 +742,19 @@ def get_direct_message_by_id(dm_id: int, current_user_id: Optional[int] = None) 
         items = _direct_message_attachments(conn, [dm_id]).get(dm_id, [])
         reactions = get_reactions_for_messages(conn, "dm", [dm_id], current_user_id).get(dm_id, [])
         return _direct_message_public(row, items, reactions)
+
+def update_direct_message_content(dm_id: int, new_content: str, user_id: int) -> Optional[Dict[str, Any]]:
+    now = utc_now()
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM direct_messages WHERE id=?", (dm_id,)).fetchone()
+        if not row:
+            return None
+        if row["sender_user_id"] != user_id:
+            raise PermissionError("본인이 작성한 1:1 메시지만 수정할 수 있습니다.")
+        conn.execute("UPDATE direct_messages SET content=?, edited_at=? WHERE id=?",
+                     (new_content, now, dm_id))
+        conn.commit()
+    return get_direct_message_by_id(dm_id, user_id)
 
 def save_direct_message(sender: Dict[str, Any], recipient: Dict[str, Any], content: str,
                         reply: Optional[Dict[str, str]] = None,

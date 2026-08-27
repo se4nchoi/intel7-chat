@@ -1056,9 +1056,12 @@ async function toggleMessageHidden(messageId, hidden) {
 }
 
 async function saveEditedMessage(messageId, newContent) {
-  const rawId = String(messageId).replace(/^public:/, '');
+  const strId = String(messageId);
+  const isDm = strId.startsWith('dm:');
+  const rawId = strId.replace(/^(public|dm):/, '');
+  const url = isDm ? `/api/dms/${rawId}` : `/api/messages/${rawId}`;
   try {
-    const response = await fetch(`/api/messages/${rawId}`, {
+    const response = await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: newContent }),
@@ -2247,7 +2250,7 @@ function renderOnlineList(users) {
     item.setAttribute('aria-label', `${displayName} ${online ? '온라인' : '오프라인'}`);
     item.title = `${displayName} (@${nick}) — ${online ? '온라인' : '오프라인'}`;
     item.append(dot, nickElement);
-    if (nick !== myNickname && online) {
+    if (nick !== myNickname) {
       const openDm = () => {
         getOrCreateDm(nick, user.id);
         renderConversationList();
@@ -2848,6 +2851,18 @@ function createMessageActions(msg) {
       moveButton.textContent = '이동';
       moveButton.addEventListener('click', () => openMoveMessageModal(msg));
       actions.appendChild(moveButton);
+    }
+  } else if (msg.msgType === 'dm' && msg.message_id) {
+    const isSender = (msg.from_user_id != null && Number(msg.from_user_id) === myUserId) || msg.from_nick === myNickname;
+    if (isSender) {
+      const editButton = document.createElement('button');
+      editButton.type = 'button';
+      editButton.textContent = '수정';
+      editButton.addEventListener('click', () => {
+        const row = document.querySelector(`.msg-row[data-message-id="${msg.message_id}"]`);
+        if (row) enterInlineEditMode(row, msg);
+      });
+      actions.appendChild(editButton);
     }
   }
 
@@ -3767,6 +3782,24 @@ function initWebSocket() {
               conv.messages[idx].edited_at = editedMsg.edited_at;
               conv.messages[idx].mentions = editedMsg.mentions;
               if (activeConvId === targetConvId) {
+                renderMessages();
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'dm_edited': {
+        if (data.message) {
+          const editedMsg = data.message;
+          const partnerNick = editedMsg.from_nick === myNickname ? editedMsg.to_nick : editedMsg.from_nick;
+          const conv = findDmConv(partnerNick) || conversations.get(partnerNick);
+          if (conv) {
+            const idx = conv.messages.findIndex(m => m.message_id === editedMsg.message_id);
+            if (idx >= 0) {
+              conv.messages[idx].content = editedMsg.content;
+              conv.messages[idx].edited_at = editedMsg.edited_at;
+              if (activeConvId === conv.id) {
                 renderMessages();
               }
             }
