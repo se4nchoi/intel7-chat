@@ -1140,7 +1140,7 @@ def unpin_message(
             if row["sender_user_id"] != user_id and row["recipient_user_id"] != user_id:
                 raise PermissionError("본인이 참여한 1:1 대화의 메시지만 고정 해제할 수 있습니다.")
             conversation_id = normalize_dm_conversation_id(row["sender_user_id"], row["recipient_user_id"])
-        
+
         cur = conn.execute("""
             DELETE FROM pinned_messages
             WHERE conversation_type = ? AND conversation_id = ? AND message_id = ?
@@ -1167,10 +1167,10 @@ def get_pinned_messages(
                 WHERE pm.conversation_type = 'channel' AND pm.conversation_id = ? AND m.is_hidden = 0
                 ORDER BY pm.pinned_at DESC
             """, (str(conversation_id),)).fetchall()
-            
+
             if not rows:
                 return []
-            
+
             msg_ids = [r["message_id"] for r in rows]
             atts_map = _message_attachments(conn, msg_ids)
             reactions_map = get_reactions_for_messages(conn, "channel", msg_ids, current_user_id)

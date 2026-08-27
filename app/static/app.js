@@ -2042,25 +2042,47 @@ if (snoozeResumeBtn) {
 
 // --- Message Pins (Iteration 5) ---
 let activePinnedMessages = [];
+let pinFetchSeq = 0;
+let pinFetchAbortController = null;
 
 async function fetchActivePinnedMessages(options = {}) {
   const { autoOpen = false, preserveOpen = false } = options;
-  if (!activeConvId || !currentUser) {
+  if (pinFetchAbortController) {
+    pinFetchAbortController.abort();
+    pinFetchAbortController = null;
+  }
+  const currentSeq = ++pinFetchSeq;
+  const targetConvId = activeConvId;
+
+  if (!targetConvId || !currentUser) {
     activePinnedMessages = [];
     updatePinnedUI({ autoOpen: false, preserveOpen: false });
     return;
   }
-  const parsed = parseConvKey(activeConvId);
+
+  const parsed = parseConvKey(targetConvId);
+  pinFetchAbortController = new AbortController();
   try {
-    const res = await fetch(`/api/conversations/${parsed.type}/${parsed.id}/pins`);
+    const res = await fetch(`/api/conversations/${parsed.type}/${parsed.id}/pins`, {
+      signal: pinFetchAbortController.signal,
+    });
+    if (currentSeq !== pinFetchSeq || activeConvId !== targetConvId) {
+      return;
+    }
     if (res.ok) {
       const data = await res.json();
       activePinnedMessages = Array.isArray(data.pins) ? data.pins : [];
     } else {
       activePinnedMessages = [];
     }
-  } catch {
+  } catch (err) {
+    if (err.name === 'AbortError' || currentSeq !== pinFetchSeq || activeConvId !== targetConvId) {
+      return;
+    }
     activePinnedMessages = [];
+  }
+  if (currentSeq !== pinFetchSeq || activeConvId !== targetConvId) {
+    return;
   }
   updatePinnedUI({ autoOpen, preserveOpen });
 }
@@ -2105,7 +2127,7 @@ function renderPinnedDrawerList() {
   activePinnedMessages.forEach(pin => {
     const item = document.createElement('div');
     item.className = 'pinned-item';
-    
+
     const metaRow = document.createElement('div');
     metaRow.className = 'pinned-item-meta';
 
@@ -2171,7 +2193,7 @@ async function toggleMessagePin(msg) {
   const rawId = typeof msg.message_id === 'string' ? msg.message_id.replace(/^(public|dm):/, '') : String(msg.id || '');
   const numId = Number(rawId);
   if (!numId) return;
-  
+
   const parsed = parseConvKey(activeConvId);
   const convType = parsed.type;
   const convId = parsed.id;
@@ -2945,7 +2967,7 @@ function renderMessageReactions(msg, container) {
     const pill = document.createElement('button');
     pill.type = 'button';
     pill.className = `reaction-pill${isReactedByMe ? ' reacted-by-me' : ''}`;
-    
+
     const emojiSpan = document.createElement('span');
     emojiSpan.className = 'reaction-pill-emoji';
     emojiSpan.textContent = r.emoji;
@@ -2958,8 +2980,8 @@ function renderMessageReactions(msg, container) {
 
     if (Array.isArray(r.users) && r.users.length) {
       const names = r.users.map(u => u.display_name || u.username);
-      const tooltipText = names.length <= 3 
-        ? `${names.join(', ')}님이 반응함` 
+      const tooltipText = names.length <= 3
+        ? `${names.join(', ')}님이 반응함`
         : `${names.slice(0, 3).join(', ')} 외 ${names.length - 3}명이 반응함`;
       pill.title = tooltipText;
     }
@@ -2977,7 +2999,7 @@ async function toggleReaction(msg, emoji) {
   if (!currentUser || !msg.message_id) return;
   const isChat = msg.msgType === 'chat';
   const msgType = isChat ? 'channel' : 'dm';
-  const rawId = isChat 
+  const rawId = isChat
     ? Number(String(msg.message_id).replace(/^public:/, ''))
     : Number(String(msg.message_id).replace(/^dm:/, ''));
   if (!rawId || isNaN(rawId)) return;
@@ -3952,7 +3974,7 @@ function showMessageToast({ kind = 'ordinary', conversationId = null, title = ''
   if (kind === 'dm') badgeText = '1:1 대화';
   else if (kind === 'mention') badgeText = '멘션';
   else if (kind === 'reply') badgeText = '답장';
-  
+
   if (badgeText) {
     const badgeEl = document.createElement('span');
     badgeEl.className = 'toast-badge';
@@ -4494,7 +4516,7 @@ function initSidebarSections() {
         const deltaY = moveEvent.clientY - startY;
         const newPrevHeight = Math.max(50, startPrevHeight + deltaY);
         const newNextHeight = Math.max(50, startNextHeight - deltaY);
-        
+
         prevSection.style.flex = `0 0 ${newPrevHeight}px`;
         nextSection.style.flex = `0 0 ${newNextHeight}px`;
       };
@@ -4539,7 +4561,7 @@ function restoreSidebarState() {
   try {
     const collapsed = JSON.parse(localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) || '[]');
     const sizes = JSON.parse(localStorage.getItem(SIDEBAR_SIZES_STORAGE_KEY) || '{}');
-    
+
     document.querySelectorAll('.sidebar-section').forEach(sec => {
       const secName = sec.dataset.section;
       if (!secName) return;

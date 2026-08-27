@@ -412,4 +412,3 @@ class TestMigrationIdempotency:
             # Re-running _migrate_v5 on already upgraded DB should not raise error
             database._migrate_v5(conn)
             assert database._get_schema_version(conn) >= 5
-

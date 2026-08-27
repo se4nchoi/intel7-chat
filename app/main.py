@@ -612,10 +612,10 @@ async def api_update_direct_message(dm_id: int, request: Request):
         raise HTTPException(403, str(exc)) from exc
     if not updated:
         raise HTTPException(404, "1:1 메시지를 찾을 수 없습니다.")
-    
+
     payload = {"type": "dm_edited", "message": updated}
     encoded = json.dumps(payload, ensure_ascii=False)
-    
+
     sender_targets = list(user_registry.get(updated["from_nick"], set()))
     recipient_targets = list(user_registry.get(updated["to_nick"], set()))
     for target_ws in set(sender_targets + recipient_targets):
@@ -623,7 +623,7 @@ async def api_update_direct_message(dm_id: int, request: Request):
             await target_ws.send_text(encoded)
         except Exception:
             pass
-            
+
     return updated
 
 @app.post("/api/messages/{message_id}/hide")
@@ -824,7 +824,7 @@ async def api_get_pins(conv_type: str, conv_id: str, request: Request):
     user = request_user(request)
     if conv_type not in ("channel", "dm"):
         raise HTTPException(400, "유효하지 않은 대화 유형입니다.")
-    
+
     if conv_type == "channel":
         try:
             cid = int(conv_id)
@@ -843,7 +843,7 @@ async def api_get_pins(conv_type: str, conv_id: str, request: Request):
             raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
         norm_id = normalize_dm_conversation_id(user["id"], partner["id"])
         pins = get_pinned_messages("dm", norm_id, current_user_id=user["id"])
-    
+
     users = list_mentionable_users()
     enriched_pins = []
     for pin in pins:
@@ -877,7 +877,7 @@ async def api_pin_message(conv_type: str, conv_id: str, message_id: int, request
 
         users = list_mentionable_users()
         pin["message"] = with_mentions(pin["message"], users)
-        
+
         await broadcast({
             "type": "pin_updated",
             "conversation_type": "channel",
