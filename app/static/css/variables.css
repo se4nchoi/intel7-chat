@@ -40,7 +40,18 @@
 @keyframes hintPopIn {
   from {
     opacity: 0;
-    transform: translateY(-8px) scale(0.96);
+    transform: translateX(-50%) translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes hintPopInRight {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
   }
   to {
     opacity: 1;

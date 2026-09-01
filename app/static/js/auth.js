@@ -397,6 +397,9 @@ export function initAuthListeners(onLoginSuccess, onLogout) {
   const myNickBadge = document.getElementById('my-nick-badge');
   const nicknameHintClose = document.getElementById('nickname-hint-close');
   const nicknameHintPopover = document.getElementById('nickname-hint-popover');
+  const quizHintClose = document.getElementById('quiz-hint-close');
+  const quizHintPopover = document.getElementById('quiz-hint-popover');
+  const quizBtn = document.getElementById('quiz-btn');
   const nicknameClose = document.getElementById('nickname-close');
   const nicknameModal = document.getElementById('nickname-modal');
   const nicknameForm = document.getElementById('nickname-form');
@@ -501,6 +504,26 @@ export function initAuthListeners(onLoginSuccess, onLogout) {
       hideNicknameHint();
       openNicknameModal();
     });
+  }
+
+  // Quiz hint popover
+  if (quizHintClose) {
+    quizHintClose.addEventListener('click', event => {
+      event.stopPropagation();
+      hideQuizHint();
+    });
+  }
+  if (quizHintPopover) {
+    quizHintPopover.addEventListener('click', event => {
+      if (event.target === quizHintClose || quizHintClose?.contains(event.target)) return;
+      hideQuizHint();
+      // Open quiz modal — click the quiz button programmatically
+      quizBtn?.click();
+    });
+  }
+  // Also hide quiz hint when the quiz button itself is clicked
+  if (quizBtn) {
+    quizBtn.addEventListener('click', () => hideQuizHint(), { capture: true });
   }
   if (nicknameClose) nicknameClose.addEventListener('click', closeNicknameModal);
   if (nicknameModal) {
