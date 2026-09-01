@@ -4625,13 +4625,13 @@ const quizTabLeaderboardContent = document.getElementById('quiz-tab-leaderboard-
 const quizTabAdminContent = document.getElementById('quiz-tab-admin-content');
 
 const quizStatStreak = document.getElementById('quiz-stat-streak');
-const quizStatScore = document.getElementById('quiz-stat-score');
-const quizStatAccuracy = document.getElementById('quiz-stat-accuracy');
+const cbtProgressCount = document.getElementById('cbt-progress-count');
+const cbtProgressFill = document.getElementById('cbt-progress-fill');
+const cbtProgressPercent = document.getElementById('cbt-progress-percent');
 
 const quizLoadingState = document.getElementById('quiz-loading-state');
 const quizContainer = document.getElementById('quiz-container');
 const quizPillNav = document.getElementById('quiz-pill-nav');
-const quizProgressText = document.getElementById('quiz-progress-text');
 
 const quizCategoryTag = document.getElementById('quiz-category-tag');
 const quizDifficultyTag = document.getElementById('quiz-difficulty-tag');
@@ -4762,35 +4762,40 @@ async function fetchTodayQuizzes() {
 
 function renderQuizStats() {
   if (!userQuizStats) return;
-  if (quizStatStreak) quizStatStreak.textContent = `${userQuizStats.current_streak || 0}일`;
-  if (quizStatScore) quizStatScore.textContent = `${userQuizStats.total_score || 0}점`;
-  if (quizStatAccuracy) quizStatAccuracy.textContent = `${userQuizStats.accuracy || 0}%`;
+  if (quizStatStreak) quizStatStreak.textContent = `${userQuizStats.current_streak || 0}일 연속`;
   refreshQuizHeaderStreak();
 }
 
 function renderQuizPillNav() {
-  if (!quizPillNav) return;
-  quizPillNav.replaceChildren();
-  todayQuizzes.forEach((q, idx) => {
-    const pill = document.createElement('button');
-    pill.type = 'button';
-    pill.className = `quiz-pill-btn${idx === currentQuizIndex ? ' active' : ''}`;
-    if (q.is_solved) {
-      pill.classList.add(q.is_correct ? 'solved-correct' : 'solved-wrong');
-      pill.textContent = q.is_correct ? '✓' : '✕';
-    } else {
-      pill.textContent = String(idx + 1);
-    }
-    pill.addEventListener('click', () => {
-      currentQuizIndex = idx;
-      renderQuizPillNav();
-      renderActiveQuiz();
+  const total = todayQuizzes.length || 1;
+  const currentNum = currentQuizIndex + 1;
+  const pct = Math.round((currentNum / total) * 100);
+
+  if (cbtProgressCount) cbtProgressCount.textContent = `${currentNum} / ${total}`;
+  if (cbtProgressPercent) cbtProgressPercent.textContent = `${pct}%`;
+  if (cbtProgressFill) cbtProgressFill.style.width = `${pct}%`;
+
+  if (quizPillNav) {
+    quizPillNav.replaceChildren();
+    todayQuizzes.forEach((q, idx) => {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = `quiz-pill-btn${idx === currentQuizIndex ? ' active' : ''}`;
+      if (q.is_solved) {
+        pill.classList.add(q.is_correct ? 'solved-correct' : 'solved-wrong');
+        pill.textContent = q.is_correct ? '✓' : '✕';
+      } else {
+        pill.textContent = String(idx + 1);
+      }
+      pill.addEventListener('click', () => {
+        currentQuizIndex = idx;
+        renderQuizPillNav();
+        renderActiveQuiz();
+      });
+      quizPillNav.appendChild(pill);
     });
-    quizPillNav.appendChild(pill);
-  });
-  if (quizProgressText) {
-    quizProgressText.textContent = `문제 ${currentQuizIndex + 1} / ${todayQuizzes.length}`;
   }
+
   if (quizPrevBtn) quizPrevBtn.disabled = currentQuizIndex === 0;
   if (quizNextBtn) quizNextBtn.disabled = currentQuizIndex === todayQuizzes.length - 1;
 }
@@ -4802,11 +4807,11 @@ function renderActiveQuiz() {
   currentSelectedOption = null;
   if (quizCategoryTag) quizCategoryTag.textContent = q.category || 'PLC/시퀀스';
   if (quizDifficultyTag) {
-    const diffMap = { easy: '쉬움 (10점)', medium: '보통 (20점)', hard: '어려움 (30점)' };
+    const diffMap = { easy: '쉬움', medium: '보통', hard: '어려움' };
     quizDifficultyTag.textContent = diffMap[q.difficulty] || q.difficulty;
   }
   if (quizTypeTag) {
-    const typeMap = { multiple_choice: '객관식', short_answer: '단답형', ladder_input: '래더 명령어' };
+    const typeMap = { multiple_choice: '4지선다', short_answer: '단답형', ladder_input: '래더 명령어' };
     quizTypeTag.textContent = typeMap[q.question_type] || q.question_type;
   }
   if (quizScoreBadge) {
@@ -4836,7 +4841,10 @@ function renderActiveQuiz() {
       quizAnswerInput.value = q.is_solved ? (q.user_answer || '') : '';
       quizAnswerInput.disabled = Boolean(q.is_solved);
     }
-    if (quizSubmitBtn) quizSubmitBtn.disabled = Boolean(q.is_solved);
+    if (quizSubmitBtn) {
+      quizSubmitBtn.disabled = Boolean(q.is_solved);
+      quizSubmitBtn.textContent = q.is_solved ? '제출 완료' : '정답 제출';
+    }
   }
 
   // Feedback display
@@ -4850,12 +4858,27 @@ function renderActiveQuiz() {
 function renderMultipleChoiceOptions(q) {
   if (!quizOptionsList) return;
   quizOptionsList.replaceChildren();
+  const circledNumbers = ['①', '②', '③', '④', '⑤', '⑥'];
   q.options.forEach((opt, idx) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'quiz-option-btn';
-    btn.textContent = opt;
-    const isSelected = q.is_solved ? (q.user_answer === opt || q.user_answer === String(idx + 1)) : (currentSelectedOption === opt);
+    btn.className = 'cbt-option-btn';
+
+    const numSpan = document.createElement('span');
+    numSpan.className = 'cbt-opt-num';
+    numSpan.textContent = circledNumbers[idx] || `${idx + 1}.`;
+
+    const textSpan = document.createElement('span');
+    textSpan.className = 'cbt-opt-text';
+    const cleanText = opt.replace(/^(\d+[\.\)]\s*|[①②③④⑤⑥]\s*)/, '');
+    textSpan.textContent = cleanText || opt;
+
+    btn.append(numSpan, textSpan);
+
+    const isSelected = q.is_solved
+      ? (q.user_answer === opt || q.user_answer === String(idx + 1) || q.user_answer === cleanText)
+      : (currentSelectedOption === opt);
+
     if (isSelected) btn.classList.add('selected');
     if (q.is_solved) {
       btn.disabled = true;
@@ -4875,7 +4898,7 @@ function renderQuizFeedback(q) {
   quizFeedbackBox.classList.remove('hidden');
   const isCorrect = Boolean(q.is_correct);
   if (quizResultBanner) {
-    quizResultBanner.className = `quiz-result-banner ${isCorrect ? 'correct' : 'wrong'}`;
+    quizResultBanner.className = `cbt-result-banner ${isCorrect ? 'correct' : 'wrong'}`;
   }
   if (quizResultIcon) quizResultIcon.textContent = isCorrect ? '⭕' : '❌';
   if (quizResultTitle) {
@@ -4886,7 +4909,7 @@ function renderQuizFeedback(q) {
       quizResultAnswers.textContent = `입력한 답: ${q.user_answer}`;
     } else {
       const correctText = Array.isArray(q.correct_answers) ? q.correct_answers.join(', ') : (q.correct_answers || '');
-      quizResultAnswers.textContent = `내 답안: ${q.user_answer || '(미입력)'} | 정답: ${correctText}`;
+      quizResultAnswers.textContent = `내 답안: ${q.user_answer || '(미입력)'} | 올바른 정답: ${correctText}`;
     }
   }
   if (quizExplanationText) quizExplanationText.textContent = q.explanation || '해설이 없습니다.';
@@ -4979,7 +5002,7 @@ function renderLeaderboard(list) {
 
   if (list.length === 0) {
     const emptyRow = document.createElement('tr');
-    emptyRow.innerHTML = '<td colspan="5" style="text-align:center; padding: 20px; color: var(--text-muted);">아직 퀴즈 제출 기록이 없습니다. 오늘의 첫 1위에 도전해보세요!</td>';
+    emptyRow.innerHTML = '<td colspan="5" style="text-align:center; padding: 24px; color: #64748b;">아직 퀴즈 제출 기록이 없습니다. 오늘의 첫 1위에 도전해보세요!</td>';
     leaderboardTbody.appendChild(emptyRow);
     return;
   }
@@ -4996,7 +5019,7 @@ function renderLeaderboard(list) {
     tdUser.textContent = uName + (Number(item.user_id) === myUserId ? ' (나)' : '');
 
     const tdScore = document.createElement('td');
-    tdScore.innerHTML = `<strong style="color: #f59e0b;">${item.score || 0}점</strong>`;
+    tdScore.innerHTML = `<strong style="color: #60a5fa;">${item.score || 0}점</strong>`;
 
     const tdCorrect = document.createElement('td');
     tdCorrect.textContent = `${item.correct_count || 0}문제`;
@@ -5104,7 +5127,7 @@ if (quizAnswerInput) {
   });
 }
 
-document.querySelectorAll('.symbol-btn').forEach(btn => {
+document.querySelectorAll('.cbt-chip-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     if (!quizAnswerInput || quizAnswerInput.disabled) return;
     const sym = btn.dataset.sym || btn.textContent;

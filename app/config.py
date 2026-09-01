@@ -20,6 +20,7 @@ class RoomConfig:
     session_hours: int = 12
     registration_enabled: bool = True
     enrollment_code_hash: str = ""
+    gemini_api_key: str = ""
 
     @property
     def data_path(self) -> Path:

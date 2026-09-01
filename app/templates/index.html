@@ -466,147 +466,152 @@
     </div>
   </div>
 
-  <!-- 퀴즈 & 리더보드 모달 -->
+  <!-- 퀴즈 & 랭킹 모달 -->
   <div id="quiz-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="quiz-modal-title">
-    <div class="modal-box quiz-modal-box">
-      <div class="admin-panel-header">
-        <div>
-          <h2 id="quiz-modal-title">🧠 배움터 퀴즈 & 랭킹</h2>
-          <p class="modal-desc" id="quiz-modal-desc">강의 복습 문제 풀고 일간/주간 랭킹에 도전하세요!</p>
+    <div class="modal-box quiz-modal-box cbt-modal-box">
+      <!-- Top Navigation & Tab Bar -->
+      <div class="cbt-top-header">
+        <div class="cbt-header-left">
+          <button id="quiz-modal-close" class="cbt-back-btn" type="button" aria-label="닫기">
+            <span class="cbt-back-icon">←</span>
+            <span>대화방으로</span>
+          </button>
+          <div class="cbt-header-title-wrap">
+            <h2 id="quiz-modal-title" class="cbt-header-title">퀴즈 & 랭킹</h2>
+            <span class="cbt-header-badge">매일 자정 리셋</span>
+          </div>
         </div>
-        <button id="quiz-modal-close" class="admin-close" type="button" aria-label="닫기">×</button>
-      </div>
 
-      <!-- Navigation Tabs -->
-      <div class="quiz-tabs" role="tablist">
-        <button id="quiz-tab-daily-btn" class="quiz-tab active" type="button" role="tab" aria-selected="true" data-tab="daily">📝 오늘의 문제</button>
-        <button id="quiz-tab-leaderboard-btn" class="quiz-tab" type="button" role="tab" aria-selected="false" data-tab="leaderboard">🏆 리더보드</button>
-        <button id="quiz-tab-admin-btn" class="quiz-tab hidden" type="button" role="tab" aria-selected="false" data-tab="admin">⚙️ 퀴즈 관리</button>
+        <!-- Navigation Tabs -->
+        <div class="cbt-tabs" role="tablist">
+          <button id="quiz-tab-daily-btn" class="cbt-tab active" type="button" role="tab" aria-selected="true" data-tab="daily">📝 오늘의 퀴즈</button>
+          <button id="quiz-tab-leaderboard-btn" class="cbt-tab" type="button" role="tab" aria-selected="false" data-tab="leaderboard">🏆 랭킹 & 순위표</button>
+          <button id="quiz-tab-admin-btn" class="cbt-tab hidden" type="button" role="tab" aria-selected="false" data-tab="admin">⚙️ 퀴즈 관리</button>
+        </div>
       </div>
 
       <!-- Tab 1: 오늘의 문제 -->
-      <div id="quiz-tab-daily-content" class="quiz-tab-content">
-        <!-- User Stats Bar -->
-        <div class="quiz-stats-bar">
-          <div class="quiz-stat-card">
-            <span class="quiz-stat-icon">🔥</span>
-            <div class="quiz-stat-info">
-              <span class="quiz-stat-label">연속 정답</span>
-              <strong id="quiz-stat-streak" class="quiz-stat-val">0일</strong>
-            </div>
+      <div id="quiz-tab-daily-content" class="quiz-tab-content cbt-content-pane">
+        <!-- Progress Bar Row -->
+        <div class="cbt-progress-row">
+          <span id="cbt-progress-count" class="cbt-progress-count">1 / 5</span>
+          <div class="cbt-progress-track">
+            <div id="cbt-progress-fill" class="cbt-progress-fill" style="width: 20%;"></div>
           </div>
-          <div class="quiz-stat-card">
-            <span class="quiz-stat-icon">⚡</span>
-            <div class="quiz-stat-info">
-              <span class="quiz-stat-label">누적 점수</span>
-              <strong id="quiz-stat-score" class="quiz-stat-val">0점</strong>
-            </div>
-          </div>
-          <div class="quiz-stat-card">
-            <span class="quiz-stat-icon">🎯</span>
-            <div class="quiz-stat-info">
-              <span class="quiz-stat-label">정답률</span>
-              <strong id="quiz-stat-accuracy" class="quiz-stat-val">0%</strong>
-            </div>
+          <span id="cbt-progress-percent" class="cbt-progress-percent">20%</span>
+          <div class="cbt-streak-pill">
+            <span class="cbt-streak-flame">🔥</span>
+            <span id="quiz-stat-streak">0일 연속</span>
           </div>
         </div>
 
-        <!-- Quiz Loading -->
+        <!-- Quiz Loading State -->
         <div id="quiz-loading-state" class="quiz-loading">
           <div class="quiz-spinner"></div>
           <span>오늘의 문제를 불러오는 중입니다...</span>
         </div>
 
-        <!-- Quiz Container -->
-        <div id="quiz-container" class="quiz-container hidden">
-          <!-- Quiz Pager Header -->
-          <div class="quiz-pager-header">
-            <div id="quiz-pill-nav" class="quiz-pill-nav"></div>
-            <span id="quiz-progress-text" class="quiz-progress-text">문제 1 / 5</span>
-          </div>
-
+        <!-- Quiz Main Container -->
+        <div id="quiz-container" class="cbt-quiz-wrap hidden">
           <!-- Active Question Card -->
-          <div id="quiz-card" class="quiz-card">
-            <div class="quiz-card-header">
-              <div class="quiz-meta-tags">
-                <span id="quiz-category-tag" class="quiz-badge-category">PLC/시퀀스</span>
-                <span id="quiz-difficulty-tag" class="quiz-badge-diff">보통</span>
-                <span id="quiz-type-tag" class="quiz-badge-type">래더 입력</span>
+          <div id="quiz-card" class="cbt-card">
+            <!-- Card Header: Category & Type Badge -->
+            <div class="cbt-card-header">
+              <span id="quiz-category-tag" class="cbt-category-tag">PLC/시퀀스</span>
+              <div class="cbt-header-badges">
+                <span id="quiz-difficulty-tag" class="cbt-diff-badge">보통</span>
+                <span id="quiz-type-tag" class="cbt-type-badge">4지선다</span>
+                <span id="quiz-score-badge" class="cbt-score-badge">+20점</span>
               </div>
-              <span id="quiz-score-badge" class="quiz-score-badge">+20점</span>
             </div>
 
-            <h3 id="quiz-question-text" class="quiz-question-text"></h3>
+            <!-- Question Text -->
+            <h3 id="quiz-question-text" class="cbt-question-text"></h3>
 
-            <!-- Optional Diagram / Ladder Image -->
-            <div id="quiz-image-container" class="quiz-image-container hidden">
-              <img id="quiz-image" class="quiz-image" src="" alt="문제 다이어그램 / 래더도" />
-              <span class="quiz-image-zoom-hint">🔍 클릭하여 확대</span>
+            <!-- Mac-style Code / Diagram Window (Optional) -->
+            <div id="quiz-image-container" class="cbt-code-window hidden">
+              <div class="cbt-mac-titlebar">
+                <div class="cbt-mac-dots">
+                  <span class="cbt-dot red"></span>
+                  <span class="cbt-dot yellow"></span>
+                  <span class="cbt-dot green"></span>
+                </div>
+                <span class="cbt-mac-title">Ladder Diagram / 참고 다이어그램</span>
+              </div>
+              <div class="cbt-mac-body">
+                <img id="quiz-image" class="cbt-diagram-img" src="" alt="문제 다이어그램 / 래더도" />
+                <span class="cbt-diagram-hint">🔍 클릭하여 확대</span>
+              </div>
             </div>
 
             <!-- Answer Section -->
-            <div id="quiz-answer-section" class="quiz-answer-section">
-              <!-- Multiple Choice Options -->
-              <div id="quiz-options-list" class="quiz-options-list hidden"></div>
+            <div id="quiz-answer-section" class="cbt-answer-section">
+              <!-- Multiple Choice Options (4지선다 ① ② ③ ④) -->
+              <div id="quiz-options-list" class="cbt-options-list hidden"></div>
 
               <!-- Text / Ladder Input -->
-              <div id="quiz-input-container" class="quiz-input-container hidden">
-                <div class="quiz-input-row">
-                  <input id="quiz-answer-input" type="text" class="quiz-answer-input" placeholder="정답 입력 (예: X0, Y0, AND, 인터록)" autocomplete="off" />
-                  <button id="quiz-submit-btn" class="quiz-submit-btn" type="button">제출하기</button>
+              <div id="quiz-input-container" class="cbt-input-wrap hidden">
+                <div class="cbt-input-label">정답 입력</div>
+                <div class="cbt-input-row">
+                  <input id="quiz-answer-input" type="text" class="cbt-text-input" placeholder="정답을 입력하세요 (예: X0, Y0, AND, 인터록)" autocomplete="off" />
+                  <button id="quiz-submit-btn" class="cbt-submit-btn" type="button">정답 제출</button>
                 </div>
-                <div class="quiz-symbol-shortcuts">
-                  <span class="symbol-label">빠른 입력:</span>
-                  <button type="button" class="symbol-btn" data-sym="X0">X0</button>
-                  <button type="button" class="symbol-btn" data-sym="Y0">Y0</button>
-                  <button type="button" class="symbol-btn" data-sym="M0">M0</button>
-                  <button type="button" class="symbol-btn" data-sym="T0">T0</button>
-                  <button type="button" class="symbol-btn" data-sym="AND">AND</button>
-                  <button type="button" class="symbol-btn" data-sym="OR">OR</button>
-                  <button type="button" class="symbol-btn" data-sym="LDI">LDI</button>
+                <div class="cbt-input-guide">대소문자, 앞뒤 공백은 자동으로 무시됩니다. Enter 제출</div>
+                <div class="cbt-symbol-chips">
+                  <span class="cbt-chip-label">빠른 기호 입력:</span>
+                  <button type="button" class="cbt-chip-btn" data-sym="X0">X0</button>
+                  <button type="button" class="cbt-chip-btn" data-sym="Y0">Y0</button>
+                  <button type="button" class="cbt-chip-btn" data-sym="M0">M0</button>
+                  <button type="button" class="cbt-chip-btn" data-sym="T0">T0</button>
+                  <button type="button" class="cbt-chip-btn" data-sym="AND">AND</button>
+                  <button type="button" class="cbt-chip-btn" data-sym="OR">OR</button>
+                  <button type="button" class="cbt-chip-btn" data-sym="LDI">LDI</button>
                 </div>
               </div>
             </div>
 
             <!-- Feedback / Explanation Card -->
-            <div id="quiz-feedback-box" class="quiz-feedback-box hidden">
-              <div id="quiz-result-banner" class="quiz-result-banner correct">
+            <div id="quiz-feedback-box" class="cbt-feedback-box hidden">
+              <div id="quiz-result-banner" class="cbt-result-banner correct">
                 <span id="quiz-result-icon">⭕</span>
                 <div>
                   <strong id="quiz-result-title">정답입니다! (+20점)</strong>
-                  <div id="quiz-result-answers" class="quiz-result-answers"></div>
+                  <div id="quiz-result-answers" class="cbt-result-answers"></div>
                 </div>
               </div>
-              <div class="quiz-explanation-body">
-                <div class="quiz-explanation-label">💡 상세 해설</div>
-                <p id="quiz-explanation-text" class="quiz-explanation-text"></p>
-                <div id="quiz-source-ref" class="quiz-source-ref">출처: 교재 4강 p.12</div>
+              <div class="cbt-explanation-card">
+                <div class="cbt-explanation-title">💡 상세 해설</div>
+                <p id="quiz-explanation-text" class="cbt-explanation-text"></p>
+                <div id="quiz-source-ref" class="cbt-source-ref">출처: 교재 4강 p.12</div>
               </div>
             </div>
           </div>
 
-          <!-- Bottom Navigation -->
-          <div class="quiz-nav-actions">
-            <button id="quiz-prev-btn" class="inline-edit-cancel" type="button">◀ 이전 문제</button>
-            <button id="quiz-next-btn" class="inline-edit-btn" type="button">다음 문제 ▶</button>
+          <!-- Bottom Navigation & Pager Bar -->
+          <div class="cbt-bottom-bar">
+            <button id="quiz-prev-btn" class="cbt-nav-btn" type="button">◀ 이전 문제</button>
+            <div id="quiz-pill-nav" class="cbt-pill-nav"></div>
+            <button id="quiz-next-btn" class="cbt-nav-btn" type="button">다음 문제 ▶</button>
           </div>
         </div>
       </div>
 
       <!-- Tab 2: 리더보드 -->
-      <div id="quiz-tab-leaderboard-content" class="quiz-tab-content hidden">
-        <div class="leaderboard-period-tabs">
-          <button class="lb-period-btn active" data-period="weekly" type="button">이번 주 랭킹 👑</button>
-          <button class="lb-period-btn" data-period="daily" type="button">오늘의 랭킹 ⚡</button>
-          <button class="lb-period-btn" data-period="all" type="button">명예의 전당 🏛️</button>
+      <div id="quiz-tab-leaderboard-content" class="quiz-tab-content cbt-content-pane hidden">
+        <div class="cbt-lb-header">
+          <div class="cbt-period-pills">
+            <button class="lb-period-btn active" data-period="weekly" type="button">이번 주 랭킹 👑</button>
+            <button class="lb-period-btn" data-period="daily" type="button">오늘의 랭킹 ⚡</button>
+            <button class="lb-period-btn" data-period="all" type="button">명예의 전당 🏛️</button>
+          </div>
         </div>
 
-        <div id="leaderboard-podium" class="leaderboard-podium"></div>
-        <div id="leaderboard-table-container" class="leaderboard-table-container">
-          <table class="leaderboard-table">
+        <div id="leaderboard-podium" class="cbt-podium-row"></div>
+        <div class="cbt-table-box">
+          <table class="cbt-table">
             <thead>
               <tr>
-                <th>순위</th>
+                <th style="width: 60px;">순위</th>
                 <th>사용자</th>
                 <th>점수</th>
                 <th>정답수</th>
@@ -619,12 +624,12 @@
       </div>
 
       <!-- Tab 3: 퀴즈 관리 (관리자 전용) -->
-      <div id="quiz-tab-admin-content" class="quiz-tab-content hidden">
-        <div class="quiz-admin-sections">
+      <div id="quiz-tab-admin-content" class="quiz-tab-content cbt-content-pane hidden">
+        <div class="cbt-admin-grid">
           <!-- AI Generation Section -->
-          <div class="admin-card">
-            <h3 class="admin-card-title">🤖 AI 퀴즈 자동 생성 (Gemini API)</h3>
-            <p class="admin-card-desc">강의 교재 PDF나 텍스트를 첨부하면 AI가 교재에 엄격히 근거한 퀴즈를 자동 출제합니다.</p>
+          <div class="cbt-admin-card">
+            <h3 class="cbt-admin-title">🤖 AI 퀴즈 자동 생성 (Gemini API)</h3>
+            <p class="cbt-admin-desc">강의 교재 PDF나 텍스트를 첨부하면 AI가 교재에 엄격히 근거한 퀴즈를 자동 출제합니다.</p>
             <form id="quiz-ai-gen-form" class="channel-form">
               <div class="form-row-2">
                 <div>
@@ -645,25 +650,25 @@
               <label for="quiz-gen-text">또는 강의 내용 직접 입력</label>
               <textarea id="quiz-gen-text" rows="3" placeholder="교재 내용 또는 요약 텍스트를 붙여넣으세요..."></textarea>
               <p id="quiz-gen-status" class="admin-status-msg"></p>
-              <button id="quiz-gen-submit" type="submit" class="admin-action-btn">✨ AI 퀴즈 생성 & DB 등록</button>
+              <button id="quiz-gen-submit" type="submit" class="cbt-action-btn">✨ AI 퀴즈 생성 & DB 등록</button>
             </form>
           </div>
 
           <!-- JSON Import Section -->
-          <div class="admin-card">
-            <h3 class="admin-card-title">📋 NotebookLM / 수동 JSON 등록</h3>
-            <p class="admin-card-desc">NotebookLM에서 생성된 JSON 코드 블록을 그대로 붙여넣어 일괄 등록합니다.</p>
+          <div class="cbt-admin-card">
+            <h3 class="cbt-admin-title">📋 NotebookLM / 수동 JSON 등록</h3>
+            <p class="cbt-admin-desc">NotebookLM에서 생성된 JSON 코드 블록을 그대로 붙여넣어 일괄 등록합니다.</p>
             <form id="quiz-json-import-form" class="channel-form">
               <label for="quiz-json-input">JSON 데이터</label>
               <textarea id="quiz-json-input" rows="4" placeholder='[{"category":"PLC","question":"...","correct_answers":["X0"]}]' required></textarea>
               <p id="quiz-json-status" class="admin-status-msg"></p>
-              <button id="quiz-json-submit" type="submit" class="admin-action-btn">📥 JSON 일괄 등록</button>
+              <button id="quiz-json-submit" type="submit" class="cbt-action-btn">📥 JSON 일괄 등록</button>
             </form>
           </div>
 
           <!-- Existing Quizzes & Documents List -->
-          <div class="admin-card">
-            <h3 class="admin-card-title">📚 등록된 퀴즈 목록 (<span id="admin-quiz-total-count">0</span>개)</h3>
+          <div class="cbt-admin-card full-width">
+            <h3 class="cbt-admin-title">📚 등록된 퀴즈 목록 (<span id="admin-quiz-total-count">0</span>개)</h3>
             <div id="admin-quiz-list" class="admin-quiz-list"></div>
           </div>
         </div>
