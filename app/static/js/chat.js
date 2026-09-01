@@ -8,6 +8,7 @@ import { openReactionPicker, renderMessageReactions } from './reactions.js';
 import { toggleMessagePin } from './pins.js';
 import { displayNickname, userDirectory } from './dm.js';
 import { channelsDirectory } from './channels.js';
+import { refreshStorageWarning } from './auth.js';
 
 export const replyTargets = new Map();
 export const pendingAttachments = new Map();
@@ -240,6 +241,7 @@ export function createAttachmentEntry(attachment) {
         const response = await fetch(`/api/files/${encodeURIComponent(attachment.id)}`, { method: 'DELETE' });
         if (!response.ok) throw new Error('파일 삭제 실패');
         showToast('파일을 삭제했습니다.', 'success');
+        refreshStorageWarning();
       } catch (err) {
         showToast(err.message || '파일 삭제 실패', 'error');
       }
@@ -308,15 +310,15 @@ export function createMessageActions(msg) {
     editBtn.addEventListener('click', () => startInlineMessageEdit(msg));
     actions.appendChild(editBtn);
 
-    const delBtn = document.createElement('button');
-    delBtn.type = 'button';
-    delBtn.className = 'danger';
-    delBtn.textContent = '삭제';
-    delBtn.addEventListener('click', () => deleteMessage(msg));
-    actions.appendChild(delBtn);
   }
 
   if (isAdmin && isChat) {
+    const hideBtn = document.createElement('button');
+    hideBtn.type = 'button';
+    hideBtn.textContent = msg.is_hidden ? '숨김 해제' : '숨김';
+    hideBtn.addEventListener('click', () => toggleMessageHidden(msg));
+    actions.appendChild(hideBtn);
+
     const moveBtn = document.createElement('button');
     moveBtn.type = 'button';
     moveBtn.textContent = '이동';
@@ -356,20 +358,25 @@ export function openMoveMessageModal(msg) {
   moveMessageModal.classList.remove('hidden');
 }
 
-export async function deleteMessage(msg) {
-  if (!confirm('이 메시지를 정말로 삭제하시겠습니까?')) return;
-  const isChat = msg.msgType === 'chat';
+export async function toggleMessageHidden(msg) {
+  if (msg.msgType !== 'chat') return;
   const rawId = typeof msg.message_id === 'string' ? msg.message_id.replace(/^(public|dm):/, '') : String(msg.id || '');
   const numId = Number(rawId);
   if (!numId) return;
 
-  const endpoint = isChat ? `/api/messages/${numId}` : `/api/dm/messages/${numId}`;
+  const hidden = !Boolean(msg.is_hidden);
   try {
-    const res = await fetch(endpoint, { method: 'DELETE' });
-    if (!res.ok) throw new Error('메시지 삭제 실패');
-    showToast('메시지를 삭제했습니다.', 'info');
+    const res = await fetch(`/api/messages/${numId}/hide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || '메시지 숨김 상태 변경 실패');
+    msg.is_hidden = hidden;
+    showToast(hidden ? '메시지를 숨겼습니다.' : '메시지 숨김을 해제했습니다.', 'info');
   } catch (err) {
-    showToast(err.message || '메시지 삭제 실패', 'error');
+    showToast(err.message || '메시지 숨김 상태 변경 실패', 'error');
   }
 }
 
@@ -428,7 +435,7 @@ export function startInlineMessageEdit(msg) {
     const isChat = msg.msgType === 'chat';
     const rawId = typeof msg.message_id === 'string' ? msg.message_id.replace(/^(public|dm):/, '') : String(msg.id || '');
     const numId = Number(rawId);
-    const endpoint = isChat ? `/api/messages/${numId}` : `/api/dm/messages/${numId}`;
+    const endpoint = isChat ? `/api/messages/${numId}` : `/api/dms/${numId}`;
 
     saveBtn.disabled = true;
     try {
@@ -736,6 +743,7 @@ export function startAttachmentUpload(convKey, st) {
       st.progress = 100;
       st.meta = response;
       st.file = null;
+      refreshStorageWarning();
     } else {
       st.status = 'error';
       st.error = response.detail || `업로드 실패 (${xhr.status})`;
@@ -769,6 +777,44 @@ export function initChatListeners(onSendMessage) {
   const chatArea = document.querySelector('.chat-area');
   const dropOverlay = document.getElementById('drop-overlay');
   const markdownToolbar = document.getElementById('markdown-toolbar');
+  const moveMessageModal = document.getElementById('move-message-modal');
+  const moveMessageModalClose = document.getElementById('move-message-modal-close');
+  const moveMessageForm = document.getElementById('move-message-form');
+
+  const closeMoveMessageModal = () => moveMessageModal?.classList.add('hidden');
+  if (moveMessageModalClose) moveMessageModalClose.addEventListener('click', closeMoveMessageModal);
+  if (moveMessageModal) {
+    moveMessageModal.addEventListener('click', event => {
+      if (event.target === moveMessageModal) closeMoveMessageModal();
+    });
+  }
+  if (moveMessageForm) {
+    moveMessageForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const messageId = Number(document.getElementById('move-message-id')?.value);
+      const toChannelId = Number(document.getElementById('move-message-channel-select')?.value);
+      const errorEl = document.getElementById('move-message-error');
+      const submitBtn = document.getElementById('move-message-submit');
+      if (!messageId || !toChannelId) return;
+      if (errorEl) errorEl.textContent = '';
+      if (submitBtn) submitBtn.disabled = true;
+      try {
+        const response = await fetch(`/api/messages/${messageId}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to_channel_id: toChannelId }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || '메시지를 이동하지 못했습니다.');
+        closeMoveMessageModal();
+        showToast('메시지를 이동했습니다.', 'success');
+      } catch (err) {
+        if (errorEl) errorEl.textContent = err.message || '메시지를 이동하지 못했습니다.';
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
 
   if (markdownToolbar) {
     markdownToolbar.addEventListener('click', (e) => {

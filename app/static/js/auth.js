@@ -10,6 +10,21 @@ const SAVED_USERNAME_KEY = 'bamboochat_saved_username';
 let authMode = 'login';
 let nicknameHintTimer = null;
 let quizHintTimer = null;
+let lastStorageWarning = 0;
+
+export async function refreshStorageWarning() {
+  if (!state.currentUser) return;
+  try {
+    const response = await fetch('/api/storage', { cache: 'no-store' });
+    if (!response.ok) return;
+    const status = await response.json();
+    const level = Number(status.warning_level || 0);
+    if (level && level !== lastStorageWarning) {
+      showToast(`저장 공간이 ${level}% 이상 사용 중입니다. 불필요한 파일을 삭제해 주세요.`, level >= 95 ? 'error' : 'warning');
+    }
+    lastStorageWarning = level;
+  } catch { /* advisory only */ }
+}
 
 export function setAuthMode(mode) {
   authMode = mode;
@@ -360,9 +375,54 @@ export async function loadAdminOverview() {
       });
     }
     renderAdminUsers(overview.users || []);
+    await loadArchivedChannels();
   } catch (error) {
     if (adminError) adminError.textContent = error.message;
   }
+}
+
+async function loadArchivedChannels() {
+  const container = document.getElementById('admin-archived-channels');
+  if (!container) return;
+  const response = await fetch('/api/channels?include_archived=true', { cache: 'no-store' });
+  const data = await response.json().catch(() => ([]));
+  if (!response.ok) throw new Error(data.detail || '보관된 채널을 불러오지 못했습니다.');
+  const archived = Array.isArray(data) ? data.filter(channel => channel.archived) : [];
+  container.replaceChildren();
+  if (!archived.length) {
+    container.textContent = '보관된 채널이 없습니다.';
+    return;
+  }
+  archived.forEach(channel => {
+    const row = document.createElement('div');
+    row.className = 'admin-user';
+    const identity = document.createElement('div');
+    identity.className = 'admin-user-identity';
+    const name = document.createElement('strong');
+    name.textContent = `# ${channel.display_name}`;
+    const detail = document.createElement('small');
+    detail.textContent = `${channel.name} · 메시지 ${channel.message_count || 0}개`;
+    identity.append(name, detail);
+    const restore = document.createElement('button');
+    restore.type = 'button';
+    restore.textContent = '보관 해제';
+    restore.addEventListener('click', async () => {
+      restore.disabled = true;
+      try {
+        const res = await fetch(`/api/channels/${channel.id}/unarchive`, { method: 'POST' });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(result.detail || '채널 보관을 해제하지 못했습니다.');
+        row.remove();
+        if (!container.children.length) container.textContent = '보관된 채널이 없습니다.';
+        showToast(`#${channel.display_name} 채널의 보관을 해제했습니다.`, 'success');
+      } catch (error) {
+        showToast(error.message || '채널 보관을 해제하지 못했습니다.', 'error');
+        restore.disabled = false;
+      }
+    });
+    row.append(identity, restore);
+    container.appendChild(row);
+  });
 }
 
 export async function openAdminPanel() {

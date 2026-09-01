@@ -211,6 +211,11 @@ export function initWebSocket(callbacks = {}) {
         break;
       }
 
+      case 'quiz_leaderboard_updated': {
+        if (callbacks.onLeaderboardInvalidated) callbacks.onLeaderboardInvalidated(data);
+        break;
+      }
+
       case 'conversation_muted_updated': {
         if (data.state) {
           const key = `${data.state.conversation_type}:${data.state.conversation_id}`;
@@ -246,6 +251,10 @@ export function initWebSocket(callbacks = {}) {
         Object.entries(dmHasOlder).forEach(([partner, hasOlder]) => {
           getOrCreateDm(partner).hasOlder = Boolean(hasOlder);
         });
+        if (data.read_states && typeof data.read_states === 'object') {
+          setMutedConversations(Object.values(data.read_states).filter(item => item?.muted));
+          if (callbacks.onMuteUpdated) callbacks.onMuteUpdated();
+        }
         if (data.unread_counts && typeof data.unread_counts === 'object') {
           state.unreadCounts.channels = {};
           state.unreadCounts.dms = {};
@@ -333,6 +342,24 @@ export function initWebSocket(callbacks = {}) {
         channelsDirectory.delete(delChanId);
         showToast(`'# ${delName}' 채널이 삭제되었습니다.`, 'warning');
         if (callbacks.onChannelUpdated) callbacks.onChannelUpdated();
+        break;
+      }
+
+      case 'channel_archived': {
+        const archivedId = Number(data.channel_id);
+        channelsDirectory.delete(archivedId);
+        state.channels = state.channels.filter(channel => channel.channelId !== archivedId);
+        if (callbacks.onChannelArchived) callbacks.onChannelArchived(archivedId);
+        if (callbacks.onChannelUpdated) callbacks.onChannelUpdated();
+        break;
+      }
+
+      case 'channel_unarchived': {
+        if (data.channel) {
+          channelsDirectory.set(Number(data.channel.id), data.channel);
+          getOrCreateChannel(data.channel);
+          if (callbacks.onChannelUpdated) callbacks.onChannelUpdated();
+        }
         break;
       }
 

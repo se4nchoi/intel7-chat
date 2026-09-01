@@ -213,6 +213,20 @@ class TestChannelApi:
         assert default["is_default"] is True
         assert "message_count" in default
 
+    def test_only_admin_can_request_archived_channels(self):
+        admin_client, admin = session_client("archive_admin", role="admin")
+        student_client, _ = session_client("archive_student", role="student")
+        archived = database.create_channel("archived-api", "Archived API", created_by_user_id=admin["id"])
+        database.archive_channel(archived["id"])
+
+        student_response = student_client.get("/api/channels?include_archived=true", headers=ORIGIN)
+        assert student_response.status_code == 403
+
+        admin_response = admin_client.get("/api/channels?include_archived=true", headers=ORIGIN)
+        assert admin_response.status_code == 200
+        archived_ids = {channel["id"] for channel in admin_response.json() if channel["archived"]}
+        assert archived["id"] in archived_ids
+
     def test_create_channel_success(self):
         client, user = session_client("bob")
         payload = {

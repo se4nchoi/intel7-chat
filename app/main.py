@@ -458,9 +458,11 @@ async def change_display_name(request: Request):
     return public_user(updated)
 
 @app.get("/api/channels")
-async def api_channels_list(request: Request):
-    request_user(request)
-    return list_channels()
+async def api_channels_list(request: Request, include_archived: bool = False):
+    user = request_user(request)
+    if include_archived and user["role"] != "admin":
+        raise HTTPException(403, "관리자 권한이 필요합니다.")
+    return list_channels(include_archived=include_archived)
 
 @app.post("/api/channels", status_code=201)
 async def api_create_channel(request: Request):
@@ -1261,6 +1263,10 @@ async def api_quiz_submit(request: Request):
         raise HTTPException(400, str(exc)) from exc
 
     await broadcast_users()
+    await broadcast({
+        "type": "quiz_leaderboard_updated",
+        "user_id": user["id"],
+    })
     return result
 
 

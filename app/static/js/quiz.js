@@ -12,6 +12,7 @@ let currentSelectedOption = null;
 let currentQuizNav = 'daily';
 let solvedHistoryQuizzes = [];
 let currentHistoryFilter = 'all';
+let currentLeaderboardPeriod = 'weekly';
 
 export function getCategoryIcon(catName = '') {
   const lower = catName.toLowerCase();
@@ -746,6 +747,7 @@ export async function fetchLeaderboard(period = 'weekly') {
   const leaderboardTbody = document.getElementById('leaderboard-tbody');
   const lbPeriodButtons = document.querySelectorAll('.lb-period-btn');
   if (!leaderboardTbody) return;
+  currentLeaderboardPeriod = period;
   lbPeriodButtons.forEach(b => b.classList.toggle('active', b.dataset.period === period));
   try {
     const res = await fetch(`/api/quiz/leaderboard?period=${period}`);
@@ -754,6 +756,12 @@ export async function fetchLeaderboard(period = 'weekly') {
     renderLeaderboard(data.leaderboard || []);
   } catch (err) {
     showToast(err.message || '리더보드 조회 실패', 'error');
+  }
+}
+
+export function handleLeaderboardInvalidated() {
+  if (currentQuizNav === 'leaderboard') {
+    fetchLeaderboard(currentLeaderboardPeriod);
   }
 }
 

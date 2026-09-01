@@ -51,8 +51,14 @@ def test_quiz_today_unauthenticated():
     assert resp.status_code == 401
 
 
-def test_quiz_today_and_submit_flow():
+def test_quiz_today_and_submit_flow(monkeypatch):
     client, user = session_client("alice", role="student")
+    broadcast_events = []
+
+    async def capture_broadcast(payload):
+        broadcast_events.append(payload)
+
+    monkeypatch.setattr(main, "broadcast", capture_broadcast)
 
     # 1. Get today's quizzes
     resp = client.get("/api/quiz/today")
@@ -78,6 +84,10 @@ def test_quiz_today_and_submit_flow():
     assert sub_data["is_correct"] is True
     assert sub_data["score_earned"] > 0
     assert sub_data["user_stats"]["current_streak"] == 1
+    assert {
+        "type": "quiz_leaderboard_updated",
+        "user_id": user["id"],
+    } in broadcast_events
 
     # 3. Duplicate submit should fail with 400
     dup_resp = client.post(

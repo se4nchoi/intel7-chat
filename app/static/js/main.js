@@ -5,7 +5,7 @@
 
 import { state, setCurrentUser, setActiveRoom } from './state.js';
 import { showToast } from './utils.js';
-import { initAuthListeners, bootstrapAuth, updateNickBadge, showNicknameHint } from './auth.js';
+import { initAuthListeners, bootstrapAuth, updateNickBadge, showNicknameHint, refreshStorageWarning } from './auth.js';
 import { loadChannels, renderChannels, initChannelsListeners, channelsDirectory } from './channels.js';
 import { renderDms, displayNickname, getOrCreateDm } from './dm.js';
 import {
@@ -28,7 +28,12 @@ import {
 } from './chat.js';
 import { initWebSocket, sendWebSocketMessage } from './ws.js';
 import { fetchActivePinnedMessages, initPinsListeners } from './pins.js';
-import { initQuizListeners, refreshQuizHeaderStreak, refreshQuizSidebarCounts } from './quiz.js';
+import {
+  initQuizListeners,
+  refreshQuizHeaderStreak,
+  refreshQuizSidebarCounts,
+  handleLeaderboardInvalidated,
+} from './quiz.js';
 import {
   openGlobalNotificationModal,
   closeGlobalNotificationModal,
@@ -46,6 +51,29 @@ import { playNotificationSound, setSoundMode, setSoundVolume } from './audio.js'
 
 
 // --- Room Switching ---
+async function acknowledgeConversation(type, id, lastReadMessageId) {
+  const numericId = Number(String(lastReadMessageId || '').replace(/^(public|dm):/, ''));
+  if (!Number.isInteger(numericId) || numericId <= 0) return;
+
+  // Do not let a slow history request acknowledge a room the user already left.
+  if (state.activeRoom.type !== type || String(state.activeRoom.id) !== String(id)) return;
+
+  try {
+    const res = await fetch('/api/read-states/ack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_type: type,
+        conversation_id: id,
+        last_read_message_id: numericId,
+      }),
+    });
+    if (!res.ok) throw new Error(`ACK failed with status ${res.status}`);
+  } catch (err) {
+    console.warn('Failed to acknowledge conversation read state.', err);
+  }
+}
+
 async function switchConversation(type, id) {
   saveCurrentDraft();
   setActiveRoom(type, id);
@@ -88,6 +116,7 @@ async function switchConversation(type, id) {
     const res = await fetch(endpoint, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
+      if (state.activeRoom.type !== type || String(state.activeRoom.id) !== String(id)) return;
       const rawMessages = Array.isArray(data.messages) ? data.messages : [];
       const messages = rawMessages.map(m => ({
         ...m,
@@ -98,6 +127,11 @@ async function switchConversation(type, id) {
       if (loadOlderBtn) {
         loadOlderBtn.classList.toggle('hidden', !data.has_more);
       }
+      const newestMessage = rawMessages.reduce((latest, message) => {
+        const messageId = Number(String(message.message_id || '').replace(/^(public|dm):/, ''));
+        return Number.isInteger(messageId) && messageId > latest ? messageId : latest;
+      }, 0);
+      if (newestMessage) acknowledgeConversation(type, id, newestMessage);
     }
   } catch { /* ignore */ }
 
@@ -486,10 +520,27 @@ function initApp() {
       onMessageHidden: (msg, isHidden) => updateMessageHiddenInDOM(msg, isHidden),
       onMessageMoved: (msgId) => removeMessageFromDOM(msgId),
       onAttachmentDeleted: (attachmentId) => applyAttachmentDeletedInDOM(attachmentId),
+      onChannelArchived: (channelId) => {
+        if (state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(channelId)) {
+          switchConversation('channel', 1);
+        }
+      },
+      onNewMessage: (message) => {
+        const messageType = message.msgType === 'dm' ? 'dm' : 'channel';
+        const isActive = messageType === 'channel'
+          ? state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(message.channel_id)
+          : state.activeRoom.type === 'dm'
+            && [message.from_nick, message.to_nick].includes(String(state.activeRoom.id));
+        if (isActive) {
+          acknowledgeConversation(state.activeRoom.type, state.activeRoom.id, message.message_id);
+        }
+      },
+      onLeaderboardInvalidated: (event) => handleLeaderboardInvalidated(event),
     });
     showNicknameHint();
     refreshQuizHeaderStreak();
     refreshQuizSidebarCounts();
+    refreshStorageWarning();
   };
 
 
