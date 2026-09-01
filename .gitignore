@@ -8,9 +8,10 @@ venv/
 env/
 
 # SQLite DB (서버가 자동 생성)
-data/chat.db
-data/uploads/
+data/
+data_dev/
 bamboochat.json
+bamboochat_dev.json
 
 # IDE
 .vscode/
