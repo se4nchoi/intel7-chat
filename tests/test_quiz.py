@@ -144,3 +144,61 @@ def test_batch_creation_and_admin_view(temp_db):
 
     admin_quizzes = database.get_all_quizzes_admin()
     assert any(q["id"] == ids[0] for q in admin_quizzes)
+
+
+def test_quiz_bookmarks_and_hints(temp_db):
+    u1 = database.create_user("student_bm", auth.hash_secret("pass123"))
+    quizzes = database.get_daily_quizzes(u1["id"], count=5)
+    q1 = quizzes[0]
+
+    # Hints check
+    assert "hint" in q1
+    assert len(q1["hint"]) > 0
+
+    # Initial bookmark state is False
+    assert q1["is_starred"] is False
+
+    # Toggle bookmark ON
+    is_starred = database.toggle_quiz_bookmark(u1["id"], q1["id"])
+    assert is_starred is True
+    assert q1["id"] in database.get_user_quiz_bookmarks_set(u1["id"])
+
+    # Starred review list should contain q1
+    starred_list = database.get_quiz_review_list(u1["id"], mode="starred")
+    assert len(starred_list) == 1
+    assert starred_list[0]["id"] == q1["id"]
+
+    # Toggle bookmark OFF
+    is_starred = database.toggle_quiz_bookmark(u1["id"], q1["id"])
+    assert is_starred is False
+    assert len(database.get_quiz_review_list(u1["id"], mode="starred")) == 0
+
+
+def test_quiz_review_and_retry(temp_db):
+    u1 = database.create_user("student_retry", auth.hash_secret("pass123"))
+    quizzes = database.get_daily_quizzes(u1["id"], count=5)
+    q1 = quizzes[0]
+    q2 = quizzes[1]
+
+    # Student submits q1 wrong, q2 correct
+    database.submit_quiz_answer(u1["id"], q1["id"], "wrong_answer_xyz")
+    database.submit_quiz_answer(u1["id"], q2["id"], "1")
+
+    # Wrong list should have q1
+    wrong_list = database.get_quiz_review_list(u1["id"], mode="wrong")
+    assert len(wrong_list) == 1
+    assert wrong_list[0]["id"] == q1["id"]
+    assert wrong_list[0]["is_correct"] is False
+
+    # History list should have both
+    hist_list = database.get_quiz_review_list(u1["id"], mode="history")
+    assert len(hist_list) == 2
+
+    # Practice retry for q1
+    retry_res = database.retry_quiz_answer(u1["id"], q1["id"], "Y0")
+    assert retry_res["is_correct"] is True
+
+    # Now q1 is corrected in review
+    wrong_after = database.get_quiz_review_list(u1["id"], mode="wrong")
+    assert len(wrong_after) == 0
+

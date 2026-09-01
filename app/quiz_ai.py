@@ -89,6 +89,7 @@ QUIZ_JSON_SCHEMA = {
                 "items": {"type": "STRING"},
                 "description": "정답 및 허용 가능한 동의어 목록"
             },
+            "hint": {"type": "STRING", "description": "문제 해결의 실마리를 잡을 수 있는 간결한 핵심 힌트"},
             "explanation": {"type": "STRING", "description": "상세한 풀이 및 해설"},
             "source_ref": {"type": "STRING", "description": "강의자료 출처 및 페이지"}
         },

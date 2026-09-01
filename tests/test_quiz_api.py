@@ -150,3 +150,44 @@ def test_admin_quiz_import_and_management():
     # Verify deletion
     list_after = admin_client.get("/api/admin/quiz/list").json()["quizzes"]
     assert not any(q["id"] == created_id for q in list_after)
+
+
+def test_quiz_bookmark_and_review_api():
+    client, user = session_client("charlie", role="student")
+
+    today_resp = client.get("/api/quiz/today")
+    quizzes = today_resp.json()["quizzes"]
+    q1 = quizzes[0]
+
+    # 1. Bookmark toggle
+    bm_resp = client.post(f"/api/quiz/bookmark/{q1['id']}", headers=ORIGIN)
+    assert bm_resp.status_code == 200
+    assert bm_resp.json()["is_starred"] is True
+
+    # 2. Get review starred
+    starred_resp = client.get("/api/quiz/review?mode=starred")
+    assert starred_resp.status_code == 200
+    assert starred_resp.json()["count"] == 1
+    assert starred_resp.json()["quizzes"][0]["id"] == q1["id"]
+
+    # 3. Submit wrong answer in daily
+    client.post(
+        "/api/quiz/submit",
+        json={"quiz_id": q1["id"], "answer": "totally_wrong"},
+        headers=ORIGIN,
+    )
+
+    # 4. Get review wrong
+    wrong_resp = client.get("/api/quiz/review?mode=wrong")
+    assert wrong_resp.status_code == 200
+    assert wrong_resp.json()["count"] == 1
+
+    # 5. Retry in practice mode
+    retry_resp = client.post(
+        "/api/quiz/retry",
+        json={"quiz_id": q1["id"], "answer": "Y0"},
+        headers=ORIGIN,
+    )
+    assert retry_resp.status_code == 200
+    assert retry_resp.json()["is_correct"] is True
+

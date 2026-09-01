@@ -305,8 +305,19 @@ def _migrate_v9(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_quizzes_daily ON quizzes(daily_date)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_sub_user ON quiz_submissions(user_id, quiz_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_sub_date ON quiz_submissions(submitted_date)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_stats_score ON user_quiz_stats(total_score DESC)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_stats_weekly ON user_quiz_stats(weekly_score DESC)")
+def _migrate_v10(conn: sqlite3.Connection) -> None:
+    """Add hint to quizzes and create quiz_bookmarks table."""
+    _add_column_if_missing(conn, "quizzes", "hint", "TEXT DEFAULT ''")
+    conn.execute("""CREATE TABLE IF NOT EXISTS quiz_bookmarks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        quiz_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(user_id, quiz_id),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_bm_user ON quiz_bookmarks(user_id, quiz_id)")
 
 _MIGRATIONS = [
     _migrate_v1,
@@ -318,6 +329,7 @@ _MIGRATIONS = [
     _migrate_v7,
     _migrate_v8,
     _migrate_v9,
+    _migrate_v10,
 ]
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -1323,6 +1335,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "image_filename": "",
         "options": None,
         "correct_answers": ["Y0", "Y00", "Y0 a접점", "Y0 A접점", "Y000", "LD Y0", "OR Y0"],
+        "hint": "출력 코일과 동일한 디바이스 번호의 a접점을 병렬로 연결합니다.",
         "explanation": "기동 스위치(X0)와 출력 릴레이의 a접점(Y0)을 병렬 연결하면, 스위치가 복귀해도 출력 Y0의 a접점이 닫혀 있어 전원이 유지됩니다.",
         "source_ref": "PLC 시퀀스 실습 4강 - 자기유지 회로 p.12"
     },
@@ -1333,6 +1346,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "question": "PLC 래더 다이어그램에서 두 개 이상의 a접점을 직렬로 연결할 때 사용하는 기본 명령어는 무엇인가?",
         "options": ["1. AND", "2. OR", "3. OUT", "4. SET"],
         "correct_answers": ["1", "1번", "AND", "1. AND"],
+        "hint": "직렬 접속에는 논리곱(Logical AND) 연산 명령어를 사용합니다.",
         "explanation": "직렬 접속에는 AND(a접점 직렬) 또는 ANI/AND NOT(b접점 직렬) 명령어를 사용합니다.",
         "source_ref": "PLC 기초 명령어 편람 p.5"
     },
@@ -1344,6 +1358,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "image_filename": "",
         "options": None,
         "correct_answers": ["30", "K30", "K 30"],
+        "hint": "100ms는 0.1초입니다. 목표 시간(3초)을 0.1초로 나누어 보세요.",
         "explanation": "100ms(0.1초) 단위 타이머에서 3초는 3.0 / 0.1 = 30이므로 K30을 설정합니다.",
         "source_ref": "PLC 타이머/카운터 응용 p.23"
     },
@@ -1354,6 +1369,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "question": "3상 유도전동기의 회전 방향을 역회전으로 바꾸기 위한 가장 올바른 결선 변경 방법은?",
         "options": ["1. 3상 중 임의의 2선의 접속을 서로 바꾼다", "2. 3선의 접속을 모두 일제히 바꾼다", "3. 접지선(E)의 위치를 전원선으로 바꾼다", "4. 공급 전압을 2배로 승압한다"],
         "correct_answers": ["1", "1번", "1. 3상 중 임의의 2선의 접속을 서로 바꾼다"],
+        "hint": "3개 선 중 임의의 2개 선 위치를 맞바꾸면 회전자계 방향이 반전됩니다.",
         "explanation": "3상 교류 전동기(R, S, T)는 3상 중 임의의 두 선의 접속을 서로 바꾸면 회전자계의 방향이 반대가 되어 전동기가 역회전합니다.",
         "source_ref": "전기기능사 필기 CBT 기출문제"
     },
@@ -1365,6 +1381,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "image_filename": "",
         "options": None,
         "correct_answers": ["인터록", "인터록 회로", "인터록회로", "INTERLOCK", "Interlock"],
+        "hint": "상대방의 동작을 서로 잠근다는 의미의 영단어(Inter-lock)입니다.",
         "explanation": "두 개의 상반된 동작이 동시에 일어나는 것을 방지하기 위해 상대 회로를 잠그는 회로를 인터록(Interlock) 회로라고 합니다.",
         "source_ref": "시퀀스 제어 핵심이론 p.31"
     },
@@ -1375,6 +1392,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "question": "2진수 10110(2)을 10진수로 올바르게 변환한 값은?",
         "options": ["1. 18", "2. 20", "3. 22", "4. 24"],
         "correct_answers": ["3", "3번", "22", "3. 22"],
+        "hint": "각 자리수의 가중치(16, 8, 4, 2, 1) 중 1인 자리만 더해보세요: 16 + 4 + 2",
         "explanation": "16*1 + 8*0 + 4*1 + 2*1 + 1*0 = 16 + 4 + 2 = 22 입니다.",
         "source_ref": "전자계산기일반 CBT 기출"
     },
@@ -1386,6 +1404,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "image_filename": "",
         "options": None,
         "correct_answers": ["LDI", "LD NOT", "LDNOT", "LD I"],
+        "hint": "Load Inverse의 약자 3글자입니다.",
         "explanation": "모선에서 a접점 시작은 LD(Load), b접점 시작은 LDI(Load Inverse) 명령어를 사용합니다.",
         "source_ref": "MELSEC 명령어 일람표"
     }
@@ -1404,9 +1423,9 @@ def seed_default_quizzes(conn: Optional[sqlite3.Connection] = None) -> None:
             corrects = json.dumps(q.get("correct_answers", []), ensure_ascii=False)
             c.execute("""INSERT INTO quizzes
                 (category, difficulty, question_type, question, image_filename,
-                 options_json, correct_answers_json, explanation, source_ref,
+                 options_json, correct_answers_json, hint, explanation, source_ref,
                  is_active, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
                 (
                     q.get("category", "PLC/시퀀스"),
                     q.get("difficulty", "medium"),
@@ -1415,6 +1434,7 @@ def seed_default_quizzes(conn: Optional[sqlite3.Connection] = None) -> None:
                     q.get("image_filename", ""),
                     opts,
                     corrects,
+                    q.get("hint", ""),
                     q.get("explanation", ""),
                     q.get("source_ref", ""),
                     now,
@@ -1466,6 +1486,7 @@ def create_quiz(
     correct_answers: List[str],
     options: Optional[List[str]] = None,
     image_filename: Optional[str] = None,
+    hint: str = "",
     explanation: str = "",
     source_doc_id: Optional[int] = None,
     source_ref: str = "",
@@ -1478,9 +1499,9 @@ def create_quiz(
     with get_connection() as conn:
         cur = conn.execute("""INSERT INTO quizzes
             (category, difficulty, question_type, question, image_filename,
-             options_json, correct_answers_json, explanation, source_doc_id,
+             options_json, correct_answers_json, hint, explanation, source_doc_id,
              source_ref, daily_date, is_active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
             (
                 category,
                 difficulty,
@@ -1489,6 +1510,7 @@ def create_quiz(
                 image_filename or "",
                 opts_json,
                 corrects_json,
+                hint,
                 explanation,
                 source_doc_id,
                 source_ref,
@@ -1515,9 +1537,9 @@ def create_quiz_batch(
             corrects_json = json.dumps(corrects, ensure_ascii=False)
             cur = conn.execute("""INSERT INTO quizzes
                 (category, difficulty, question_type, question, image_filename,
-                 options_json, correct_answers_json, explanation, source_doc_id,
+                 options_json, correct_answers_json, hint, explanation, source_doc_id,
                  source_ref, daily_date, is_active, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
                 (
                     q.get("category", "PLC/시퀀스"),
                     q.get("difficulty", "medium"),
@@ -1526,6 +1548,7 @@ def create_quiz_batch(
                     q.get("image_filename", "") or q.get("image_url", ""),
                     opts_json,
                     corrects_json,
+                    q.get("hint", ""),
                     q.get("explanation", ""),
                     source_doc_id,
                     q.get("source_ref", ""),
@@ -1562,13 +1585,42 @@ def delete_quiz(quiz_id: int) -> bool:
         return cur.rowcount > 0
 
 
-def get_daily_quizzes(user_id: int, count: int = 5) -> List[Dict[str, Any]]:
-    """Returns active educational quizzes with the current user's submission state."""
+def toggle_quiz_bookmark(user_id: int, quiz_id: int) -> bool:
+    """Toggles a bookmark/star for a quiz by the given user. Returns True if now bookmarked."""
+    now = utc_now()
     with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT id FROM quiz_bookmarks WHERE user_id = ? AND quiz_id = ?",
+            (user_id, quiz_id)
+        ).fetchone()
+        if existing:
+            conn.execute("DELETE FROM quiz_bookmarks WHERE id = ?", (existing["id"],))
+            return False
+        else:
+            conn.execute(
+                "INSERT INTO quiz_bookmarks (user_id, quiz_id, created_at) VALUES (?, ?, ?)",
+                (user_id, quiz_id, now)
+            )
+            return True
+
+
+def get_user_quiz_bookmarks_set(user_id: int) -> Set[int]:
+    """Returns the set of quiz IDs bookmarked by the user."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT quiz_id FROM quiz_bookmarks WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        return {r["quiz_id"] for r in rows}
+
+
+def get_daily_quizzes(user_id: int, count: int = 5) -> List[Dict[str, Any]]:
+    """Returns active educational quizzes with the current user's submission & bookmark state."""
+    with get_connection() as conn:
+        starred_set = get_user_quiz_bookmarks_set(user_id)
         rows = conn.execute("""
             SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
                    q.image_filename, q.options_json, q.correct_answers_json,
-                   q.explanation, q.source_ref, q.daily_date,
+                   q.hint, q.explanation, q.source_ref, q.daily_date,
                    qs.id as submission_id, qs.user_answer, qs.is_correct,
                    qs.score_earned, qs.submitted_at
             FROM quizzes q
@@ -1590,8 +1642,10 @@ def get_daily_quizzes(user_id: int, count: int = 5) -> List[Dict[str, Any]]:
                 "question": r["question"],
                 "image_filename": r["image_filename"] or "",
                 "options": options,
+                "hint": r["hint"] or "",
                 "source_ref": r["source_ref"] or "",
                 "is_solved": is_solved,
+                "is_starred": r["id"] in starred_set,
             }
             if is_solved:
                 item["user_answer"] = r["user_answer"]
@@ -1606,6 +1660,117 @@ def get_daily_quizzes(user_id: int, count: int = 5) -> List[Dict[str, Any]]:
                 item["score_earned"] = 0
             quizzes.append(item)
         return quizzes
+
+
+def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, Any]]:
+    """Returns quizzes for review: 'wrong' (incorrect answers), 'starred' (bookmarks), or 'history' (all solved)."""
+    with get_connection() as conn:
+        starred_set = get_user_quiz_bookmarks_set(user_id)
+        if mode == "wrong":
+            rows = conn.execute("""
+                SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
+                       q.image_filename, q.options_json, q.correct_answers_json,
+                       q.hint, q.explanation, q.source_ref,
+                       qs.id as submission_id, qs.user_answer, qs.is_correct,
+                       qs.score_earned, qs.submitted_at
+                FROM quiz_submissions qs
+                JOIN quizzes q ON qs.quiz_id = q.id
+                WHERE qs.user_id = ? AND qs.is_correct = 0
+                ORDER BY qs.id DESC
+            """, (user_id,)).fetchall()
+        elif mode == "starred":
+            rows = conn.execute("""
+                SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
+                       q.image_filename, q.options_json, q.correct_answers_json,
+                       q.hint, q.explanation, q.source_ref,
+                       qs.id as submission_id, qs.user_answer, qs.is_correct,
+                       qs.score_earned, qs.submitted_at
+                FROM quiz_bookmarks qb
+                JOIN quizzes q ON qb.quiz_id = q.id
+                LEFT JOIN quiz_submissions qs ON q.id = qs.quiz_id AND qs.user_id = ?
+                WHERE qb.user_id = ?
+                ORDER BY qb.id DESC
+            """, (user_id, user_id)).fetchall()
+        else:  # 'history' / all
+            rows = conn.execute("""
+                SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
+                       q.image_filename, q.options_json, q.correct_answers_json,
+                       q.hint, q.explanation, q.source_ref,
+                       qs.id as submission_id, qs.user_answer, qs.is_correct,
+                       qs.score_earned, qs.submitted_at
+                FROM quiz_submissions qs
+                JOIN quizzes q ON qs.quiz_id = q.id
+                WHERE qs.user_id = ?
+                ORDER BY qs.id DESC
+            """, (user_id,)).fetchall()
+
+        results = []
+        for r in rows:
+            is_solved = r["submission_id"] is not None
+            options = json.loads(r["options_json"]) if r["options_json"] else None
+            item: Dict[str, Any] = {
+                "id": r["id"],
+                "category": r["category"],
+                "difficulty": r["difficulty"],
+                "question_type": r["question_type"],
+                "question": r["question"],
+                "image_filename": r["image_filename"] or "",
+                "options": options,
+                "hint": r["hint"] or "",
+                "source_ref": r["source_ref"] or "",
+                "is_solved": is_solved,
+                "is_starred": r["id"] in starred_set,
+                "user_answer": r["user_answer"] if is_solved else None,
+                "is_correct": bool(r["is_correct"]) if is_solved else None,
+                "score_earned": r["score_earned"] if is_solved else 0,
+                "submitted_at": r["submitted_at"] if is_solved else None,
+                "correct_answers": json.loads(r["correct_answers_json"]) if is_solved else [],
+                "explanation": r["explanation"] if is_solved else "",
+            }
+            results.append(item)
+        return results
+
+
+def retry_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str, Any]:
+    """Allows repeating a wrong or saved quiz in practice mode and updates review state."""
+    from app.quiz_ai import check_quiz_answer
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    now = utc_now()
+
+    with get_connection() as conn:
+        quiz_row = conn.execute("SELECT * FROM quizzes WHERE id = ?", (quiz_id,)).fetchone()
+        if not quiz_row:
+            raise ValueError("존재하지 않는 퀴즈입니다.")
+
+        correct_answers: List[str] = json.loads(quiz_row["correct_answers_json"])
+        is_correct = 1 if check_quiz_answer(correct_answers, user_answer) else 0
+
+        # Update or insert practice submission
+        existing = conn.execute(
+            "SELECT id FROM quiz_submissions WHERE quiz_id = ? AND user_id = ?",
+            (quiz_id, user_id)
+        ).fetchone()
+
+        if existing:
+            conn.execute("""UPDATE quiz_submissions SET
+                user_answer = ?, is_correct = ?, submitted_at = ?
+                WHERE id = ?""", (user_answer, is_correct, now, existing["id"]))
+        else:
+            conn.execute("""INSERT INTO quiz_submissions
+                (quiz_id, user_id, user_answer, is_correct, score_earned, submitted_at, submitted_date)
+                VALUES (?, ?, ?, ?, 0, ?, ?)""",
+                (quiz_id, user_id, user_answer, is_correct, now, today_str))
+
+        stats = get_user_quiz_stats(user_id)
+        return {
+            "is_correct": bool(is_correct),
+            "score_earned": 0,
+            "correct_answers": correct_answers,
+            "explanation": quiz_row["explanation"] or "",
+            "source_ref": quiz_row["source_ref"] or "",
+            "user_stats": stats,
+        }
 
 
 def submit_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str, Any]:

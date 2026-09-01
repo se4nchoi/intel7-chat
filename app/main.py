@@ -44,7 +44,8 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     normalize_dm_conversation_id, pin_message, unpin_message, get_pinned_messages, get_pinned_message_ids,
     get_daily_quizzes, submit_quiz_answer, get_user_quiz_stats, get_quiz_leaderboard,
     get_user_quiz_badge, get_user_quiz_badges_map, create_quiz, create_quiz_batch,
-    get_all_quizzes_admin, delete_quiz, save_quiz_source_document, get_quiz_source_documents)
+    get_all_quizzes_admin, delete_quiz, save_quiz_source_document, get_quiz_source_documents,
+    toggle_quiz_bookmark, get_quiz_review_list, retry_quiz_answer)
 from app.quiz_ai import generate_quizzes_with_gemini, check_quiz_answer, normalize_quiz_answer
 
 CONFIG = load_config()
@@ -1240,6 +1241,44 @@ async def api_quiz_submit(request: Request):
 
     await broadcast_users()
     return result
+
+
+@app.post("/api/quiz/retry")
+async def api_quiz_retry(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    data = await read_json_body(request)
+    try:
+        quiz_id = int(data.get("quiz_id", 0))
+    except (ValueError, TypeError):
+        raise HTTPException(400, "올바른 퀴즈 ID가 필요합니다.")
+    user_answer = str(data.get("answer", "")).strip()
+    if not user_answer:
+        raise HTTPException(400, "답안을 입력하세요.")
+    try:
+        result = retry_quiz_answer(user["id"], quiz_id, user_answer)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return result
+
+
+@app.post("/api/quiz/bookmark/{quiz_id}")
+async def api_quiz_bookmark(quiz_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    is_starred = toggle_quiz_bookmark(user["id"], quiz_id)
+    return {"status": "ok", "quiz_id": quiz_id, "is_starred": is_starred}
+
+
+@app.get("/api/quiz/review")
+async def api_quiz_review(request: Request, mode: str = "wrong"):
+    user = request_user(request)
+    if mode not in {"wrong", "starred", "history"}:
+        mode = "wrong"
+    quizzes = get_quiz_review_list(user["id"], mode=mode)
+    return {"mode": mode, "quizzes": quizzes, "count": len(quizzes)}
 
 
 @app.get("/api/quiz/leaderboard")

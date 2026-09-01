@@ -485,12 +485,15 @@
         <!-- Navigation Tabs -->
         <div class="cbt-tabs" role="tablist">
           <button id="quiz-tab-daily-btn" class="cbt-tab active" type="button" role="tab" aria-selected="true" data-tab="daily">📝 오늘의 퀴즈</button>
-          <button id="quiz-tab-leaderboard-btn" class="cbt-tab" type="button" role="tab" aria-selected="false" data-tab="leaderboard">🏆 랭킹 & 순위표</button>
-          <button id="quiz-tab-admin-btn" class="cbt-tab hidden" type="button" role="tab" aria-selected="false" data-tab="admin">⚙️ 퀴즈 관리</button>
+          <button id="quiz-tab-wrong-btn" class="cbt-tab" type="button" role="tab" aria-selected="false" data-tab="wrong">❌ 오답 복습</button>
+          <button id="quiz-tab-starred-btn" class="cbt-tab" type="button" role="tab" data-tab="starred">⭐ 보관함</button>
+          <button id="quiz-tab-history-btn" class="cbt-tab" type="button" role="tab" data-tab="history">📜 전체 이력</button>
+          <button id="quiz-tab-leaderboard-btn" class="cbt-tab" type="button" role="tab" aria-selected="false" data-tab="leaderboard">🏆 랭킹</button>
+          <button id="quiz-tab-admin-btn" class="cbt-tab hidden" type="button" role="tab" aria-selected="false" data-tab="admin">⚙️ 관리자</button>
         </div>
       </div>
 
-      <!-- Tab 1: 오늘의 문제 -->
+      <!-- Tab 1: 오늘의 문제 & 복습 퀴즈 러너 -->
       <div id="quiz-tab-daily-content" class="quiz-tab-content cbt-content-pane">
         <!-- Progress Bar Row -->
         <div class="cbt-progress-row">
@@ -508,17 +511,19 @@
         <!-- Quiz Loading State -->
         <div id="quiz-loading-state" class="quiz-loading">
           <div class="quiz-spinner"></div>
-          <span>오늘의 문제를 불러오는 중입니다...</span>
+          <span id="quiz-loading-text">문제를 불러오는 중입니다...</span>
         </div>
 
         <!-- Quiz Main Container -->
         <div id="quiz-container" class="cbt-quiz-wrap hidden">
           <!-- Active Question Card -->
           <div id="quiz-card" class="cbt-card">
-            <!-- Card Header: Category & Type Badge -->
+            <!-- Card Header: Category & Action Badges -->
             <div class="cbt-card-header">
               <span id="quiz-category-tag" class="cbt-category-tag">PLC/시퀀스</span>
               <div class="cbt-header-badges">
+                <button id="quiz-star-btn" class="cbt-star-btn" type="button" title="문제 보관/북마크">⭐ <span id="quiz-star-label">보관</span></button>
+                <button id="quiz-hint-btn" class="cbt-hint-btn" type="button" title="힌트 보기">💡 힌트</button>
                 <span id="quiz-difficulty-tag" class="cbt-diff-badge">보통</span>
                 <span id="quiz-type-tag" class="cbt-type-badge">4지선다</span>
                 <span id="quiz-score-badge" class="cbt-score-badge">+20점</span>
@@ -527,6 +532,15 @@
 
             <!-- Question Text -->
             <h3 id="quiz-question-text" class="cbt-question-text"></h3>
+
+            <!-- Hint Box (Toggled on click) -->
+            <div id="quiz-hint-box" class="cbt-hint-box hidden">
+              <div class="cbt-hint-header">
+                <span class="cbt-hint-icon">💡</span>
+                <strong>문제 해결 힌트</strong>
+              </div>
+              <p id="quiz-hint-text" class="cbt-hint-text"></p>
+            </div>
 
             <!-- Mac-style Code / Diagram Window (Optional) -->
             <div id="quiz-image-container" class="cbt-code-window hidden">

@@ -3201,13 +3201,13 @@ kbd {
    Classroom CBT Quiz & Mini-Leaderboard Styles (Cobalt Blue Theme)
    ============================================================ */
 
-/* Header Quiz Button */
+/* Header Quiz Button (Outline style) */
 .quiz-header-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(79, 142, 247, 0.12);
-  border: 1px solid rgba(79, 142, 247, 0.35);
+  background: transparent;
+  border: 1px solid rgba(79, 142, 247, 0.4);
   color: #93c5fd;
   padding: 5px 12px;
   border-radius: 8px;
@@ -3218,11 +3218,11 @@ kbd {
 }
 
 .quiz-header-btn:hover {
-  background: rgba(79, 142, 247, 0.22);
+  background: rgba(79, 142, 247, 0.08);
   border-color: #4f8ef7;
   color: #fff;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(79, 142, 247, 0.25);
+  box-shadow: 0 4px 12px rgba(79, 142, 247, 0.15);
 }
 
 .quiz-btn-icon {
@@ -3230,8 +3230,8 @@ kbd {
 }
 
 .header-quiz-streak {
-  background: rgba(239, 68, 68, 0.18);
-  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
   color: #fca5a5;
   padding: 1px 6px;
   border-radius: 999px;
@@ -3257,31 +3257,31 @@ kbd {
 }
 
 .quiz-user-badge.badge-rank {
-  background: rgba(234, 179, 8, 0.18);
-  border: 1px solid rgba(234, 179, 8, 0.45);
+  background: transparent;
+  border: 1px solid rgba(234, 179, 8, 0.5);
   color: #fde047;
 }
 
 .quiz-user-badge.badge-streak {
-  background: rgba(249, 115, 22, 0.18);
-  border: 1px solid rgba(249, 115, 22, 0.4);
+  background: transparent;
+  border: 1px solid rgba(249, 115, 22, 0.45);
   color: #fdba74;
 }
 
 .quiz-user-badge.badge-score {
-  background: rgba(79, 142, 247, 0.18);
-  border: 1px solid rgba(79, 142, 247, 0.4);
+  background: transparent;
+  border: 1px solid rgba(79, 142, 247, 0.45);
   color: #93c5fd;
 }
 
 /* CBT Modal Window Box */
 .cbt-modal-box {
-  max-width: 820px;
+  max-width: 840px;
   width: 95vw;
   max-height: 92vh;
   display: flex;
   flex-direction: column;
-  background: #11141b;
+  background: #10131a;
   border-radius: 14px;
   border: 1px solid #232838;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.03);
@@ -3294,7 +3294,7 @@ kbd {
   align-items: center;
   justify-content: space-between;
   padding: 14px 22px;
-  background: #161a24;
+  background: #141822;
   border-bottom: 1px solid #232838;
   gap: 16px;
   flex-wrap: wrap;
@@ -3307,7 +3307,7 @@ kbd {
 }
 
 .cbt-back-btn {
-  background: #1e2330;
+  background: transparent;
   border: 1px solid #2a3044;
   color: #94a3b8;
   padding: 6px 12px;
@@ -3322,7 +3322,7 @@ kbd {
 }
 
 .cbt-back-btn:hover {
-  background: #252c3d;
+  background: rgba(59, 130, 246, 0.06);
   color: #fff;
   border-color: #3b82f6;
 }
@@ -3347,8 +3347,8 @@ kbd {
 }
 
 .cbt-header-badge {
-  background: rgba(79, 142, 247, 0.12);
-  border: 1px solid rgba(79, 142, 247, 0.28);
+  background: transparent;
+  border: 1px solid rgba(79, 142, 247, 0.35);
   color: #93c5fd;
   font-size: 0.7rem;
   font-weight: 600;
@@ -3359,19 +3359,20 @@ kbd {
 /* Top Tab Switcher */
 .cbt-tabs {
   display: flex;
-  background: #0f1218;
-  padding: 4px;
+  background: transparent;
+  padding: 2px;
   border-radius: 8px;
   border: 1px solid #202534;
-  gap: 4px;
+  gap: 3px;
+  flex-wrap: wrap;
 }
 
 .cbt-tab {
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: #94a3b8;
-  padding: 6px 14px;
-  font-size: 0.82rem;
+  padding: 6px 12px;
+  font-size: 0.8rem;
   font-weight: 600;
   border-radius: 6px;
   cursor: pointer;
@@ -3380,12 +3381,13 @@ kbd {
 
 .cbt-tab:hover {
   color: #f1f5f9;
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .cbt-tab.active {
-  background: #202738;
+  background: rgba(59, 130, 246, 0.08);
   color: #60a5fa;
-  border: 1px solid rgba(96, 165, 250, 0.3);
+  border-color: rgba(96, 165, 250, 0.4);
 }
 
 .cbt-content-pane {
@@ -3444,8 +3446,8 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.35);
   color: #fca5a5;
   padding: 2px 8px;
   border-radius: 999px;
@@ -3455,7 +3457,7 @@ kbd {
 
 /* Main CBT Question Card */
 .cbt-card {
-  background: #151923;
+  background: #141722;
   border: 1px solid #23293c;
   border-radius: 12px;
   padding: 24px;
@@ -3468,6 +3470,8 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .cbt-category-tag {
@@ -3482,8 +3486,56 @@ kbd {
   gap: 8px;
 }
 
+.cbt-star-btn {
+  background: transparent;
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  color: #fde047;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.cbt-star-btn:hover {
+  background: rgba(234, 179, 8, 0.08);
+  border-color: #facc15;
+}
+
+.cbt-star-btn.active {
+  background: rgba(234, 179, 8, 0.14);
+  border-color: #eab308;
+  color: #fef08a;
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.3);
+}
+
+.cbt-hint-btn {
+  background: transparent;
+  border: 1px solid rgba(79, 142, 247, 0.35);
+  color: #93c5fd;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.cbt-hint-btn:hover {
+  background: rgba(79, 142, 247, 0.08);
+  border-color: #60a5fa;
+  color: #fff;
+}
+
 .cbt-diff-badge {
-  background: #1c2130;
+  background: transparent;
   border: 1px solid #293046;
   color: #94a3b8;
   font-size: 0.72rem;
@@ -3493,7 +3545,7 @@ kbd {
 }
 
 .cbt-type-badge {
-  background: rgba(79, 142, 247, 0.15);
+  background: transparent;
   border: 1px solid rgba(79, 142, 247, 0.35);
   color: #93c5fd;
   font-size: 0.72rem;
@@ -3513,6 +3565,32 @@ kbd {
   font-weight: 600;
   color: #f8fafc;
   line-height: 1.6;
+  margin: 0;
+}
+
+/* Hint Box */
+.cbt-hint-box {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px dashed rgba(79, 142, 247, 0.45);
+  border-radius: 8px;
+  padding: 12px 16px;
+  animation: fadeIn 0.2s ease;
+}
+
+.cbt-hint-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #93c5fd;
+  margin-bottom: 4px;
+}
+
+.cbt-hint-text {
+  font-size: 0.88rem;
+  color: #cbd5e1;
+  line-height: 1.55;
   margin: 0;
 }
 
@@ -3574,7 +3652,7 @@ kbd {
   margin-top: 6px;
 }
 
-/* Options List (4지선다 ① ② ③ ④) */
+/* Options List (4지선다 ① ② ③ ④ - Outline style) */
 .cbt-options-list {
   display: flex;
   flex-direction: column;
@@ -3586,10 +3664,10 @@ kbd {
   align-items: flex-start;
   gap: 12px;
   padding: 14px 18px;
-  background: #11141c;
+  background: transparent;
   border: 1px solid #23293c;
   border-radius: 10px;
-  color: #e2e8f0;
+  color: #cbd5e1;
   font-size: 0.95rem;
   font-weight: 500;
   line-height: 1.5;
@@ -3600,17 +3678,18 @@ kbd {
 }
 
 .cbt-option-btn:hover:not(:disabled) {
-  background: #171d2b;
+  background: rgba(59, 130, 246, 0.04);
   border-color: #3b82f6;
+  color: #fff;
   transform: translateX(2px);
 }
 
 .cbt-option-btn.selected {
-  background: rgba(59, 130, 246, 0.14);
-  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.08);
+  border-color: #60a5fa;
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 0 0 1px #3b82f6;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.5);
 }
 
 .cbt-opt-num {
@@ -3662,21 +3741,28 @@ kbd {
 }
 
 .cbt-submit-btn {
-  background: #3b82f6;
-  color: #fff;
-  border: none;
+  background: transparent;
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.45);
   border-radius: 8px;
-  padding: 0 24px;
+  padding: 0 22px;
   font-weight: 700;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
 }
 
 .cbt-submit-btn:hover:not(:disabled) {
-  background: #2563eb;
+  background: rgba(59, 130, 246, 0.1);
+  border-color: #60a5fa;
+  color: #ffffff;
   transform: translateY(-1px);
+}
+
+.cbt-submit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .cbt-input-guide {
@@ -3698,7 +3784,7 @@ kbd {
 }
 
 .cbt-chip-btn {
-  background: #141822;
+  background: transparent;
   border: 1px solid #23293c;
   color: #94a3b8;
   border-radius: 6px;
@@ -3712,7 +3798,7 @@ kbd {
 .cbt-chip-btn:hover {
   color: #fff;
   border-color: #3b82f6;
-  background: rgba(59, 130, 246, 0.15);
+  background: rgba(59, 130, 246, 0.08);
 }
 
 /* Feedback & Explanation Box */
@@ -3732,14 +3818,14 @@ kbd {
 }
 
 .cbt-result-banner.correct {
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: transparent;
+  border: 1px solid rgba(16, 185, 129, 0.5);
   color: #34d399;
 }
 
 .cbt-result-banner.wrong {
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.5);
   color: #f87171;
 }
 
@@ -3781,25 +3867,25 @@ kbd {
 }
 
 .cbt-nav-btn {
-  background: #161a24;
+  background: transparent;
   border: 1px solid #252b3d;
   color: #cbd5e1;
-  padding: 10px 20px;
+  padding: 9px 18px;
   border-radius: 8px;
   font-weight: 600;
-  font-size: 0.86rem;
+  font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .cbt-nav-btn:hover:not(:disabled) {
-  background: #202738;
+  background: rgba(59, 130, 246, 0.06);
   color: #fff;
   border-color: #3b82f6;
 }
 
 .cbt-nav-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
@@ -3815,7 +3901,7 @@ kbd {
   height: 34px;
   border-radius: 8px;
   border: 1px solid #252b3d;
-  background: #141822;
+  background: transparent;
   color: #94a3b8;
   font-weight: 700;
   font-size: 0.86rem;
@@ -3826,23 +3912,28 @@ kbd {
   justify-content: center;
 }
 
-.quiz-pill-btn.active {
-  background: #3b82f6;
-  border-color: #60a5fa;
+.quiz-pill-btn:hover {
+  border-color: #3b82f6;
   color: #fff;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+.quiz-pill-btn.active {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: #60a5fa;
+  color: #93c5fd;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.3);
 }
 
 .quiz-pill-btn.solved-correct {
-  border-color: rgba(16, 185, 129, 0.6);
+  border-color: rgba(16, 185, 129, 0.5);
   color: #34d399;
-  background: rgba(16, 185, 129, 0.12);
+  background: rgba(16, 185, 129, 0.06);
 }
 
 .quiz-pill-btn.solved-wrong {
-  border-color: rgba(239, 68, 68, 0.6);
+  border-color: rgba(239, 68, 68, 0.5);
   color: #f87171;
-  background: rgba(239, 68, 68, 0.12);
+  background: rgba(239, 68, 68, 0.06);
 }
 
 /* Leaderboard in CBT Slate Theme */
@@ -3856,11 +3947,11 @@ kbd {
 }
 
 .lb-period-btn {
-  background: #141822;
+  background: transparent;
   border: 1px solid #23293c;
   color: #94a3b8;
   border-radius: 8px;
-  padding: 8px 16px;
+  padding: 7px 16px;
   font-size: 0.84rem;
   font-weight: 600;
   cursor: pointer;
@@ -3868,9 +3959,9 @@ kbd {
 }
 
 .lb-period-btn.active {
-  background: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
   border-color: #60a5fa;
-  color: #fff;
+  color: #60a5fa;
 }
 
 .cbt-podium-row {
@@ -3881,7 +3972,7 @@ kbd {
 }
 
 .podium-card {
-  background: #151923;
+  background: #141722;
   border: 1px solid #23293c;
   border-radius: 10px;
   padding: 16px 12px;
@@ -3893,8 +3984,8 @@ kbd {
 }
 
 .podium-card.rank-1 {
-  border-color: rgba(234, 179, 8, 0.6);
-  background: linear-gradient(180deg, rgba(234, 179, 8, 0.12), #151923);
+  border-color: rgba(234, 179, 8, 0.5);
+  background: linear-gradient(180deg, rgba(234, 179, 8, 0.08), #141722);
 }
 
 .podium-rank-icon {
@@ -3941,7 +4032,7 @@ kbd {
 }
 
 .cbt-table tr.my-row {
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(59, 130, 246, 0.08);
 }
 
 /* Admin Grid in CBT Slate Theme */
@@ -3952,7 +4043,7 @@ kbd {
 }
 
 .cbt-admin-card {
-  background: #151923;
+  background: #141722;
   border: 1px solid #23293c;
   border-radius: 10px;
   padding: 18px;
@@ -3976,21 +4067,23 @@ kbd {
 }
 
 .cbt-action-btn {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: #fff;
-  border: none;
-  padding: 10px 18px;
+  background: transparent;
+  color: #93c5fd;
+  border: 1px solid #3b82f6;
+  padding: 9px 18px;
   border-radius: 8px;
   font-weight: 700;
   font-size: 0.88rem;
   cursor: pointer;
   width: 100%;
   margin-top: 10px;
-  transition: opacity 0.15s;
+  transition: all 0.15s ease;
 }
 
 .cbt-action-btn:hover {
-  opacity: 0.92;
+  background: rgba(59, 130, 246, 0.1);
+  border-color: #60a5fa;
+  color: #fff;
 }
 
 .admin-quiz-list {

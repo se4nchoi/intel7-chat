@@ -4618,8 +4618,12 @@ const quizModal = document.getElementById('quiz-modal');
 const quizModalClose = document.getElementById('quiz-modal-close');
 
 const quizTabDailyBtn = document.getElementById('quiz-tab-daily-btn');
+const quizTabWrongBtn = document.getElementById('quiz-tab-wrong-btn');
+const quizTabStarredBtn = document.getElementById('quiz-tab-starred-btn');
+const quizTabHistoryBtn = document.getElementById('quiz-tab-history-btn');
 const quizTabLeaderboardBtn = document.getElementById('quiz-tab-leaderboard-btn');
 const quizTabAdminBtn = document.getElementById('quiz-tab-admin-btn');
+
 const quizTabDailyContent = document.getElementById('quiz-tab-daily-content');
 const quizTabLeaderboardContent = document.getElementById('quiz-tab-leaderboard-content');
 const quizTabAdminContent = document.getElementById('quiz-tab-admin-content');
@@ -4630,6 +4634,7 @@ const cbtProgressFill = document.getElementById('cbt-progress-fill');
 const cbtProgressPercent = document.getElementById('cbt-progress-percent');
 
 const quizLoadingState = document.getElementById('quiz-loading-state');
+const quizLoadingText = document.getElementById('quiz-loading-text');
 const quizContainer = document.getElementById('quiz-container');
 const quizPillNav = document.getElementById('quiz-pill-nav');
 
@@ -4638,6 +4643,12 @@ const quizDifficultyTag = document.getElementById('quiz-difficulty-tag');
 const quizTypeTag = document.getElementById('quiz-type-tag');
 const quizScoreBadge = document.getElementById('quiz-score-badge');
 const quizQuestionText = document.getElementById('quiz-question-text');
+
+const quizStarBtn = document.getElementById('quiz-star-btn');
+const quizStarLabel = document.getElementById('quiz-star-label');
+const quizHintBtn = document.getElementById('quiz-hint-btn');
+const quizHintBox = document.getElementById('quiz-hint-box');
+const quizHintText = document.getElementById('quiz-hint-text');
 
 const quizImageContainer = document.getElementById('quiz-image-container');
 const quizImage = document.getElementById('quiz-image');
@@ -4682,6 +4693,7 @@ let todayQuizzes = [];
 let currentQuizIndex = 0;
 let userQuizStats = null;
 let currentSelectedOption = null;
+let currentQuizMode = 'daily'; // 'daily' | 'wrong' | 'starred' | 'history'
 
 async function refreshQuizHeaderStreak() {
   if (!currentUser) return;
@@ -4706,7 +4718,6 @@ function openQuizModal(tab = 'daily') {
   if (!quizModal || !currentUser) return;
   quizModal.classList.remove('hidden');
   switchQuizTab(tab);
-  fetchTodayQuizzes();
 }
 
 function closeQuizModal() {
@@ -4714,24 +4725,36 @@ function closeQuizModal() {
 }
 
 function switchQuizTab(tab) {
-  const isDaily = tab === 'daily';
+  currentQuizMode = tab;
+  const isDailyRunner = tab === 'daily' || tab === 'wrong' || tab === 'starred' || tab === 'history';
   const isLb = tab === 'leaderboard';
   const isAdmin = tab === 'admin';
 
-  quizTabDailyBtn?.classList.toggle('active', isDaily);
+  quizTabDailyBtn?.classList.toggle('active', tab === 'daily');
+  quizTabWrongBtn?.classList.toggle('active', tab === 'wrong');
+  quizTabStarredBtn?.classList.toggle('active', tab === 'starred');
+  quizTabHistoryBtn?.classList.toggle('active', tab === 'history');
   quizTabLeaderboardBtn?.classList.toggle('active', isLb);
   quizTabAdminBtn?.classList.toggle('active', isAdmin);
 
-  quizTabDailyContent?.classList.toggle('hidden', !isDaily);
+  quizTabDailyContent?.classList.toggle('hidden', !isDailyRunner);
   quizTabLeaderboardContent?.classList.toggle('hidden', !isLb);
   quizTabAdminContent?.classList.toggle('hidden', !isAdmin);
 
-  if (isLb) fetchLeaderboard('weekly');
-  if (isAdmin) fetchAdminQuizzes();
+  if (tab === 'daily') {
+    fetchTodayQuizzes();
+  } else if (tab === 'wrong' || tab === 'starred' || tab === 'history') {
+    fetchReviewQuizzes(tab);
+  } else if (isLb) {
+    fetchLeaderboard('weekly');
+  } else if (isAdmin) {
+    fetchAdminQuizzes();
+  }
 }
 
 async function fetchTodayQuizzes() {
   if (!currentUser) return;
+  if (quizLoadingText) quizLoadingText.textContent = '오늘의 문제를 불러오는 중입니다...';
   quizLoadingState?.classList.remove('hidden');
   quizContainer?.classList.add('hidden');
   try {
@@ -4748,15 +4771,44 @@ async function fetchTodayQuizzes() {
       quizLoadingState?.classList.add('hidden');
       quizContainer?.classList.remove('hidden');
     } else {
-      if (quizLoadingState) {
-        quizLoadingState.textContent = '현재 등록된 퀴즈가 없습니다.';
-        quizLoadingState.classList.remove('hidden');
-      }
+      if (quizLoadingText) quizLoadingText.textContent = '현재 등록된 퀴즈가 없습니다.';
     }
   } catch (err) {
-    if (quizLoadingState) {
-      quizLoadingState.textContent = err.message || '오류가 발생했습니다.';
+    if (quizLoadingText) quizLoadingText.textContent = err.message || '오류가 발생했습니다.';
+  }
+}
+
+async function fetchReviewQuizzes(mode) {
+  if (!currentUser) return;
+  const modeLabels = {
+    wrong: '오답 목록을',
+    starred: '보관한 문제 목록을',
+    history: '풀이 이력을',
+  };
+  if (quizLoadingText) quizLoadingText.textContent = `${modeLabels[mode] || '문제를'} 불러오는 중입니다...`;
+  quizLoadingState?.classList.remove('hidden');
+  quizContainer?.classList.add('hidden');
+  try {
+    const res = await fetch(`/api/quiz/review?mode=${mode}`);
+    if (!res.ok) throw new Error('목록을 불러오지 못했습니다.');
+    const data = await res.json();
+    todayQuizzes = data.quizzes || [];
+    if (todayQuizzes.length > 0) {
+      currentQuizIndex = 0;
+      renderQuizPillNav();
+      renderActiveQuiz();
+      quizLoadingState?.classList.add('hidden');
+      quizContainer?.classList.remove('hidden');
+    } else {
+      const emptyMsgs = {
+        wrong: '🎉 오답 기록이 없습니다! 모든 문제를 완벽하게 맞히셨습니다.',
+        starred: '⭐ 보관한 문제가 없습니다. 문제 상단의 ⭐ 버튼을 눌러 중요한 문제를 저장해 보세요.',
+        history: '📜 아직 제출한 풀이 이력이 없습니다. 오늘의 퀴즈를 풀어보세요!',
+      };
+      if (quizLoadingText) quizLoadingText.textContent = emptyMsgs[mode] || '해당되는 문제가 없습니다.';
     }
+  } catch (err) {
+    if (quizLoadingText) quizLoadingText.textContent = err.message || '오류가 발생했습니다.';
   }
 }
 
@@ -4820,6 +4872,20 @@ function renderActiveQuiz() {
   }
   if (quizQuestionText) quizQuestionText.textContent = q.question;
 
+  // Star / Bookmark state
+  if (quizStarBtn) {
+    quizStarBtn.classList.toggle('active', Boolean(q.is_starred));
+  }
+  if (quizStarLabel) {
+    quizStarLabel.textContent = q.is_starred ? '보관됨' : '보관';
+  }
+
+  // Hint box state
+  if (quizHintBox) quizHintBox.classList.add('hidden');
+  if (quizHintText) {
+    quizHintText.textContent = q.hint || '이 문제에 등록된 힌트가 없습니다. 상세 해설을 참고해 보세요.';
+  }
+
   // Diagram / Image
   if (q.image_filename) {
     quizImage.src = `/api/quiz/images/${encodeURIComponent(q.image_filename)}`;
@@ -4830,6 +4896,8 @@ function renderActiveQuiz() {
 
   // Answer Section
   const isMultiple = q.question_type === 'multiple_choice' && Array.isArray(q.options) && q.options.length > 0;
+  const isPracticeMode = currentQuizMode !== 'daily';
+
   if (isMultiple) {
     quizOptionsList?.classList.remove('hidden');
     quizInputContainer?.classList.add('hidden');
@@ -4838,12 +4906,12 @@ function renderActiveQuiz() {
     quizOptionsList?.classList.add('hidden');
     quizInputContainer?.classList.remove('hidden');
     if (quizAnswerInput) {
-      quizAnswerInput.value = q.is_solved ? (q.user_answer || '') : '';
-      quizAnswerInput.disabled = Boolean(q.is_solved);
+      quizAnswerInput.value = q.user_answer || '';
+      quizAnswerInput.disabled = Boolean(q.is_solved && !isPracticeMode);
     }
     if (quizSubmitBtn) {
-      quizSubmitBtn.disabled = Boolean(q.is_solved);
-      quizSubmitBtn.textContent = q.is_solved ? '제출 완료' : '정답 제출';
+      quizSubmitBtn.disabled = false;
+      quizSubmitBtn.textContent = (q.is_solved && isPracticeMode) ? '다시 풀기' : (q.is_solved ? '제출 완료' : '정답 제출');
     }
   }
 
@@ -4859,6 +4927,8 @@ function renderMultipleChoiceOptions(q) {
   if (!quizOptionsList) return;
   quizOptionsList.replaceChildren();
   const circledNumbers = ['①', '②', '③', '④', '⑤', '⑥'];
+  const isPracticeMode = currentQuizMode !== 'daily';
+
   q.options.forEach((opt, idx) => {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -4880,7 +4950,8 @@ function renderMultipleChoiceOptions(q) {
       : (currentSelectedOption === opt);
 
     if (isSelected) btn.classList.add('selected');
-    if (q.is_solved) {
+
+    if (q.is_solved && !isPracticeMode) {
       btn.disabled = true;
     } else {
       btn.addEventListener('click', () => {
@@ -4902,7 +4973,11 @@ function renderQuizFeedback(q) {
   }
   if (quizResultIcon) quizResultIcon.textContent = isCorrect ? '⭕' : '❌';
   if (quizResultTitle) {
-    quizResultTitle.textContent = isCorrect ? `정답입니다! (+${q.score_earned || 20}점)` : '오답입니다!';
+    if (currentQuizMode === 'daily') {
+      quizResultTitle.textContent = isCorrect ? `정답입니다! (+${q.score_earned || 20}점)` : '오답입니다!';
+    } else {
+      quizResultTitle.textContent = isCorrect ? '🎉 정답입니다!' : '❌ 아쉽게도 오답입니다.';
+    }
   }
   if (quizResultAnswers) {
     if (isCorrect) {
@@ -4916,9 +4991,28 @@ function renderQuizFeedback(q) {
   if (quizSourceRef) quizSourceRef.textContent = q.source_ref ? `출처: ${q.source_ref}` : '';
 }
 
+async function toggleStarCurrentQuiz() {
+  const q = todayQuizzes[currentQuizIndex];
+  if (!q) return;
+  try {
+    const res = await fetch(`/api/quiz/bookmark/${q.id}`, { method: 'POST' });
+    if (!res.ok) throw new Error('북마크 변경 실패');
+    const data = await res.json();
+    q.is_starred = data.is_starred;
+    if (quizStarBtn) quizStarBtn.classList.toggle('active', Boolean(q.is_starred));
+    if (quizStarLabel) quizStarLabel.textContent = q.is_starred ? '보관됨' : '보관';
+    showToast(q.is_starred ? '⭐ 보관함에 문제를 저장했습니다.' : '보관을 해제했습니다.', 'info');
+  } catch (err) {
+    showToast(err.message || '북마크 처리에 실패했습니다.', 'error');
+  }
+}
+
 async function submitQuiz(answerVal = null) {
   const q = todayQuizzes[currentQuizIndex];
-  if (!q || q.is_solved) return;
+  if (!q) return;
+  const isPracticeMode = currentQuizMode !== 'daily' || Boolean(q.is_solved);
+  const endpoint = isPracticeMode ? '/api/quiz/retry' : '/api/quiz/submit';
+
   const answer = answerVal || (quizAnswerInput ? quizAnswerInput.value.trim() : '');
   if (!answer) {
     showToast('답안을 입력하거나 선택해 주세요.', 'warning');
@@ -4926,7 +5020,7 @@ async function submitQuiz(answerVal = null) {
   }
   if (quizSubmitBtn) quizSubmitBtn.disabled = true;
   try {
-    const res = await fetch('/api/quiz/submit', {
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ quiz_id: q.id, answer: answer }),
@@ -4943,18 +5037,21 @@ async function submitQuiz(answerVal = null) {
     q.explanation = data.explanation;
     q.source_ref = data.source_ref;
 
-    userQuizStats = data.user_stats;
-    renderQuizStats();
+    if (data.user_stats) {
+      userQuizStats = data.user_stats;
+      renderQuizStats();
+    }
     renderQuizPillNav();
     renderActiveQuiz();
 
     if (data.is_correct) {
-      showToast(`🎉 정답입니다! +${data.score_earned}점을 획득했습니다.`, 'success');
+      showToast(isPracticeMode ? '🎉 정답입니다! 멋지게 복습을 마쳤습니다.' : `🎉 정답입니다! +${data.score_earned}점을 획득했습니다.`, 'success');
     } else {
       showToast('아쉽게도 오답입니다. 해설을 확인해 보세요.', 'info');
     }
   } catch (err) {
     showToast(err.message || '답안 제출 중 오류가 발생했습니다.', 'error');
+  } finally {
     if (quizSubmitBtn) quizSubmitBtn.disabled = false;
   }
 }
@@ -5091,8 +5188,14 @@ if (quizModal) {
 }
 
 if (quizTabDailyBtn) quizTabDailyBtn.addEventListener('click', () => switchQuizTab('daily'));
+if (quizTabWrongBtn) quizTabWrongBtn.addEventListener('click', () => switchQuizTab('wrong'));
+if (quizTabStarredBtn) quizTabStarredBtn.addEventListener('click', () => switchQuizTab('starred'));
+if (quizTabHistoryBtn) quizTabHistoryBtn.addEventListener('click', () => switchQuizTab('history'));
 if (quizTabLeaderboardBtn) quizTabLeaderboardBtn.addEventListener('click', () => switchQuizTab('leaderboard'));
 if (quizTabAdminBtn) quizTabAdminBtn.addEventListener('click', () => switchQuizTab('admin'));
+
+if (quizStarBtn) quizStarBtn.addEventListener('click', toggleStarCurrentQuiz);
+if (quizHintBtn) quizHintBtn.addEventListener('click', () => quizHintBox?.classList.toggle('hidden'));
 
 if (quizPrevBtn) {
   quizPrevBtn.addEventListener('click', () => {
