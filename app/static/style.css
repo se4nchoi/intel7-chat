@@ -3274,11 +3274,13 @@ kbd {
   color: #93c5fd;
 }
 
-/* CBT Modal Window Box */
+/* CBT Modal Window Box (Stable fixed dimensions) */
 .cbt-modal-box {
-  max-width: 840px;
-  width: 95vw;
-  max-height: 92vh;
+  width: 880px;
+  max-width: 95vw;
+  height: 740px;
+  max-height: 90vh;
+  min-height: 560px;
   display: flex;
   flex-direction: column;
   background: #10131a;
@@ -3290,14 +3292,17 @@ kbd {
 
 /* Top Navigation Header */
 .cbt-top-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 22px;
+  padding: 12px 20px;
   background: #141822;
   border-bottom: 1px solid #232838;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
+  min-height: 60px;
+  box-sizing: border-box;
 }
 
 .cbt-header-left {
@@ -3391,19 +3396,28 @@ kbd {
 }
 
 .cbt-content-pane {
-  padding: 22px 26px;
+  padding: 20px 24px;
   overflow-y: auto;
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.cbt-quiz-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 /* CBT Progress Row */
 .cbt-progress-row {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   background: #141822;
   border: 1px solid #202638;
   padding: 10px 16px;
@@ -3460,10 +3474,13 @@ kbd {
   background: #141722;
   border: 1px solid #23293c;
   border-radius: 12px;
-  padding: 24px;
+  padding: 22px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .cbt-card-header {
