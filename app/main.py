@@ -1250,7 +1250,7 @@ async def api_quiz_today(
     exclude: Optional[str] = None,
 ):
     user = request_user(request)
-    count = max(1, min(int(count), 20))
+    count = max(1, min(int(count), 200))
     offset = max(0, int(offset))
     exclude_ids = []
     if exclude:

@@ -190,6 +190,17 @@
   font-weight: 650;
 }
 
+.quiz-question-panel-heading { display: flex; align-items: center; gap: 4px; }
+.quiz-question-panel-heading .quiz-question-panel-toggle { flex: 1; }
+.quiz-sidebar-back-btn {
+  flex: 0 0 auto;
+  padding: 6px 7px;
+  border: 0 !important;
+  color: #93c5fd !important;
+  font-size: .7rem;
+  white-space: nowrap;
+}
+
 .quiz-question-panel-toggle {
   width: 100%;
   display: flex;

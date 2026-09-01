@@ -16,6 +16,7 @@ let currentLeaderboardPeriod = 'weekly';
 let quizPageOffset = 0;
 let quizPageLoading = false;
 let quizHasMore = true;
+let sidebarCategoryQuizzes = null;
 
 export function getCategoryIcon(catName = '') {
   const lower = catName.toLowerCase();
@@ -102,6 +103,7 @@ export async function fetchCategoriesSummary() {
 
       btn.append(icon, text, count);
       btn.addEventListener('click', () => {
+        openSidebarCategoryPage(cat.category);
         switchQuizNav(`category:${cat.category}`, {
           title: `📚 ${cat.category}`,
           desc: `${cat.category} 분야의 핵심 퀴즈 문제입니다.`,
@@ -132,6 +134,7 @@ export function closeQuizModal() {
 
 export function switchQuizNav(navKey, meta = {}) {
   currentQuizNav = navKey;
+  if (!navKey.startsWith('category:') && sidebarCategoryQuizzes) restoreSidebarTopics();
   const isHistory = navKey === 'history';
   const isQuizRunner = navKey === 'daily' || navKey === 'random' || navKey.startsWith('category:') || navKey === 'wrong' || navKey === 'starred';
   const isLb = navKey === 'leaderboard';
@@ -458,6 +461,33 @@ export async function fetchTodayQuizzes(category = null, append = false) {
   }
 }
 
+async function openSidebarCategoryPage(category) {
+  const section = document.querySelector('.quiz-question-sidebar-section');
+  const back = document.getElementById('quiz-sidebar-back-btn');
+  const title = document.getElementById('quiz-question-panel-title');
+  document.querySelectorAll('.cbt-sidebar-section').forEach(item => item.classList.toggle('hidden', item !== section));
+  back?.classList.remove('hidden');
+  if (title) title.textContent = `📋 ${category} 문제 목록`;
+  try {
+    const res = await fetch(`/api/quiz/today?category=${encodeURIComponent(category)}&count=200&offset=0`);
+    if (!res.ok) throw new Error('주제 문제 목록을 불러오지 못했습니다.');
+    sidebarCategoryQuizzes = (await res.json()).quizzes || [];
+    renderSidebarQuestionList(sidebarCategoryQuizzes);
+  } catch (err) {
+    const list = document.getElementById('quiz-sidebar-question-list');
+    if (list) list.textContent = err.message;
+  }
+}
+
+function restoreSidebarTopics() {
+  sidebarCategoryQuizzes = null;
+  document.querySelectorAll('.cbt-sidebar-section').forEach(item => item.classList.remove('hidden'));
+  document.getElementById('quiz-sidebar-back-btn')?.classList.add('hidden');
+  const title = document.getElementById('quiz-question-panel-title');
+  if (title) title.textContent = '📋 문제 목록';
+  renderSidebarQuestionList();
+}
+
 export async function fetchReviewQuizzes(mode) {
   if (!state.currentUser) return;
   const quizLoadingText = document.getElementById('quiz-loading-text');
@@ -511,11 +541,12 @@ export function renderQuizPillNav() {
 
   const total = todayQuizzes.length || 1;
   const currentNum = currentQuizIndex + 1;
-  const pct = Math.round((currentNum / total) * 100);
+  const solvedCount = todayQuizzes.filter(item => item.is_solved).length;
+  const pct = Math.round((solvedCount / total) * 100);
 
   if (cbtProgressCount) cbtProgressCount.textContent = `${currentNum} / ${total}`;
   renderSidebarQuestionList();
-  if (cbtProgressPercent) cbtProgressPercent.textContent = `${pct}%`;
+  if (cbtProgressPercent) cbtProgressPercent.textContent = `${pct}% 풀이 완료`;
   if (cbtProgressFill) cbtProgressFill.style.width = `${pct}%`;
 
   if (quizPillNav) {
@@ -544,11 +575,11 @@ export function renderQuizPillNav() {
   if (quizNextBtn) quizNextBtn.disabled = currentQuizIndex === todayQuizzes.length - 1 && (!canLoadMore || !quizHasMore);
 }
 
-function renderSidebarQuestionList() {
+function renderSidebarQuestionList(items = sidebarCategoryQuizzes || todayQuizzes) {
   const list = document.getElementById('quiz-sidebar-question-list');
   if (!list) return;
   list.replaceChildren();
-  todayQuizzes.forEach((q, idx) => {
+  items.forEach((q, idx) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `quiz-sidebar-question${idx === currentQuizIndex ? ' active' : ''}`;
@@ -556,7 +587,10 @@ function renderSidebarQuestionList() {
     const number = document.createElement('span'); number.className = 'quiz-sidebar-question-number'; number.textContent = String(idx + 1);
     const label = document.createElement('span'); label.className = 'quiz-sidebar-question-label'; label.textContent = q.question || '문제';
     button.append(number, label);
-    button.addEventListener('click', () => { currentQuizIndex = idx; renderQuizPillNav(); renderActiveQuiz(); });
+    button.addEventListener('click', () => {
+      if (sidebarCategoryQuizzes) { todayQuizzes = sidebarCategoryQuizzes; quizHasMore = false; }
+      currentQuizIndex = idx; renderQuizPillNav(); renderActiveQuiz();
+    });
     list.appendChild(button);
   });
 }
@@ -1031,6 +1065,7 @@ export function initQuizListeners() {
   const quizNavAdminBtn = document.getElementById('quiz-nav-admin-btn');
   const quizQuestionPanelToggle = document.getElementById('quiz-question-panel-toggle');
   const quizQuestionPanel = document.getElementById('quiz-question-panel');
+  const quizSidebarBackBtn = document.getElementById('quiz-sidebar-back-btn');
   const quizStarBtn = document.getElementById('quiz-star-btn');
   const quizHintBtn = document.getElementById('quiz-hint-btn');
   const quizHintBox = document.getElementById('quiz-hint-box');
@@ -1068,6 +1103,7 @@ export function initQuizListeners() {
     const chevron = quizQuestionPanelToggle.querySelector('.quiz-panel-chevron');
     if (chevron) chevron.textContent = collapsed ? '⌄' : '⌃';
   });
+  quizSidebarBackBtn?.addEventListener('click', () => restoreSidebarTopics());
 
   quizCopyPromptBtn?.addEventListener('click', async () => {
     await navigator.clipboard.writeText(document.getElementById('quiz-notebook-prompt')?.value || '');

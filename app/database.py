@@ -2026,7 +2026,7 @@ def get_daily_quizzes(
                 # Prefer unseen questions; once exhausted, fill the set with solved ones.
                 order_by = "ORDER BY CASE WHEN qs.id IS NULL THEN 0 ELSE 1 END, RANDOM()"
             else:
-                order_by = "ORDER BY q.id ASC"
+                order_by = "ORDER BY CASE WHEN qs.id IS NULL THEN 0 ELSE 1 END, CASE q.difficulty WHEN 'easy' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, q.id ASC"
         params.extend([count, max(0, int(offset))])
 
         query = f"""

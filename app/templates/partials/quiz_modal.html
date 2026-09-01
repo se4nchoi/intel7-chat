@@ -48,9 +48,12 @@
         </div>
 
         <div class="cbt-sidebar-section quiz-question-sidebar-section">
-          <button id="quiz-question-panel-toggle" class="quiz-question-panel-toggle" type="button" aria-expanded="true">
-            <span>📋 문제 목록</span><span class="quiz-panel-chevron">⌃</span>
-          </button>
+          <div class="quiz-question-panel-heading">
+            <button id="quiz-sidebar-back-btn" class="quiz-sidebar-back-btn hidden" type="button">← 주제 목록</button>
+            <button id="quiz-question-panel-toggle" class="quiz-question-panel-toggle" type="button" aria-expanded="true">
+              <span id="quiz-question-panel-title">📋 문제 목록</span><span class="quiz-panel-chevron">⌃</span>
+            </button>
+          </div>
           <div id="quiz-question-panel" class="quiz-question-panel">
             <div id="quiz-sidebar-question-list" class="quiz-sidebar-question-list"></div>
           </div>
