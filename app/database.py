@@ -1,12 +1,14 @@
 """SQLite persistence for users, sessions, messages, and attachments."""
 from __future__ import annotations
 
+import json
 import os
+import re
 import sqlite3
 import uuid as _uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 _DEFAULT_DATA = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = _DEFAULT_DATA / "chat.db"
@@ -141,6 +143,7 @@ def init_db() -> None:
         )""")
         conn.commit()
         _run_migrations(conn)
+        seed_default_quizzes(conn)
 
 def _get_schema_version(conn: sqlite3.Connection) -> int:
     row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
@@ -244,6 +247,67 @@ def _migrate_v8(conn: sqlite3.Connection) -> None:
     """Add last_login_ip column to users table."""
     _add_column_if_missing(conn, "users", "last_login_ip", "TEXT")
 
+def _migrate_v9(conn: sqlite3.Connection) -> None:
+    """Create tables for educational quizzes, submissions, stats/streaks, and source documents."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS quiz_source_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT NOT NULL,
+        stored_filename TEXT NOT NULL UNIQUE,
+        file_type TEXT NOT NULL DEFAULT 'pdf',
+        sha256 TEXT NOT NULL,
+        size INTEGER NOT NULL DEFAULT 0,
+        uploaded_by_user_id INTEGER,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(uploaded_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS quizzes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL DEFAULT 'PLC/시퀀스',
+        difficulty TEXT NOT NULL DEFAULT 'medium',
+        question_type TEXT NOT NULL DEFAULT 'multiple_choice',
+        question TEXT NOT NULL,
+        image_filename TEXT,
+        options_json TEXT,
+        correct_answers_json TEXT NOT NULL,
+        explanation TEXT NOT NULL DEFAULT '',
+        source_doc_id INTEGER,
+        source_ref TEXT NOT NULL DEFAULT '',
+        daily_date TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(source_doc_id) REFERENCES quiz_source_documents(id) ON DELETE SET NULL
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS quiz_submissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quiz_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        user_answer TEXT NOT NULL,
+        is_correct INTEGER NOT NULL,
+        score_earned INTEGER NOT NULL DEFAULT 0,
+        submitted_at TEXT NOT NULL,
+        submitted_date TEXT NOT NULL,
+        UNIQUE(quiz_id, user_id),
+        FOREIGN KEY(quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS user_quiz_stats (
+        user_id INTEGER PRIMARY KEY,
+        total_score INTEGER NOT NULL DEFAULT 0,
+        total_solved INTEGER NOT NULL DEFAULT 0,
+        total_correct INTEGER NOT NULL DEFAULT 0,
+        current_streak INTEGER NOT NULL DEFAULT 0,
+        max_streak INTEGER NOT NULL DEFAULT 0,
+        weekly_score INTEGER NOT NULL DEFAULT 0,
+        last_solved_date TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quizzes_active ON quizzes(is_active, id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quizzes_daily ON quizzes(daily_date)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_sub_user ON quiz_submissions(user_id, quiz_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_sub_date ON quiz_submissions(submitted_date)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_stats_score ON user_quiz_stats(total_score DESC)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_stats_weekly ON user_quiz_stats(weekly_score DESC)")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -253,6 +317,7 @@ _MIGRATIONS = [
     _migrate_v6,
     _migrate_v7,
     _migrate_v8,
+    _migrate_v9,
 ]
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -1243,3 +1308,574 @@ def get_pinned_message_ids(
             WHERE conversation_type = ? AND conversation_id = ?
         """, (conversation_type, str(conversation_id))).fetchall()
         return {r[0] for r in rows}
+
+
+# ==========================================
+# Educational Quizzes & Leaderboard Functions
+# ==========================================
+
+DEFAULT_SAMPLE_QUIZZES = [
+    {
+        "category": "PLC/시퀀스",
+        "difficulty": "medium",
+        "question_type": "ladder_input",
+        "question": "자기유지(Self-holding) 회로에서 출력 코일 Y0이 ON된 후 기동 스위치 X0을 떼어도 계속 전원이 공급되도록 X0과 병렬(OR)로 연결해야 하는 접점 디바이스 번호는 무엇인가?",
+        "image_filename": "",
+        "options": None,
+        "correct_answers": ["Y0", "Y00", "Y0 a접점", "Y0 A접점", "Y000", "LD Y0", "OR Y0"],
+        "explanation": "기동 스위치(X0)와 출력 릴레이의 a접점(Y0)을 병렬 연결하면, 스위치가 복귀해도 출력 Y0의 a접점이 닫혀 있어 전원이 유지됩니다.",
+        "source_ref": "PLC 시퀀스 실습 4강 - 자기유지 회로 p.12"
+    },
+    {
+        "category": "PLC/시퀀스",
+        "difficulty": "easy",
+        "question_type": "multiple_choice",
+        "question": "PLC 래더 다이어그램에서 두 개 이상의 a접점을 직렬로 연결할 때 사용하는 기본 명령어는 무엇인가?",
+        "options": ["1. AND", "2. OR", "3. OUT", "4. SET"],
+        "correct_answers": ["1", "1번", "AND", "1. AND"],
+        "explanation": "직렬 접속에는 AND(a접점 직렬) 또는 ANI/AND NOT(b접점 직렬) 명령어를 사용합니다.",
+        "source_ref": "PLC 기초 명령어 편람 p.5"
+    },
+    {
+        "category": "PLC/시퀀스",
+        "difficulty": "medium",
+        "question_type": "short_answer",
+        "question": "기본 단위가 100ms인 PLC 타이머(Timer)에서 3초를 지연 동작시키기 위해 입력해야 하는 설정값(K값)은 얼마인가?",
+        "image_filename": "",
+        "options": None,
+        "correct_answers": ["30", "K30", "K 30"],
+        "explanation": "100ms(0.1초) 단위 타이머에서 3초는 3.0 / 0.1 = 30이므로 K30을 설정합니다.",
+        "source_ref": "PLC 타이머/카운터 응용 p.23"
+    },
+    {
+        "category": "CBT/전기기초",
+        "difficulty": "medium",
+        "question_type": "multiple_choice",
+        "question": "3상 유도전동기의 회전 방향을 역회전으로 바꾸기 위한 가장 올바른 결선 변경 방법은?",
+        "options": ["1. 3상 중 임의의 2선의 접속을 서로 바꾼다", "2. 3선의 접속을 모두 일제히 바꾼다", "3. 접지선(E)의 위치를 전원선으로 바꾼다", "4. 공급 전압을 2배로 승압한다"],
+        "correct_answers": ["1", "1번", "1. 3상 중 임의의 2선의 접속을 서로 바꾼다"],
+        "explanation": "3상 교류 전동기(R, S, T)는 3상 중 임의의 두 선의 접속을 서로 바꾸면 회전자계의 방향이 반대가 되어 전동기가 역회전합니다.",
+        "source_ref": "전기기능사 필기 CBT 기출문제"
+    },
+    {
+        "category": "PLC/시퀀스",
+        "difficulty": "hard",
+        "question_type": "short_answer",
+        "question": "정회전 코일과 역회전 코일이 동시에 투입되어 선간 단락 사고가 발생하는 것을 막기 위해, 상대방 코일 전단에 자신의 b접점을 직렬 연결하는 제어 회로의 명칭은?",
+        "image_filename": "",
+        "options": None,
+        "correct_answers": ["인터록", "인터록 회로", "인터록회로", "INTERLOCK", "Interlock"],
+        "explanation": "두 개의 상반된 동작이 동시에 일어나는 것을 방지하기 위해 상대 회로를 잠그는 회로를 인터록(Interlock) 회로라고 합니다.",
+        "source_ref": "시퀀스 제어 핵심이론 p.31"
+    },
+    {
+        "category": "CBT/디지털공학",
+        "difficulty": "easy",
+        "question_type": "multiple_choice",
+        "question": "2진수 10110(2)을 10진수로 올바르게 변환한 값은?",
+        "options": ["1. 18", "2. 20", "3. 22", "4. 24"],
+        "correct_answers": ["3", "3번", "22", "3. 22"],
+        "explanation": "16*1 + 8*0 + 4*1 + 2*1 + 1*0 = 16 + 4 + 2 = 22 입니다.",
+        "source_ref": "전자계산기일반 CBT 기출"
+    },
+    {
+        "category": "PLC/시퀀스",
+        "difficulty": "medium",
+        "question_type": "ladder_input",
+        "question": "미쓰비시(MELSEC) PLC 래더 프로그래밍에서 모선(Bus bar)에서 b접점을 시작할 때 사용하는 니모닉(Mnemonic) 명령어는 무엇인가?",
+        "image_filename": "",
+        "options": None,
+        "correct_answers": ["LDI", "LD NOT", "LDNOT", "LD I"],
+        "explanation": "모선에서 a접점 시작은 LD(Load), b접점 시작은 LDI(Load Inverse) 명령어를 사용합니다.",
+        "source_ref": "MELSEC 명령어 일람표"
+    }
+]
+
+
+def seed_default_quizzes(conn: Optional[sqlite3.Connection] = None) -> None:
+    """Seeds default educational quizzes if the quizzes table is empty."""
+    def _seed(c: sqlite3.Connection) -> None:
+        count = c.execute("SELECT COUNT(*) FROM quizzes").fetchone()[0]
+        if count > 0:
+            return
+        now = utc_now()
+        for q in DEFAULT_SAMPLE_QUIZZES:
+            opts = json.dumps(q.get("options"), ensure_ascii=False) if q.get("options") else None
+            corrects = json.dumps(q.get("correct_answers", []), ensure_ascii=False)
+            c.execute("""INSERT INTO quizzes
+                (category, difficulty, question_type, question, image_filename,
+                 options_json, correct_answers_json, explanation, source_ref,
+                 is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                (
+                    q.get("category", "PLC/시퀀스"),
+                    q.get("difficulty", "medium"),
+                    q.get("question_type", "multiple_choice"),
+                    q["question"],
+                    q.get("image_filename", ""),
+                    opts,
+                    corrects,
+                    q.get("explanation", ""),
+                    q.get("source_ref", ""),
+                    now,
+                ))
+
+    if conn is not None:
+        _seed(conn)
+    else:
+        with get_connection() as c:
+            _seed(c)
+
+
+def save_quiz_source_document(
+    filename: str,
+    stored_filename: str,
+    file_type: str,
+    sha256: str,
+    size: int,
+    uploaded_by_user_id: Optional[int] = None,
+) -> int:
+    """Saves metadata for an uploaded lecture PDF or question document."""
+    now = utc_now()
+    with get_connection() as conn:
+        cur = conn.execute("""INSERT INTO quiz_source_documents
+            (filename, stored_filename, file_type, sha256, size, uploaded_by_user_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (filename, stored_filename, file_type, sha256, size, uploaded_by_user_id, now))
+        return int(cur.lastrowid)
+
+
+def get_quiz_source_documents() -> List[Dict[str, Any]]:
+    """Returns a list of all uploaded quiz source documents."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT d.*, u.username as uploader_username, u.display_name as uploader_display_name,
+                   (SELECT COUNT(*) FROM quizzes q WHERE q.source_doc_id = d.id) as generated_quizzes_count
+            FROM quiz_source_documents d
+            LEFT JOIN users u ON d.uploaded_by_user_id = u.id
+            ORDER BY d.id DESC
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_quiz(
+    category: str,
+    difficulty: str,
+    question_type: str,
+    question: str,
+    correct_answers: List[str],
+    options: Optional[List[str]] = None,
+    image_filename: Optional[str] = None,
+    explanation: str = "",
+    source_doc_id: Optional[int] = None,
+    source_ref: str = "",
+    daily_date: Optional[str] = None,
+) -> int:
+    """Creates a new quiz item."""
+    now = utc_now()
+    opts_json = json.dumps(options, ensure_ascii=False) if options else None
+    corrects_json = json.dumps(correct_answers, ensure_ascii=False)
+    with get_connection() as conn:
+        cur = conn.execute("""INSERT INTO quizzes
+            (category, difficulty, question_type, question, image_filename,
+             options_json, correct_answers_json, explanation, source_doc_id,
+             source_ref, daily_date, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+            (
+                category,
+                difficulty,
+                question_type,
+                question,
+                image_filename or "",
+                opts_json,
+                corrects_json,
+                explanation,
+                source_doc_id,
+                source_ref,
+                daily_date,
+                now,
+            ))
+        return int(cur.lastrowid)
+
+
+def create_quiz_batch(
+    quizzes_data: List[Dict[str, Any]],
+    source_doc_id: Optional[int] = None,
+) -> List[int]:
+    """Bulk creates multiple quizzes from AI or JSON import."""
+    now = utc_now()
+    created_ids: List[int] = []
+    with get_connection() as conn:
+        for q in quizzes_data:
+            opts = q.get("options")
+            opts_json = json.dumps(opts, ensure_ascii=False) if opts else None
+            corrects = q.get("correct_answers") or [q.get("answer", "")]
+            if isinstance(corrects, str):
+                corrects = [corrects]
+            corrects_json = json.dumps(corrects, ensure_ascii=False)
+            cur = conn.execute("""INSERT INTO quizzes
+                (category, difficulty, question_type, question, image_filename,
+                 options_json, correct_answers_json, explanation, source_doc_id,
+                 source_ref, daily_date, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                (
+                    q.get("category", "PLC/시퀀스"),
+                    q.get("difficulty", "medium"),
+                    q.get("question_type", "multiple_choice"),
+                    q.get("question", ""),
+                    q.get("image_filename", "") or q.get("image_url", ""),
+                    opts_json,
+                    corrects_json,
+                    q.get("explanation", ""),
+                    source_doc_id,
+                    q.get("source_ref", ""),
+                    q.get("daily_date"),
+                    now,
+                ))
+            created_ids.append(int(cur.lastrowid))
+    return created_ids
+
+
+def get_all_quizzes_admin(limit: int = 200) -> List[Dict[str, Any]]:
+    """Returns all active quizzes for management view."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT q.*, d.filename as source_doc_filename
+            FROM quizzes q
+            LEFT JOIN quiz_source_documents d ON q.source_doc_id = d.id
+            ORDER BY q.id DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            d["options"] = json.loads(d["options_json"]) if d["options_json"] else None
+            d["correct_answers"] = json.loads(d["correct_answers_json"]) if d["correct_answers_json"] else []
+            results.append(d)
+        return results
+
+
+def delete_quiz(quiz_id: int) -> bool:
+    """Deletes or archives a quiz."""
+    with get_connection() as conn:
+        cur = conn.execute("DELETE FROM quizzes WHERE id = ?", (quiz_id,))
+        return cur.rowcount > 0
+
+
+def get_daily_quizzes(user_id: int, count: int = 5) -> List[Dict[str, Any]]:
+    """Returns active educational quizzes with the current user's submission state."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
+                   q.image_filename, q.options_json, q.correct_answers_json,
+                   q.explanation, q.source_ref, q.daily_date,
+                   qs.id as submission_id, qs.user_answer, qs.is_correct,
+                   qs.score_earned, qs.submitted_at
+            FROM quizzes q
+            LEFT JOIN quiz_submissions qs ON q.id = qs.quiz_id AND qs.user_id = ?
+            WHERE q.is_active = 1
+            ORDER BY q.id ASC
+            LIMIT ?
+        """, (user_id, count)).fetchall()
+
+        quizzes = []
+        for r in rows:
+            is_solved = r["submission_id"] is not None
+            options = json.loads(r["options_json"]) if r["options_json"] else None
+            item: Dict[str, Any] = {
+                "id": r["id"],
+                "category": r["category"],
+                "difficulty": r["difficulty"],
+                "question_type": r["question_type"],
+                "question": r["question"],
+                "image_filename": r["image_filename"] or "",
+                "options": options,
+                "source_ref": r["source_ref"] or "",
+                "is_solved": is_solved,
+            }
+            if is_solved:
+                item["user_answer"] = r["user_answer"]
+                item["is_correct"] = bool(r["is_correct"])
+                item["score_earned"] = r["score_earned"]
+                item["submitted_at"] = r["submitted_at"]
+                item["correct_answers"] = json.loads(r["correct_answers_json"])
+                item["explanation"] = r["explanation"]
+            else:
+                item["user_answer"] = None
+                item["is_correct"] = None
+                item["score_earned"] = 0
+            quizzes.append(item)
+        return quizzes
+
+
+def submit_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str, Any]:
+    """Evaluates the submitted answer, updates streaks/scores, and returns detailed results."""
+    from app.quiz_ai import check_quiz_answer
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    now = utc_now()
+
+    with get_connection() as conn:
+        quiz_row = conn.execute(
+            "SELECT * FROM quizzes WHERE id = ? AND is_active = 1", (quiz_id,)
+        ).fetchone()
+        if not quiz_row:
+            raise ValueError("존재하지 않거나 비활성화된 퀴즈입니다.")
+
+        # Check existing submission
+        existing = conn.execute(
+            "SELECT id FROM quiz_submissions WHERE quiz_id = ? AND user_id = ?",
+            (quiz_id, user_id)
+        ).fetchone()
+        if existing:
+            raise ValueError("이미 제출 완료된 문제입니다.")
+
+        correct_answers: List[str] = json.loads(quiz_row["correct_answers_json"])
+        is_correct = 1 if check_quiz_answer(correct_answers, user_answer) else 0
+
+        # Score calculation
+        diff = (quiz_row["difficulty"] or "medium").lower()
+        if is_correct:
+            if diff == "hard":
+                score_earned = 30
+            elif diff == "easy":
+                score_earned = 10
+            else:
+                score_earned = 20
+        else:
+            score_earned = 0
+
+        # Insert submission
+        conn.execute("""INSERT INTO quiz_submissions
+            (quiz_id, user_id, user_answer, is_correct, score_earned, submitted_at, submitted_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (quiz_id, user_id, user_answer, is_correct, score_earned, now, today_str))
+
+        # Update or create user stats
+        stats_row = conn.execute(
+            "SELECT * FROM user_quiz_stats WHERE user_id = ?", (user_id,)
+        ).fetchone()
+
+        if stats_row:
+            last_date = stats_row["last_solved_date"]
+            curr_streak = stats_row["current_streak"]
+            max_streak = stats_row["max_streak"]
+
+            if last_date == today_str:
+                streak = curr_streak
+            elif last_date == yesterday_str:
+                streak = curr_streak + 1
+            else:
+                streak = 1
+
+            max_streak = max(max_streak, streak)
+            total_score = stats_row["total_score"] + score_earned
+            weekly_score = stats_row["weekly_score"] + score_earned
+            total_solved = stats_row["total_solved"] + 1
+            total_correct = stats_row["total_correct"] + is_correct
+
+            conn.execute("""UPDATE user_quiz_stats SET
+                total_score = ?, total_solved = ?, total_correct = ?,
+                current_streak = ?, max_streak = ?, weekly_score = ?,
+                last_solved_date = ?
+                WHERE user_id = ?""",
+                (total_score, total_solved, total_correct, streak, max_streak,
+                 weekly_score, today_str, user_id))
+        else:
+            streak = 1
+            max_streak = 1
+            total_score = score_earned
+            weekly_score = score_earned
+            total_solved = 1
+            total_correct = is_correct
+
+            conn.execute("""INSERT INTO user_quiz_stats
+                (user_id, total_score, total_solved, total_correct,
+                 current_streak, max_streak, weekly_score, last_solved_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (user_id, total_score, total_solved, total_correct,
+                 streak, max_streak, weekly_score, today_str))
+
+        return {
+            "quiz_id": quiz_id,
+            "is_correct": bool(is_correct),
+            "score_earned": score_earned,
+            "correct_answers": correct_answers,
+            "explanation": quiz_row["explanation"],
+            "source_ref": quiz_row["source_ref"],
+            "user_stats": {
+                "current_streak": streak,
+                "max_streak": max_streak,
+                "total_score": total_score,
+                "weekly_score": weekly_score,
+                "total_solved": total_solved,
+                "total_correct": total_correct,
+            }
+        }
+
+
+def get_user_quiz_stats(user_id: int) -> Dict[str, Any]:
+    """Returns user quiz performance summary and rank."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM user_quiz_stats WHERE user_id = ?", (user_id,)
+        ).fetchone()
+
+        if not row:
+            return {
+                "user_id": user_id,
+                "total_score": 0,
+                "weekly_score": 0,
+                "current_streak": 0,
+                "max_streak": 0,
+                "total_solved": 0,
+                "total_correct": 0,
+                "accuracy": 0.0,
+                "badge": None,
+            }
+
+        data = dict(row)
+        solved = data.get("total_solved", 0)
+        correct = data.get("total_correct", 0)
+        data["accuracy"] = round((correct / solved * 100), 1) if solved > 0 else 0.0
+        data["badge"] = get_user_quiz_badge(user_id)
+        return data
+
+
+def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[str, Any]]:
+    """Returns top ranked users for daily, weekly, or all-time educational quizzes."""
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    with get_connection() as conn:
+        if period == "daily":
+            rows = conn.execute("""
+                SELECT qs.user_id, u.username, u.display_name,
+                       SUM(qs.score_earned) as score,
+                       SUM(qs.is_correct) as correct_count,
+                       COUNT(qs.id) as solved_count,
+                       COALESCE(st.current_streak, 0) as current_streak
+                FROM quiz_submissions qs
+                JOIN users u ON qs.user_id = u.id
+                LEFT JOIN user_quiz_stats st ON qs.user_id = st.user_id
+                WHERE qs.submitted_date = ?
+                GROUP BY qs.user_id
+                ORDER BY score DESC, correct_count DESC, qs.user_id ASC
+                LIMIT ?
+            """, (today_str, limit)).fetchall()
+        elif period == "all":
+            rows = conn.execute("""
+                SELECT st.user_id, u.username, u.display_name,
+                       st.total_score as score,
+                       st.total_correct as correct_count,
+                       st.total_solved as solved_count,
+                       st.current_streak,
+                       st.max_streak
+                FROM user_quiz_stats st
+                JOIN users u ON st.user_id = u.id
+                WHERE st.total_score > 0 OR st.total_solved > 0
+                ORDER BY st.total_score DESC, st.current_streak DESC, st.user_id ASC
+                LIMIT ?
+            """, (limit,)).fetchall()
+        else:  # weekly
+            rows = conn.execute("""
+                SELECT st.user_id, u.username, u.display_name,
+                       st.weekly_score as score,
+                       st.total_correct as correct_count,
+                       st.total_solved as solved_count,
+                       st.current_streak
+                FROM user_quiz_stats st
+                JOIN users u ON st.user_id = u.id
+                WHERE st.weekly_score > 0 OR st.total_score > 0
+                ORDER BY st.weekly_score DESC, st.total_score DESC, st.current_streak DESC, st.user_id ASC
+                LIMIT ?
+            """, (limit,)).fetchall()
+
+        results = []
+        for rank, r in enumerate(rows, start=1):
+            item = dict(r)
+            item["rank"] = rank
+            results.append(item)
+        return results
+
+
+def get_user_quiz_badge(user_id: int) -> Optional[Dict[str, Any]]:
+    """Calculates user badge to display beside nickname in chat."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM user_quiz_stats WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if not row:
+            return None
+
+        # Check weekly 1st place
+        top_user = conn.execute("""
+            SELECT user_id FROM user_quiz_stats
+            WHERE weekly_score > 0
+            ORDER BY weekly_score DESC, total_score DESC
+            LIMIT 1
+        """).fetchone()
+
+        if top_user and top_user["user_id"] == user_id:
+            return {
+                "type": "rank",
+                "icon": "👑",
+                "label": "주간 1위",
+                "title": "이번 주 퀴즈 1위"
+            }
+
+        streak = row["current_streak"]
+        if streak >= 3:
+            return {
+                "type": "streak",
+                "icon": "🔥",
+                "label": f"{streak}일 연속",
+                "title": f"퀴즈 {streak}일 연속 정답"
+            }
+
+        if row["total_score"] >= 50:
+            return {
+                "type": "score",
+                "icon": "⚡",
+                "label": f"{row['total_score']}점",
+                "title": f"퀴즈 누적 {row['total_score']}점"
+            }
+
+        return None
+
+
+def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
+    """Bulk calculates badges for multiple users to optimize message rendering."""
+    if not user_ids:
+        return {}
+    badges: Dict[int, Optional[Dict[str, Any]]] = {}
+    with get_connection() as conn:
+        # Check weekly top user
+        top_user = conn.execute("""
+            SELECT user_id FROM user_quiz_stats
+            WHERE weekly_score > 0
+            ORDER BY weekly_score DESC, total_score DESC
+            LIMIT 1
+        """).fetchone()
+        top_uid = top_user["user_id"] if top_user else None
+
+        placeholders = ",".join("?" for _ in user_ids)
+        rows = conn.execute(
+            f"SELECT * FROM user_quiz_stats WHERE user_id IN ({placeholders})", user_ids
+        ).fetchall()
+        stats_map = {r["user_id"]: dict(r) for r in rows}
+
+        for uid in user_ids:
+            st = stats_map.get(uid)
+            if not st:
+                badges[uid] = None
+                continue
+            if top_uid == uid:
+                badges[uid] = {"type": "rank", "icon": "👑", "label": "주간 1위", "title": "이번 주 퀴즈 1위"}
+            elif st.get("current_streak", 0) >= 3:
+                badges[uid] = {"type": "streak", "icon": "🔥", "label": f"{st['current_streak']}일 연속", "title": f"퀴즈 {st['current_streak']}일 연속 정답"}
+            elif st.get("total_score", 0) >= 50:
+                badges[uid] = {"type": "score", "icon": "⚡", "label": f"{st['total_score']}점", "title": f"퀴즈 누적 {st['total_score']}점"}
+            else:
+                badges[uid] = None
+
+    return badges

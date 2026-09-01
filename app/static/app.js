@@ -386,6 +386,8 @@ async function enterChat(user) {
   initWebSocket();
   refreshStorageWarning();
   showNicknameHint();
+  if (quizTabAdminBtn) quizTabAdminBtn.classList.toggle('hidden', user.role !== 'admin');
+  refreshQuizHeaderStreak();
 }
 
 async function submitAuth(event) {
@@ -460,6 +462,10 @@ async function logout() {
   if (channelModal) channelModal.classList.add('hidden');
   if (channelEditModal) channelEditModal.classList.add('hidden');
   if (channelSettingsBtn) channelSettingsBtn.classList.add('hidden');
+  if (quizModal) quizModal.classList.add('hidden');
+  if (headerQuizStreak) headerQuizStreak.classList.add('hidden');
+  todayQuizzes = [];
+  userQuizStats = null;
   channelsDirectory.clear();
   messageListEl.replaceChildren();
   setConnected(false);
@@ -2486,6 +2492,13 @@ function renderOnlineList(users) {
     item.setAttribute('aria-label', `${displayName} ${online ? '온라인' : '오프라인'}`);
     item.title = `${displayName} (@${nick}) — ${online ? '온라인' : '오프라인'}`;
     item.append(dot, nickElement);
+    if (user.quiz_badge) {
+      const badgeSpan = document.createElement('span');
+      badgeSpan.className = `quiz-user-badge badge-${user.quiz_badge.type}`;
+      badgeSpan.textContent = `${user.quiz_badge.icon} ${user.quiz_badge.label}`;
+      badgeSpan.title = user.quiz_badge.title || '';
+      item.appendChild(badgeSpan);
+    }
     if (nick !== myNickname) {
       const openDm = () => {
         getOrCreateDm(nick, user.id);
@@ -3192,7 +3205,15 @@ function appendMessageNode(msg, previousMsg = null) {
     const time = document.createElement('time');
     time.dateTime = msg.created_at || '';
     time.textContent = formatTime(msg.created_at);
-    meta.append(nick, time);
+    meta.append(nick);
+    if (msg.quiz_badge) {
+      const badgeSpan = document.createElement('span');
+      badgeSpan.className = `quiz-user-badge badge-${msg.quiz_badge.type}`;
+      badgeSpan.textContent = `${msg.quiz_badge.icon} ${msg.quiz_badge.label}`;
+      badgeSpan.title = msg.quiz_badge.title || '';
+      meta.appendChild(badgeSpan);
+    }
+    meta.appendChild(time);
     if (msg.is_hidden) {
       const hiddenBadge = document.createElement('span');
       hiddenBadge.className = 'msg-hidden-badge';
@@ -4584,3 +4605,598 @@ updateCharCount();
 setConnected(false);
 initSidebarSections();
 bootstrapAuth();
+
+
+// ==========================================
+// Educational Quiz & Mini-Leaderboard Module
+// ==========================================
+
+const quizBtn = document.getElementById('quiz-btn');
+const headerQuizStreak = document.getElementById('header-quiz-streak');
+const headerStreakCount = document.getElementById('header-streak-count');
+const quizModal = document.getElementById('quiz-modal');
+const quizModalClose = document.getElementById('quiz-modal-close');
+
+const quizTabDailyBtn = document.getElementById('quiz-tab-daily-btn');
+const quizTabLeaderboardBtn = document.getElementById('quiz-tab-leaderboard-btn');
+const quizTabAdminBtn = document.getElementById('quiz-tab-admin-btn');
+const quizTabDailyContent = document.getElementById('quiz-tab-daily-content');
+const quizTabLeaderboardContent = document.getElementById('quiz-tab-leaderboard-content');
+const quizTabAdminContent = document.getElementById('quiz-tab-admin-content');
+
+const quizStatStreak = document.getElementById('quiz-stat-streak');
+const quizStatScore = document.getElementById('quiz-stat-score');
+const quizStatAccuracy = document.getElementById('quiz-stat-accuracy');
+
+const quizLoadingState = document.getElementById('quiz-loading-state');
+const quizContainer = document.getElementById('quiz-container');
+const quizPillNav = document.getElementById('quiz-pill-nav');
+const quizProgressText = document.getElementById('quiz-progress-text');
+
+const quizCategoryTag = document.getElementById('quiz-category-tag');
+const quizDifficultyTag = document.getElementById('quiz-difficulty-tag');
+const quizTypeTag = document.getElementById('quiz-type-tag');
+const quizScoreBadge = document.getElementById('quiz-score-badge');
+const quizQuestionText = document.getElementById('quiz-question-text');
+
+const quizImageContainer = document.getElementById('quiz-image-container');
+const quizImage = document.getElementById('quiz-image');
+
+const quizOptionsList = document.getElementById('quiz-options-list');
+const quizInputContainer = document.getElementById('quiz-input-container');
+const quizAnswerInput = document.getElementById('quiz-answer-input');
+const quizSubmitBtn = document.getElementById('quiz-submit-btn');
+
+const quizFeedbackBox = document.getElementById('quiz-feedback-box');
+const quizResultBanner = document.getElementById('quiz-result-banner');
+const quizResultIcon = document.getElementById('quiz-result-icon');
+const quizResultTitle = document.getElementById('quiz-result-title');
+const quizResultAnswers = document.getElementById('quiz-result-answers');
+const quizExplanationText = document.getElementById('quiz-explanation-text');
+const quizSourceRef = document.getElementById('quiz-source-ref');
+
+const quizPrevBtn = document.getElementById('quiz-prev-btn');
+const quizNextBtn = document.getElementById('quiz-next-btn');
+
+const leaderboardPodium = document.getElementById('leaderboard-podium');
+const leaderboardTbody = document.getElementById('leaderboard-tbody');
+const lbPeriodButtons = document.querySelectorAll('.lb-period-btn');
+
+const quizAiGenForm = document.getElementById('quiz-ai-gen-form');
+const quizGenCategory = document.getElementById('quiz-gen-category');
+const quizGenCount = document.getElementById('quiz-gen-count');
+const quizGenFile = document.getElementById('quiz-gen-file');
+const quizGenText = document.getElementById('quiz-gen-text');
+const quizGenStatus = document.getElementById('quiz-gen-status');
+const quizGenSubmit = document.getElementById('quiz-gen-submit');
+
+const quizJsonImportForm = document.getElementById('quiz-json-import-form');
+const quizJsonInput = document.getElementById('quiz-json-input');
+const quizJsonStatus = document.getElementById('quiz-json-status');
+const quizJsonSubmit = document.getElementById('quiz-json-submit');
+
+const adminQuizList = document.getElementById('admin-quiz-list');
+const adminQuizTotalCount = document.getElementById('admin-quiz-total-count');
+
+let todayQuizzes = [];
+let currentQuizIndex = 0;
+let userQuizStats = null;
+let currentSelectedOption = null;
+
+async function refreshQuizHeaderStreak() {
+  if (!currentUser) return;
+  try {
+    const res = await fetch('/api/quiz/stats');
+    if (!res.ok) return;
+    const data = await res.json();
+    userQuizStats = data;
+    if (headerQuizStreak && headerStreakCount) {
+      const streak = data.current_streak || 0;
+      if (streak > 0) {
+        headerStreakCount.textContent = streak;
+        headerQuizStreak.classList.remove('hidden');
+      } else {
+        headerQuizStreak.classList.add('hidden');
+      }
+    }
+  } catch { /* ignore network error */ }
+}
+
+function openQuizModal(tab = 'daily') {
+  if (!quizModal || !currentUser) return;
+  quizModal.classList.remove('hidden');
+  switchQuizTab(tab);
+  fetchTodayQuizzes();
+}
+
+function closeQuizModal() {
+  if (quizModal) quizModal.classList.add('hidden');
+}
+
+function switchQuizTab(tab) {
+  const isDaily = tab === 'daily';
+  const isLb = tab === 'leaderboard';
+  const isAdmin = tab === 'admin';
+
+  quizTabDailyBtn?.classList.toggle('active', isDaily);
+  quizTabLeaderboardBtn?.classList.toggle('active', isLb);
+  quizTabAdminBtn?.classList.toggle('active', isAdmin);
+
+  quizTabDailyContent?.classList.toggle('hidden', !isDaily);
+  quizTabLeaderboardContent?.classList.toggle('hidden', !isLb);
+  quizTabAdminContent?.classList.toggle('hidden', !isAdmin);
+
+  if (isLb) fetchLeaderboard('weekly');
+  if (isAdmin) fetchAdminQuizzes();
+}
+
+async function fetchTodayQuizzes() {
+  if (!currentUser) return;
+  quizLoadingState?.classList.remove('hidden');
+  quizContainer?.classList.add('hidden');
+  try {
+    const res = await fetch('/api/quiz/today');
+    if (!res.ok) throw new Error('퀴즈 목록을 불러오지 못했습니다.');
+    const data = await res.json();
+    todayQuizzes = data.quizzes || [];
+    userQuizStats = data.stats || null;
+    renderQuizStats();
+    if (todayQuizzes.length > 0) {
+      currentQuizIndex = 0;
+      renderQuizPillNav();
+      renderActiveQuiz();
+      quizLoadingState?.classList.add('hidden');
+      quizContainer?.classList.remove('hidden');
+    } else {
+      if (quizLoadingState) {
+        quizLoadingState.textContent = '현재 등록된 퀴즈가 없습니다.';
+        quizLoadingState.classList.remove('hidden');
+      }
+    }
+  } catch (err) {
+    if (quizLoadingState) {
+      quizLoadingState.textContent = err.message || '오류가 발생했습니다.';
+    }
+  }
+}
+
+function renderQuizStats() {
+  if (!userQuizStats) return;
+  if (quizStatStreak) quizStatStreak.textContent = `${userQuizStats.current_streak || 0}일`;
+  if (quizStatScore) quizStatScore.textContent = `${userQuizStats.total_score || 0}점`;
+  if (quizStatAccuracy) quizStatAccuracy.textContent = `${userQuizStats.accuracy || 0}%`;
+  refreshQuizHeaderStreak();
+}
+
+function renderQuizPillNav() {
+  if (!quizPillNav) return;
+  quizPillNav.replaceChildren();
+  todayQuizzes.forEach((q, idx) => {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = `quiz-pill-btn${idx === currentQuizIndex ? ' active' : ''}`;
+    if (q.is_solved) {
+      pill.classList.add(q.is_correct ? 'solved-correct' : 'solved-wrong');
+      pill.textContent = q.is_correct ? '✓' : '✕';
+    } else {
+      pill.textContent = String(idx + 1);
+    }
+    pill.addEventListener('click', () => {
+      currentQuizIndex = idx;
+      renderQuizPillNav();
+      renderActiveQuiz();
+    });
+    quizPillNav.appendChild(pill);
+  });
+  if (quizProgressText) {
+    quizProgressText.textContent = `문제 ${currentQuizIndex + 1} / ${todayQuizzes.length}`;
+  }
+  if (quizPrevBtn) quizPrevBtn.disabled = currentQuizIndex === 0;
+  if (quizNextBtn) quizNextBtn.disabled = currentQuizIndex === todayQuizzes.length - 1;
+}
+
+function renderActiveQuiz() {
+  const q = todayQuizzes[currentQuizIndex];
+  if (!q) return;
+
+  currentSelectedOption = null;
+  if (quizCategoryTag) quizCategoryTag.textContent = q.category || 'PLC/시퀀스';
+  if (quizDifficultyTag) {
+    const diffMap = { easy: '쉬움 (10점)', medium: '보통 (20점)', hard: '어려움 (30점)' };
+    quizDifficultyTag.textContent = diffMap[q.difficulty] || q.difficulty;
+  }
+  if (quizTypeTag) {
+    const typeMap = { multiple_choice: '객관식', short_answer: '단답형', ladder_input: '래더 명령어' };
+    quizTypeTag.textContent = typeMap[q.question_type] || q.question_type;
+  }
+  if (quizScoreBadge) {
+    const scoreMap = { easy: '+10점', medium: '+20점', hard: '+30점' };
+    quizScoreBadge.textContent = scoreMap[q.difficulty] || '+20점';
+  }
+  if (quizQuestionText) quizQuestionText.textContent = q.question;
+
+  // Diagram / Image
+  if (q.image_filename) {
+    quizImage.src = `/api/quiz/images/${encodeURIComponent(q.image_filename)}`;
+    quizImageContainer?.classList.remove('hidden');
+  } else {
+    quizImageContainer?.classList.add('hidden');
+  }
+
+  // Answer Section
+  const isMultiple = q.question_type === 'multiple_choice' && Array.isArray(q.options) && q.options.length > 0;
+  if (isMultiple) {
+    quizOptionsList?.classList.remove('hidden');
+    quizInputContainer?.classList.add('hidden');
+    renderMultipleChoiceOptions(q);
+  } else {
+    quizOptionsList?.classList.add('hidden');
+    quizInputContainer?.classList.remove('hidden');
+    if (quizAnswerInput) {
+      quizAnswerInput.value = q.is_solved ? (q.user_answer || '') : '';
+      quizAnswerInput.disabled = Boolean(q.is_solved);
+    }
+    if (quizSubmitBtn) quizSubmitBtn.disabled = Boolean(q.is_solved);
+  }
+
+  // Feedback display
+  if (q.is_solved) {
+    renderQuizFeedback(q);
+  } else {
+    quizFeedbackBox?.classList.add('hidden');
+  }
+}
+
+function renderMultipleChoiceOptions(q) {
+  if (!quizOptionsList) return;
+  quizOptionsList.replaceChildren();
+  q.options.forEach((opt, idx) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'quiz-option-btn';
+    btn.textContent = opt;
+    const isSelected = q.is_solved ? (q.user_answer === opt || q.user_answer === String(idx + 1)) : (currentSelectedOption === opt);
+    if (isSelected) btn.classList.add('selected');
+    if (q.is_solved) {
+      btn.disabled = true;
+    } else {
+      btn.addEventListener('click', () => {
+        currentSelectedOption = opt;
+        renderMultipleChoiceOptions(q);
+        submitQuiz(opt);
+      });
+    }
+    quizOptionsList.appendChild(btn);
+  });
+}
+
+function renderQuizFeedback(q) {
+  if (!quizFeedbackBox) return;
+  quizFeedbackBox.classList.remove('hidden');
+  const isCorrect = Boolean(q.is_correct);
+  if (quizResultBanner) {
+    quizResultBanner.className = `quiz-result-banner ${isCorrect ? 'correct' : 'wrong'}`;
+  }
+  if (quizResultIcon) quizResultIcon.textContent = isCorrect ? '⭕' : '❌';
+  if (quizResultTitle) {
+    quizResultTitle.textContent = isCorrect ? `정답입니다! (+${q.score_earned || 20}점)` : '오답입니다!';
+  }
+  if (quizResultAnswers) {
+    if (isCorrect) {
+      quizResultAnswers.textContent = `입력한 답: ${q.user_answer}`;
+    } else {
+      const correctText = Array.isArray(q.correct_answers) ? q.correct_answers.join(', ') : (q.correct_answers || '');
+      quizResultAnswers.textContent = `내 답안: ${q.user_answer || '(미입력)'} | 정답: ${correctText}`;
+    }
+  }
+  if (quizExplanationText) quizExplanationText.textContent = q.explanation || '해설이 없습니다.';
+  if (quizSourceRef) quizSourceRef.textContent = q.source_ref ? `출처: ${q.source_ref}` : '';
+}
+
+async function submitQuiz(answerVal = null) {
+  const q = todayQuizzes[currentQuizIndex];
+  if (!q || q.is_solved) return;
+  const answer = answerVal || (quizAnswerInput ? quizAnswerInput.value.trim() : '');
+  if (!answer) {
+    showToast('답안을 입력하거나 선택해 주세요.', 'warning');
+    return;
+  }
+  if (quizSubmitBtn) quizSubmitBtn.disabled = true;
+  try {
+    const res = await fetch('/api/quiz/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quiz_id: q.id, answer: answer }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '답안 제출에 실패했습니다.');
+
+    // Update local quiz object
+    q.is_solved = true;
+    q.is_correct = data.is_correct;
+    q.user_answer = answer;
+    q.score_earned = data.score_earned;
+    q.correct_answers = data.correct_answers;
+    q.explanation = data.explanation;
+    q.source_ref = data.source_ref;
+
+    userQuizStats = data.user_stats;
+    renderQuizStats();
+    renderQuizPillNav();
+    renderActiveQuiz();
+
+    if (data.is_correct) {
+      showToast(`🎉 정답입니다! +${data.score_earned}점을 획득했습니다.`, 'success');
+    } else {
+      showToast('아쉽게도 오답입니다. 해설을 확인해 보세요.', 'info');
+    }
+  } catch (err) {
+    showToast(err.message || '답안 제출 중 오류가 발생했습니다.', 'error');
+    if (quizSubmitBtn) quizSubmitBtn.disabled = false;
+  }
+}
+
+// Leaderboard
+async function fetchLeaderboard(period = 'weekly') {
+  if (!leaderboardTbody) return;
+  lbPeriodButtons.forEach(b => b.classList.toggle('active', b.dataset.period === period));
+  try {
+    const res = await fetch(`/api/quiz/leaderboard?period=${period}`);
+    if (!res.ok) throw new Error('리더보드를 불러오지 못했습니다.');
+    const data = await res.json();
+    renderLeaderboard(data.leaderboard || []);
+  } catch (err) {
+    showToast(err.message || '리더보드 조회 실패', 'error');
+  }
+}
+
+function renderLeaderboard(list) {
+  if (!leaderboardPodium || !leaderboardTbody) return;
+  leaderboardPodium.replaceChildren();
+  leaderboardTbody.replaceChildren();
+
+  // Top 3 Podium
+  const top3 = list.slice(0, 3);
+  const podiumIcons = ['🥇', '🥈', '🥉'];
+  top3.forEach((item, idx) => {
+    const card = document.createElement('div');
+    card.className = `podium-card rank-${idx + 1}`;
+    const icon = document.createElement('span');
+    icon.className = 'podium-rank-icon';
+    icon.textContent = podiumIcons[idx];
+    const name = document.createElement('strong');
+    name.className = 'podium-name';
+    name.textContent = item.display_name || item.username;
+    const score = document.createElement('span');
+    score.className = 'podium-score';
+    score.textContent = `${item.score || 0}점`;
+    const streak = document.createElement('small');
+    streak.className = 'field-hint';
+    streak.textContent = item.current_streak ? `🔥 ${item.current_streak}일 연속` : '';
+    card.append(icon, name, score, streak);
+    leaderboardPodium.appendChild(card);
+  });
+
+  if (list.length === 0) {
+    const emptyRow = document.createElement('tr');
+    emptyRow.innerHTML = '<td colspan="5" style="text-align:center; padding: 20px; color: var(--text-muted);">아직 퀴즈 제출 기록이 없습니다. 오늘의 첫 1위에 도전해보세요!</td>';
+    leaderboardTbody.appendChild(emptyRow);
+    return;
+  }
+
+  list.forEach(item => {
+    const tr = document.createElement('tr');
+    if (Number(item.user_id) === myUserId) tr.className = 'my-row';
+
+    const tdRank = document.createElement('td');
+    tdRank.innerHTML = `<strong>#${item.rank}</strong>`;
+
+    const tdUser = document.createElement('td');
+    const uName = item.display_name || item.username;
+    tdUser.textContent = uName + (Number(item.user_id) === myUserId ? ' (나)' : '');
+
+    const tdScore = document.createElement('td');
+    tdScore.innerHTML = `<strong style="color: #f59e0b;">${item.score || 0}점</strong>`;
+
+    const tdCorrect = document.createElement('td');
+    tdCorrect.textContent = `${item.correct_count || 0}문제`;
+
+    const tdStreak = document.createElement('td');
+    tdStreak.textContent = item.current_streak ? `🔥 ${item.current_streak}일` : '-';
+
+    tr.append(tdRank, tdUser, tdScore, tdCorrect, tdStreak);
+    leaderboardTbody.appendChild(tr);
+  });
+}
+
+// Admin Quiz Management
+async function fetchAdminQuizzes() {
+  if (!adminQuizList || currentUser?.role !== 'admin') return;
+  try {
+    const res = await fetch('/api/admin/quiz/list');
+    if (!res.ok) return;
+    const data = await res.json();
+    const quizzes = data.quizzes || [];
+    if (adminQuizTotalCount) adminQuizTotalCount.textContent = String(quizzes.length);
+    adminQuizList.replaceChildren();
+
+    if (quizzes.length === 0) {
+      adminQuizList.innerHTML = '<div class="field-hint" style="padding: 10px;">등록된 퀴즈가 없습니다. 위 AI 생성이나 JSON 등록을 이용해 추가하세요.</div>';
+      return;
+    }
+
+    quizzes.forEach(q => {
+      const item = document.createElement('div');
+      item.className = 'admin-quiz-item';
+
+      const title = document.createElement('span');
+      title.className = 'admin-quiz-item-title';
+      title.textContent = `[${q.category}] ${q.question}`;
+      title.title = q.question;
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'danger-btn';
+      delBtn.style.padding = '4px 10px';
+      delBtn.style.fontSize = '0.76rem';
+      delBtn.textContent = '삭제';
+      delBtn.addEventListener('click', async () => {
+        if (!confirm('이 퀴즈를 삭제하시겠습니까?')) return;
+        try {
+          const dRes = await fetch(`/api/admin/quiz/${q.id}`, { method: 'DELETE' });
+          if (!dRes.ok) throw new Error('삭제 실패');
+          showToast('퀴즈가 삭제되었습니다.', 'info');
+          fetchAdminQuizzes();
+        } catch (err) {
+          showToast(err.message || '삭제 실패', 'error');
+        }
+      });
+
+      item.append(title, delBtn);
+      adminQuizList.appendChild(item);
+    });
+  } catch { /* admin fetch error */ }
+}
+
+// Setup Quiz Listeners
+if (quizBtn) quizBtn.addEventListener('click', () => openQuizModal('daily'));
+if (quizModalClose) quizModalClose.addEventListener('click', closeQuizModal);
+if (quizModal) {
+  quizModal.addEventListener('click', (e) => {
+    if (e.target === quizModal) closeQuizModal();
+  });
+}
+
+if (quizTabDailyBtn) quizTabDailyBtn.addEventListener('click', () => switchQuizTab('daily'));
+if (quizTabLeaderboardBtn) quizTabLeaderboardBtn.addEventListener('click', () => switchQuizTab('leaderboard'));
+if (quizTabAdminBtn) quizTabAdminBtn.addEventListener('click', () => switchQuizTab('admin'));
+
+if (quizPrevBtn) {
+  quizPrevBtn.addEventListener('click', () => {
+    if (currentQuizIndex > 0) {
+      currentQuizIndex--;
+      renderQuizPillNav();
+      renderActiveQuiz();
+    }
+  });
+}
+
+if (quizNextBtn) {
+  quizNextBtn.addEventListener('click', () => {
+    if (currentQuizIndex < todayQuizzes.length - 1) {
+      currentQuizIndex++;
+      renderQuizPillNav();
+      renderActiveQuiz();
+    }
+  });
+}
+
+if (quizSubmitBtn) {
+  quizSubmitBtn.addEventListener('click', () => submitQuiz());
+}
+
+if (quizAnswerInput) {
+  quizAnswerInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitQuiz();
+    }
+  });
+}
+
+document.querySelectorAll('.symbol-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (!quizAnswerInput || quizAnswerInput.disabled) return;
+    const sym = btn.dataset.sym || btn.textContent;
+    quizAnswerInput.value += (quizAnswerInput.value ? ' ' : '') + sym;
+    quizAnswerInput.focus();
+  });
+});
+
+lbPeriodButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    fetchLeaderboard(btn.dataset.period);
+  });
+});
+
+// Admin AI Form
+if (quizAiGenForm) {
+  quizAiGenForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (quizGenStatus) {
+      quizGenStatus.textContent = '⏳ AI가 교재를 분석하여 퀴즈를 생성하고 있습니다... (약 5~15초 소요)';
+      quizGenStatus.className = 'admin-status-msg loading';
+    }
+    if (quizGenSubmit) quizGenSubmit.disabled = true;
+
+    const formData = new FormData();
+    formData.append('category', quizGenCategory ? quizGenCategory.value : 'PLC/시퀀스');
+    formData.append('count', quizGenCount ? quizGenCount.value : '5');
+    if (quizGenFile && quizGenFile.files[0]) {
+      formData.append('file', quizGenFile.files[0]);
+    }
+    if (quizGenText && quizGenText.value.trim()) {
+      formData.append('text_content', quizGenText.value.trim());
+    }
+
+    try {
+      const res = await fetch('/api/admin/quiz/ai-generate', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'AI 퀴즈 생성에 실패했습니다.');
+      if (quizGenStatus) {
+        quizGenStatus.textContent = `✅ ${data.created_count}개의 퀴즈가 성공적으로 생성 및 등록되었습니다!`;
+        quizGenStatus.className = 'admin-status-msg success';
+      }
+      quizAiGenForm.reset();
+      fetchAdminQuizzes();
+      showToast(`${data.created_count}개 AI 퀴즈가 자동 등록되었습니다!`, 'success');
+    } catch (err) {
+      if (quizGenStatus) {
+        quizGenStatus.textContent = `❌ ${err.message || '생성 실패'}`;
+        quizGenStatus.className = 'admin-status-msg error';
+      }
+    } finally {
+      if (quizGenSubmit) quizGenSubmit.disabled = false;
+    }
+  });
+}
+
+// Admin JSON Import Form
+if (quizJsonImportForm) {
+  quizJsonImportForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (quizJsonStatus) {
+      quizJsonStatus.textContent = '⏳ JSON 데이터를 등록하는 중...';
+      quizJsonStatus.className = 'admin-status-msg loading';
+    }
+    if (quizJsonSubmit) quizJsonSubmit.disabled = true;
+
+    try {
+      const parsed = JSON.parse(quizJsonInput.value.trim());
+      const res = await fetch('/api/admin/quiz/import-json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quizzes: parsed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'JSON 등록 실패');
+      if (quizJsonStatus) {
+        quizJsonStatus.textContent = `✅ ${data.created_count}개 문제가 등록되었습니다.`;
+        quizJsonStatus.className = 'admin-status-msg success';
+      }
+      quizJsonImportForm.reset();
+      fetchAdminQuizzes();
+      showToast(`${data.created_count}개 퀴즈가 등록되었습니다.`, 'success');
+    } catch (err) {
+      if (quizJsonStatus) {
+        quizJsonStatus.textContent = `❌ ${err.message || 'JSON 파싱 또는 등록 실패'}`;
+        quizJsonStatus.className = 'admin-status-msg error';
+      }
+    } finally {
+      if (quizJsonSubmit) quizJsonSubmit.disabled = false;
+    }
+  });
+}

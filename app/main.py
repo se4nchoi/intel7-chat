@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Deque, Dict, Optional, Set
 from urllib.parse import unquote, urlsplit
 
-from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -41,7 +41,11 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     update_display_name, update_password_hash,
     ALLOWED_REACTION_EMOJIS, toggle_message_reaction, get_message_reactions, get_direct_message_by_id,
     update_direct_message_content,
-    normalize_dm_conversation_id, pin_message, unpin_message, get_pinned_messages, get_pinned_message_ids)
+    normalize_dm_conversation_id, pin_message, unpin_message, get_pinned_messages, get_pinned_message_ids,
+    get_daily_quizzes, submit_quiz_answer, get_user_quiz_stats, get_quiz_leaderboard,
+    get_user_quiz_badge, get_user_quiz_badges_map, create_quiz, create_quiz_batch,
+    get_all_quizzes_admin, delete_quiz, save_quiz_source_document, get_quiz_source_documents)
+from app.quiz_ai import generate_quizzes_with_gemini, check_quiz_answer, normalize_quiz_answer
 
 CONFIG = load_config()
 configure_storage(CONFIG.data_path, CONFIG.database_limit_bytes)
@@ -67,6 +71,8 @@ MAX_TOTAL_UPLOAD_BYTES = CONFIG.attachment_limit_bytes
 SESSION_COOKIE = "bamboochat_session"
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = CONFIG.data_path / "uploads"
+QUIZ_SOURCES_DIR = CONFIG.data_path / "quiz_sources"
+QUIZ_IMAGES_DIR = CONFIG.data_path / "quiz_images"
 EXPLICIT_ALLOWED_HOSTS = {h.strip().casefold() for h in
     os.getenv("CLASSROOM_ALLOWED_HOSTS", "").split(",") if h.strip()}
 BLOCKED_UPLOAD_SUFFIXES = {".app",".bat",".cmd",".com",".cpl",".dll",".dmg",".exe",".hta",
@@ -243,6 +249,8 @@ def with_mentions(message: dict, users: Optional[list[dict]] = None) -> dict:
     mentions = find_mentions(result.get("content", ""), users, result.get("author_id"))
     result["mentions"] = mentions
     result["mentioned_user_ids"] = [mention["user_id"] for mention in mentions]
+    if result.get("author_id") and "quiz_badge" not in result:
+        result["quiz_badge"] = get_user_quiz_badge(result["author_id"])
     return result
 
 def account_public(user: dict) -> dict:
@@ -307,9 +315,12 @@ async def broadcast_presence() -> None:
 
 async def broadcast_users() -> None:
     online_user_ids = {info.user_id for info in connected_clients.values()}
+    raw_list = list_mentionable_users()
+    uids = [u["id"] for u in raw_list]
+    badges_map = get_user_quiz_badges_map(uids)
     mention_list = [
-        {**user, "online": user["id"] in online_user_ids}
-        for user in list_mentionable_users()
+        {**user, "online": user["id"] in online_user_ids, "quiz_badge": badges_map.get(user["id"])}
+        for user in raw_list
     ]
     await broadcast({
         "type":"users",
@@ -323,6 +334,8 @@ async def broadcast_users() -> None:
 async def lifespan(app: FastAPI):
     init_db()
     UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
+    QUIZ_SOURCES_DIR.mkdir(parents=True,exist_ok=True)
+    QUIZ_IMAGES_DIR.mkdir(parents=True,exist_ok=True)
     prune_expired_sessions()
     logger.info("Persistent storage initialized at %s", CONFIG.data_path)
     yield
@@ -1191,6 +1204,183 @@ async def download_file(attachment_id: str,request: Request):
         filename=record["original_name"],content_disposition_type="inline" if preview else "attachment",
         headers={"Cache-Control":"private, no-store"})
 
+
+# ==========================================
+# Educational Quiz & Leaderboard Endpoints
+# ==========================================
+
+@app.get("/api/quiz/today")
+async def api_quiz_today(request: Request):
+    user = request_user(request)
+    quizzes = get_daily_quizzes(user["id"])
+    stats = get_user_quiz_stats(user["id"])
+    return {
+        "quizzes": quizzes,
+        "stats": stats,
+    }
+
+
+@app.post("/api/quiz/submit")
+async def api_quiz_submit(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    data = await read_json_body(request)
+    try:
+        quiz_id = int(data.get("quiz_id", 0))
+    except (ValueError, TypeError):
+        raise HTTPException(400, "올바른 퀴즈 ID가 필요합니다.")
+    user_answer = str(data.get("answer", "")).strip()
+    if not user_answer:
+        raise HTTPException(400, "답안을 입력하세요.")
+    try:
+        result = submit_quiz_answer(user["id"], quiz_id, user_answer)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    await broadcast_users()
+    return result
+
+
+@app.get("/api/quiz/leaderboard")
+async def api_quiz_leaderboard(request: Request, period: str = "weekly"):
+    request_user(request)
+    if period not in {"daily", "weekly", "all"}:
+        period = "weekly"
+    leaderboard = get_quiz_leaderboard(period)
+    return {
+        "period": period,
+        "leaderboard": leaderboard,
+    }
+
+
+@app.get("/api/quiz/stats")
+async def api_quiz_stats(request: Request):
+    user = request_user(request)
+    return get_user_quiz_stats(user["id"])
+
+
+@app.post("/api/admin/quiz/ai-generate")
+async def api_admin_quiz_ai_generate(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    admin = require_admin(request)
+    api_key = os.getenv("GEMINI_API_KEY", "") or getattr(CONFIG, "gemini_api_key", "")
+    if not api_key:
+        raise HTTPException(400, "GEMINI_API_KEY 환경변수 또는 설정에 Gemini API 키가 등록되지 않았습니다.")
+
+    content_type = request.headers.get("content-type", "")
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        category = str(form.get("category", "PLC/시퀀스")).strip()
+        count = int(form.get("count", 5))
+        file_obj = form.get("file")
+        text_content = str(form.get("text_content", "")).strip()
+
+        if file_obj and hasattr(file_obj, "read"):
+            filename = getattr(file_obj, "filename", "document.pdf")
+            file_bytes = await file_obj.read()
+            is_pdf = filename.lower().endswith(".pdf")
+        elif text_content:
+            filename = "notes.txt"
+            file_bytes = text_content.encode("utf-8")
+            is_pdf = False
+        else:
+            raise HTTPException(400, "파일 또는 텍스트 내용을 입력하세요.")
+    else:
+        data = await read_json_body(request)
+        category = str(data.get("category", "PLC/시퀀스")).strip()
+        count = int(data.get("count", 5))
+        text_content = str(data.get("text_content", "")).strip()
+        if not text_content:
+            raise HTTPException(400, "텍스트 내용을 입력하세요.")
+        filename = "notes.txt"
+        file_bytes = text_content.encode("utf-8")
+        is_pdf = False
+
+    sha256 = hashlib.sha256(file_bytes).hexdigest()
+    stored_name = f"doc_{uuid.uuid4().hex}_{filename}"
+    doc_path = QUIZ_SOURCES_DIR / stored_name
+    doc_path.write_bytes(file_bytes)
+    doc_id = save_quiz_source_document(
+        filename=filename,
+        stored_filename=stored_name,
+        file_type="pdf" if is_pdf else "txt",
+        sha256=sha256,
+        size=len(file_bytes),
+        uploaded_by_user_id=admin["id"]
+    )
+
+    try:
+        quizzes = await asyncio.to_thread(
+            generate_quizzes_with_gemini,
+            api_key,
+            file_bytes,
+            is_pdf=is_pdf,
+            count=count,
+            category=category,
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"AI 퀴즈 생성 중 오류 발생: {exc}") from exc
+
+    created_ids = create_quiz_batch(quizzes, source_doc_id=doc_id)
+    return {
+        "status": "ok",
+        "created_count": len(created_ids),
+        "source_doc_id": doc_id,
+        "quizzes": quizzes,
+    }
+
+
+@app.post("/api/admin/quiz/import-json")
+async def api_admin_quiz_import_json(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    require_admin(request)
+    data = await read_json_body(request)
+    raw_quizzes = data.get("quizzes", [])
+    if isinstance(raw_quizzes, str):
+        try:
+            raw_quizzes = json.loads(raw_quizzes)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, "올바른 JSON 배열 형식이어야 합니다.") from exc
+    if not isinstance(raw_quizzes, list) or not raw_quizzes:
+        raise HTTPException(400, "퀴즈 목록(배열)이 비어 있거나 올바르지 않습니다.")
+
+    created_ids = create_quiz_batch(raw_quizzes)
+    return {"status": "ok", "created_count": len(created_ids), "ids": created_ids}
+
+
+@app.get("/api/admin/quiz/list")
+async def api_admin_quiz_list(request: Request):
+    require_admin(request)
+    return {
+        "quizzes": get_all_quizzes_admin(),
+        "source_documents": get_quiz_source_documents(),
+    }
+
+
+@app.delete("/api/admin/quiz/{quiz_id}")
+async def api_admin_quiz_delete(quiz_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    require_admin(request)
+    success = delete_quiz(quiz_id)
+    if not success:
+        raise HTTPException(404, "퀴즈를 찾을 수 없습니다.")
+    return {"status": "ok", "deleted_quiz_id": quiz_id}
+
+
+@app.get("/api/quiz/images/{filename}")
+async def api_quiz_image(filename: str, request: Request):
+    request_user(request)
+    safe_name = Path(filename).name
+    img_path = QUIZ_IMAGES_DIR / safe_name
+    if not img_path.exists() or not img_path.is_file():
+        raise HTTPException(404, "이미지를 찾을 수 없습니다.")
+    return FileResponse(img_path)
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     ip=get_client_ip(ws)
@@ -1294,9 +1484,11 @@ async def websocket_endpoint(ws: WebSocket):
                 saved=with_mentions(saved)
                 await broadcast({"type":"chat",**saved})
             elif msg_type=="dm":
-                payload={"type":"dm",**save_direct_message(
+                dm_res = save_direct_message(
                     user,target_user,content,reply=reply,
-                    attachment_ids=[a["id"] for a in attachments])}
+                    attachment_ids=[a["id"] for a in attachments])
+                dm_res["quiz_badge"] = get_user_quiz_badge(info.user_id)
+                payload={"type":"dm",**dm_res}
                 encoded=json.dumps(payload,ensure_ascii=False)
                 sender_targets=list(user_registry.get(info.username,set()))
                 for target_ws in set(targets+sender_targets):
