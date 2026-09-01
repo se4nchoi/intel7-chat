@@ -50,6 +50,14 @@ export function saveCurrentDraft() {
   persistDrafts();
 }
 
+export function clearCurrentDraft(key) {
+  if (!key) {
+    key = `${state.activeRoom.type}:${state.activeRoom.id}`;
+  }
+  delete drafts[key];
+  persistDrafts();
+}
+
 export function loadActiveDraft() {
   const currentKey = `${state.activeRoom.type}:${state.activeRoom.id}`;
   const msgInput = document.getElementById('msg-input');
@@ -852,4 +860,53 @@ export function initChatListeners(onSendMessage) {
       chooseFiles(e.dataTransfer?.files);
     });
   }
+}
+
+// ============================================================
+// DOM mutation helpers (called from ws.js via main.js callbacks)
+// ============================================================
+
+export function updateMessageInDOM(editedMsg) {
+  if (!editedMsg?.message_id) return;
+  const row = document.querySelector(`.msg-row[data-message-id="${editedMsg.message_id}"]`);
+  if (!row) return;
+  const bubble = row.querySelector('.msg-bubble');
+  if (bubble) bubble.innerHTML = renderMarkdown(editedMsg.content || '');
+  if (editedMsg.edited_at) {
+    let editedBadge = row.querySelector('.edited-indicator');
+    if (!editedBadge) {
+      editedBadge = document.createElement('span');
+      editedBadge.className = 'edited-indicator';
+      editedBadge.textContent = '(수정됨)';
+      const meta = row.querySelector('.msg-meta') || row.querySelector('.dm-label');
+      if (meta) meta.appendChild(editedBadge);
+    }
+  }
+}
+
+export function updateMessageHiddenInDOM(hiddenMsg, isHidden) {
+  if (!hiddenMsg?.message_id) return;
+  const row = document.querySelector(`.msg-row[data-message-id="${hiddenMsg.message_id}"]`);
+  if (!row) return;
+  row.classList.toggle('hidden-msg', Boolean(isHidden ?? hiddenMsg.is_hidden));
+}
+
+export function removeMessageFromDOM(messageId) {
+  if (!messageId) return;
+  const row = document.querySelector(`.msg-row[data-message-id="${messageId}"]`);
+  if (row) row.remove();
+}
+
+export function applyAttachmentDeletedInDOM(attachmentId) {
+  if (!attachmentId) return;
+  const messageListEl = document.getElementById('message-list');
+  if (!messageListEl) return;
+  messageListEl.querySelectorAll('.msg-attachment').forEach(el => {
+    if (el.dataset.attachmentId === String(attachmentId)) {
+      const deletedLabel = document.createElement('span');
+      deletedLabel.className = 'attachment-deleted-label';
+      deletedLabel.textContent = '[삭제된 파일]';
+      el.replaceWith(deletedLabel);
+    }
+  });
 }

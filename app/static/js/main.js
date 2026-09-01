@@ -11,11 +11,17 @@ import { renderDms, displayNickname, getOrCreateDm } from './dm.js';
 import {
   loadDrafts,
   saveCurrentDraft,
+  clearCurrentDraft,
   loadActiveDraft,
   resizeComposer,
   updateCharCount,
   renderComposerPreviews,
   renderMessages,
+  appendMessageNode,
+  updateMessageInDOM,
+  updateMessageHiddenInDOM,
+  removeMessageFromDOM,
+  applyAttachmentDeletedInDOM,
   initChatListeners,
   replyTargets,
   pendingAttachments,
@@ -88,6 +94,7 @@ async function switchConversation(type, id) {
         msgType: type === 'channel' ? 'chat' : 'dm'
       }));
       renderMessages(messages);
+      activeHasMore = Boolean(data.has_more);
       if (loadOlderBtn) {
         loadOlderBtn.classList.toggle('hidden', !data.has_more);
       }
@@ -147,13 +154,72 @@ function handleSendMessage() {
   const sent = sendWebSocketMessage(payload);
   if (sent) {
     msgInput.value = '';
-    delete drafts[currentKey];
+    clearCurrentDraft(currentKey);
     replyTargets.delete(currentKey);
     pendingAttachments.delete(currentKey);
     resizeComposer();
     updateCharCount();
     renderComposerPreviews();
     msgInput.focus();
+  }
+}
+
+// --- Load Older Messages ---
+let loadingOlder = false;
+let activeHasMore = false;
+
+async function loadOlderMessages() {
+  if (loadingOlder || !activeHasMore) return;
+  const messageListEl = document.getElementById('message-list');
+  const loadOlderBtn = document.getElementById('load-older-btn');
+  const firstRow = messageListEl?.querySelector('.msg-row[data-message-id]');
+  const firstId = firstRow?.dataset?.messageId;
+  if (!firstId) return;
+
+  // Extract numeric id
+  const numericId = firstId.includes(':') ? firstId.split(':')[1] : firstId;
+  if (!numericId) return;
+
+  loadingOlder = true;
+  if (loadOlderBtn) { loadOlderBtn.disabled = true; loadOlderBtn.textContent = '불러오는 중...'; }
+
+  try {
+    const { type, id } = state.activeRoom;
+    const basePath = type === 'channel'
+      ? (String(id) === '1' ? `/api/history/public` : `/api/channels/${id}/messages`)
+      : `/api/history/dm/${encodeURIComponent(id)}`;
+    const res = await fetch(`${basePath}?before_id=${numericId}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    const rawMessages = Array.isArray(data.messages) ? data.messages : [];
+    const messages = rawMessages.map(m => ({ ...m, msgType: type === 'channel' ? 'chat' : 'dm' }));
+
+    if (messages.length && messageListEl) {
+      const prevHeight = messageListEl.scrollHeight;
+      const prevTop = messageListEl.scrollTop;
+      // Prepend older messages before the first existing .msg-row
+      const loadOlderBtnEl = messageListEl.querySelector('#load-older-btn');
+      const insertAnchor = messageListEl.querySelector('.msg-row') || null;
+      // Render from oldest to newest at the top
+      const frag = document.createDocumentFragment();
+      const tempDiv = document.createElement('div');
+      messages.forEach(msg => appendMessageNode(msg, null)); // appended temporarily
+      // They got appended at end, so move them to before insertAnchor
+      const newRows = [...messageListEl.querySelectorAll('.msg-row')]
+        .slice(-(messages.length));
+      newRows.reverse().forEach(row => {
+        messageListEl.insertBefore(row, insertAnchor);
+      });
+      messageListEl.scrollTop = prevTop + (messageListEl.scrollHeight - prevHeight);
+    }
+
+    activeHasMore = Boolean(data.has_more);
+    if (loadOlderBtn) loadOlderBtn.classList.toggle('hidden', !activeHasMore);
+  } catch {
+    showToast('이전 메시지를 불러오지 못했습니다.', 'error');
+  } finally {
+    loadingOlder = false;
+    if (loadOlderBtn) { loadOlderBtn.disabled = false; loadOlderBtn.textContent = '↑ 이전 메시지 더 불러오기'; }
   }
 }
 
@@ -383,6 +449,10 @@ function initApp() {
   initQuizListeners();
   initSidebarSections();
 
+  // 4. Load older messages button
+  const loadOlderBtn = document.getElementById('load-older-btn');
+  if (loadOlderBtn) loadOlderBtn.addEventListener('click', loadOlderMessages);
+
 
   const onLoginSuccess = async (user) => {
     const chatApp = document.getElementById('chat-app');
@@ -397,8 +467,8 @@ function initApp() {
     await switchConversation('channel', 1);
     initWebSocket({
       onSwitchConv: (convKey) => {
-        const [type, id] = convKey.split(':');
-        switchConversation(type, id);
+        const [type, ...rest] = convKey.split(':');
+        switchConversation(type, rest.join(':'));
       },
       onOpenDm: (nick) => switchConversation('dm', nick),
       onDmsUpdated: () => renderDms(switchConversation),
@@ -411,6 +481,11 @@ function initApp() {
         renderChannels(switchConversation);
         renderDms(switchConversation);
       },
+      onChannelUpdated: () => renderChannels(switchConversation),
+      onMessageEdited: (msg) => updateMessageInDOM(msg),
+      onMessageHidden: (msg, isHidden) => updateMessageHiddenInDOM(msg, isHidden),
+      onMessageMoved: (msgId) => removeMessageFromDOM(msgId),
+      onAttachmentDeleted: (attachmentId) => applyAttachmentDeletedInDOM(attachmentId),
     });
     showNicknameHint();
     refreshQuizHeaderStreak();

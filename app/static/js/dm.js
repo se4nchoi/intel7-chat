@@ -137,20 +137,11 @@ export function renderOnlineList(users, onOpenDm) {
         getOrCreateDm(nick, user.id);
         onOpenDm(nick);
       };
-      const dmButton = document.createElement('button');
-      dmButton.type = 'button';
-      dmButton.className = 'online-dm-btn';
-      dmButton.textContent = 'DM →';
-      dmButton.title = `${displayName}님과 DM 열기`;
-      dmButton.setAttribute('aria-label', `${displayName}님과 DM 열기`);
-      dmButton.addEventListener('click', event => {
-        event.stopPropagation();
-        openDm();
-      });
-      item.appendChild(dmButton);
+      item.title = `${displayName} (@${nick}) — ${online ? '온라인' : '오프라인'} (클릭 시 1:1 대화)`;
       item.addEventListener('click', openDm);
       makeKeyboardClickable(item, openDm);
     }
     onlineListEl.appendChild(item);
+
   });
 }

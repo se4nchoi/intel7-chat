@@ -271,6 +271,74 @@ export function initWebSocket(callbacks = {}) {
         showToast(data.message || '오류가 발생했습니다.', 'error');
         break;
       }
+
+      case 'message_edited': {
+        if (data.message && callbacks.onMessageEdited) {
+          callbacks.onMessageEdited(data.message);
+        }
+        break;
+      }
+
+      case 'dm_edited': {
+        if (data.message && callbacks.onMessageEdited) {
+          callbacks.onMessageEdited(data.message);
+        }
+        break;
+      }
+
+      case 'message_hidden': {
+        if (data.message && callbacks.onMessageHidden) {
+          callbacks.onMessageHidden(data.message, data.is_hidden);
+        }
+        break;
+      }
+
+      case 'message_moved': {
+        if (callbacks.onMessageMoved && data.message?.message_id) {
+          callbacks.onMessageMoved(data.message.message_id);
+        }
+        break;
+      }
+
+      case 'attachment_deleted': {
+        if (callbacks.onAttachmentDeleted && data.attachment_id) {
+          callbacks.onAttachmentDeleted(data.attachment_id);
+        }
+        break;
+      }
+
+      case 'channel_created': {
+        if (data.channel) {
+          channelsDirectory.set(data.channel.id, data.channel);
+          getOrCreateChannel(data.channel);
+          showToast(`'# ${data.channel.display_name}' 채널이 생성되었습니다.`, 'info');
+          if (callbacks.onChannelUpdated) callbacks.onChannelUpdated();
+        }
+        break;
+      }
+
+      case 'channel_updated': {
+        if (data.channel) {
+          channelsDirectory.set(data.channel.id, data.channel);
+          showToast(`'# ${data.channel.display_name}' 채널이 수정되었습니다.`, 'info');
+          if (callbacks.onChannelUpdated) callbacks.onChannelUpdated();
+        }
+        break;
+      }
+
+      case 'channel_deleted': {
+        const delChanId = Number(data.channel_id);
+        const delChan = channelsDirectory.get(delChanId);
+        const delName = delChan?.display_name || `채널 ${delChanId}`;
+        channelsDirectory.delete(delChanId);
+        showToast(`'# ${delName}' 채널이 삭제되었습니다.`, 'warning');
+        if (callbacks.onChannelUpdated) callbacks.onChannelUpdated();
+        break;
+      }
+
+      case 'presence':
+        // Silently ignored — presence count handled by 'users' event
+        break;
     }
   };
 
