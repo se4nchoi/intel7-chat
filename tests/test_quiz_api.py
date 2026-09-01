@@ -51,6 +51,57 @@ def test_quiz_today_unauthenticated():
     assert resp.status_code == 401
 
 
+def test_community_quiz_review_and_daily_publish_flow():
+    student, _ = session_client("author", role="student")
+    admin, _ = session_client("reviewer", role="admin")
+    payload = {
+        "title": "PLC 인터록 문제집",
+        "expertise": "PLC",
+        "quizzes": [{
+            "difficulty": "medium", "question_type": "multiple_choice",
+            "question": "인터록의 목적은?\n```\nX0 --| |--(Y0)\n```",
+            "options": ["1. 동시 투입 방지", "2. 승압", "3. 접지 제거", "4. 과속"],
+            "correct_answers": ["1", "1. 동시 투입 방지"],
+            "hint": "상반 동작", "explanation": "동시 투입을 막습니다.", "source_ref": "노트 1장",
+        }],
+    }
+    created = student.post("/api/quiz/my-sets", json=payload, headers=ORIGIN)
+    assert created.status_code == 201
+    set_id = created.json()["id"]
+    assert student.get("/api/admin/quiz/submissions").status_code == 403
+    assert student.post(f"/api/quiz/my-sets/{set_id}/submit", headers=ORIGIN).status_code == 200
+
+    pending = admin.get("/api/admin/quiz/submissions").json()["sets"]
+    assert [item["id"] for item in pending] == [set_id]
+    reviewed = admin.post(
+        f"/api/admin/quiz/submissions/{set_id}/review",
+        json={"approve": True, "note": "검토 완료"}, headers=ORIGIN,
+    )
+    assert reviewed.status_code == 200
+    quiz_ids = reviewed.json()["created_ids"]
+    assert len(quiz_ids) == 1
+
+    published = admin.post(
+        "/api/admin/quiz/daily-sets",
+        json={"assigned_date": "2099-01-01", "quiz_ids": quiz_ids}, headers=ORIGIN,
+    )
+    assert published.status_code == 200
+    duplicate = admin.post(
+        "/api/admin/quiz/daily-sets",
+        json={"assigned_date": "2099-01-01", "quiz_ids": quiz_ids}, headers=ORIGIN,
+    )
+    assert duplicate.status_code == 400
+
+
+def test_community_quiz_import_rejects_uncontrolled_fields():
+    student, _ = session_client("invalid_author", role="student")
+    bad = student.post("/api/quiz/my-sets", json={
+        "title": "잘못된 문제집", "expertise": "임의 분야",
+        "quizzes": [{"question": "문제", "correct_answers": ["답"], "image_filename": "remote.png"}],
+    }, headers=ORIGIN)
+    assert bad.status_code == 400
+
+
 def test_quiz_today_and_submit_flow(monkeypatch):
     client, user = session_client("alice", role="student")
     broadcast_events = []

@@ -3,7 +3,7 @@
 // ============================================================
 
 import { state } from './state.js';
-import { showToast } from './utils.js';
+import { renderMarkdown, showToast } from './utils.js';
 
 let todayQuizzes = [];
 let currentQuizIndex = 0;
@@ -133,11 +133,13 @@ export function switchQuizNav(navKey, meta = {}) {
   const isQuizRunner = navKey === 'daily' || navKey === 'random' || navKey.startsWith('category:') || navKey === 'wrong' || navKey === 'starred';
   const isLb = navKey === 'leaderboard';
   const isAdmin = navKey === 'admin';
+  const isMySets = navKey === 'mysets';
 
   const quizTabDailyContent = document.getElementById('quiz-tab-daily-content');
   const quizTabHistoryContent = document.getElementById('quiz-tab-history-content');
   const quizTabLeaderboardContent = document.getElementById('quiz-tab-leaderboard-content');
   const quizTabAdminContent = document.getElementById('quiz-tab-admin-content');
+  const quizTabMySetsContent = document.getElementById('quiz-tab-mysets-content');
   const cbtMainHeader = document.getElementById('cbt-main-header');
   const cbtProgressRow = document.getElementById('cbt-progress-row');
   const cbtCurrentTopicTitle = document.getElementById('cbt-current-topic-title');
@@ -151,6 +153,7 @@ export function switchQuizNav(navKey, meta = {}) {
   quizTabHistoryContent?.classList.toggle('hidden', !isHistory);
   quizTabLeaderboardContent?.classList.toggle('hidden', !isLb);
   quizTabAdminContent?.classList.toggle('hidden', !isAdmin);
+  quizTabMySetsContent?.classList.toggle('hidden', !isMySets);
 
   if (cbtMainHeader) cbtMainHeader.classList.toggle('hidden', isAdmin);
   if (cbtProgressRow) cbtProgressRow.classList.toggle('hidden', !isQuizRunner);
@@ -161,6 +164,7 @@ export function switchQuizNav(navKey, meta = {}) {
     wrong: { title: '❌ 오답 복습', desc: '이전에 틀렸던 문제를 다시 풀고 완전히 마스터해 보세요.' },
     starred: { title: '⭐ 중요 문제 보관함', desc: '풀이 중 별표(북마크)로 저장해 둔 핵심 문제들을 복습합니다.' },
     history: { title: '📜 내가 푼 문제', desc: '과목별로 풀이한 퀴즈 목록과 상세 해설을 확인하세요.' },
+    mysets: { title: '🧩 내 문제집 만들기', desc: 'NotebookLM JSON을 검증해 초안으로 저장하고 관리자 검토를 요청하세요.' },
     leaderboard: { title: '🏆 학습 랭킹 순위표', desc: '일일/주간/전체 퀴즈 점수 및 연속 스트릭 순위입니다.' },
     admin: { title: '⚙️ 퀴즈 관리 센터', desc: '교재 PDF를 통한 AI 자동 출제 및 문제 목록을 관리합니다.' },
   };
@@ -184,6 +188,9 @@ export function switchQuizNav(navKey, meta = {}) {
     fetchLeaderboard('weekly');
   } else if (isAdmin) {
     fetchAdminQuizzes();
+    fetchAdminQuizSubmissions();
+  } else if (isMySets) {
+    loadMyQuizSets();
   }
 }
 
@@ -548,10 +555,9 @@ export function renderActiveQuiz() {
     quizTypeTag.textContent = typeMap[q.question_type] || q.question_type;
   }
   if (quizScoreBadge) {
-    const scoreMap = { easy: '+10점', medium: '+20점', hard: '+30점' };
-    quizScoreBadge.textContent = scoreMap[q.difficulty] || '+20점';
+    quizScoreBadge.textContent = currentQuizNav === 'daily' ? '+20점' : '연습 · 0점';
   }
-  if (quizQuestionText) quizQuestionText.textContent = q.question;
+  if (quizQuestionText) renderMarkdown(quizQuestionText, q.question);
 
   if (quizStarBtn) quizStarBtn.classList.toggle('active', Boolean(q.is_starred));
   if (quizStarLabel) quizStarLabel.textContent = q.is_starred ? '보관됨' : '보관';
@@ -831,6 +837,97 @@ export function renderLeaderboard(list) {
   });
 }
 
+function notebookPrompt(expertise) {
+  return `아래 자료만 근거로 ${expertise} 분야의 학습 퀴즈를 만들어 주세요. 결과는 설명이나 Markdown 울타리 없이 유효한 JSON 배열만 출력하세요. 각 객체는 difficulty(easy|medium|hard), question_type(multiple_choice|short_answer|ladder_input), question, options, correct_answers, hint, explanation, source_ref 필드만 가집니다. 객관식 options는 정확히 4개이며 정답 번호와 보기 본문을 correct_answers에 함께 넣으세요. 단답형/래더형 options는 null입니다. 외부 이미지·URL·HTML은 사용하지 마세요. 회로 또는 도면이 필요하면 question 문자열 안에 삼중 백틱으로 감싼 고정폭 ASCII 도면을 넣으세요. 자료에 없는 사실은 추측하지 말고, 문항마다 충분한 해설과 자료 위치를 넣으세요.`;
+}
+
+function setStatusLabel(status) {
+  return ({ draft: '초안', pending_review: '검토 대기', approved: '승인됨', rejected: '반려됨' })[status] || status;
+}
+
+export async function loadMyQuizSets() {
+  const expertise = document.getElementById('quiz-set-expertise');
+  const prompt = document.getElementById('quiz-notebook-prompt');
+  const list = document.getElementById('quiz-mysets-list');
+  if (!list) return;
+  try {
+    const [expertiseRes, setsRes] = await Promise.all([fetch('/api/quiz/expertises'), fetch('/api/quiz/my-sets')]);
+    if (!expertiseRes.ok || !setsRes.ok) throw new Error('문제집 정보를 불러오지 못했습니다.');
+    const expertises = (await expertiseRes.json()).expertises || [];
+    if (expertise && !expertise.options.length) {
+      expertises.forEach(value => expertise.add(new Option(value, value)));
+      expertise.addEventListener('change', () => { if (prompt) prompt.value = notebookPrompt(expertise.value); });
+    }
+    if (prompt) prompt.value = notebookPrompt(expertise?.value || expertises[0] || 'PLC');
+    renderMyQuizSets((await setsRes.json()).sets || []);
+  } catch (err) {
+    list.textContent = err.message;
+  }
+}
+
+function renderMyQuizSets(sets) {
+  const list = document.getElementById('quiz-mysets-list');
+  if (!list) return;
+  list.replaceChildren();
+  if (!sets.length) { list.textContent = '저장한 문제집이 없습니다.'; return; }
+  sets.forEach(set => {
+    const card = document.createElement('article'); card.className = 'quiz-set-item';
+    const info = document.createElement('div');
+    const title = document.createElement('strong'); title.textContent = set.title;
+    const meta = document.createElement('span'); meta.textContent = `${set.expertise} · ${set.quizzes.length}문항 · ${setStatusLabel(set.status)}`;
+    info.append(title, meta);
+    if (set.review_note) { const note = document.createElement('small'); note.textContent = `검토 의견: ${set.review_note}`; info.append(note); }
+    card.appendChild(info);
+    if (set.status === 'draft' || set.status === 'rejected') {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary-btn'; button.textContent = '검토 요청';
+      button.addEventListener('click', async () => {
+        const res = await fetch(`/api/quiz/my-sets/${set.id}/submit`, { method: 'POST' });
+        if (!res.ok) throw new Error((await res.json()).detail || '검토 요청 실패');
+        showToast('관리자 검토를 요청했습니다.', 'success'); loadMyQuizSets();
+      });
+      card.appendChild(button);
+    }
+    list.appendChild(card);
+  });
+}
+
+export async function fetchAdminQuizSubmissions() {
+  const list = document.getElementById('admin-quiz-submissions-list');
+  if (!list || state.currentUser?.role !== 'admin') return;
+  const dailyDate = document.getElementById('quiz-daily-date');
+  if (dailyDate && !dailyDate.value) {
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    dailyDate.value = tomorrow;
+    dailyDate.min = new Date().toISOString().slice(0, 10);
+  }
+  try {
+    const res = await fetch('/api/admin/quiz/submissions');
+    if (!res.ok) throw new Error('승인 목록을 불러오지 못했습니다.');
+    const sets = (await res.json()).sets || []; list.replaceChildren();
+    if (!sets.length) { list.textContent = '검토 대기 중인 문제집이 없습니다.'; return; }
+    sets.forEach(set => {
+      const card = document.createElement('article'); card.className = 'quiz-set-item';
+      const info = document.createElement('div');
+      const title = document.createElement('strong'); title.textContent = set.title;
+      const meta = document.createElement('span'); meta.textContent = `${set.display_name || set.username} · ${set.expertise} · ${set.quizzes.length}문항`;
+      info.append(title, meta); card.appendChild(info);
+      [['승인', true], ['반려', false]].forEach(([label, approve]) => {
+        const button = document.createElement('button'); button.type = 'button'; button.className = approve ? 'cbt-action-btn' : 'danger-btn'; button.textContent = label;
+        button.addEventListener('click', async () => {
+          const note = prompt(`${label} 의견 (선택)`) || '';
+          const review = await fetch(`/api/admin/quiz/submissions/${set.id}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approve, note }) });
+          const data = await review.json(); if (!review.ok) throw new Error(data.detail || `${label} 실패`);
+          if (data.created_ids?.length) document.getElementById('quiz-daily-ids').value = data.created_ids.join(', ');
+          showToast(approve ? '승인되어 공용 풀에 추가됐습니다.' : '문제집을 반려했습니다.', 'success');
+          fetchAdminQuizSubmissions(); fetchAdminQuizzes(); fetchCategoriesSummary();
+        });
+        card.appendChild(button);
+      });
+      list.appendChild(card);
+    });
+  } catch (err) { list.textContent = err.message; }
+}
+
 export async function fetchAdminQuizzes() {
   const adminQuizList = document.getElementById('admin-quiz-list');
   const adminQuizTotalCount = document.getElementById('admin-quiz-total-count');
@@ -891,6 +988,7 @@ export function initQuizListeners() {
   const quizNavWrongBtn = document.getElementById('quiz-nav-wrong-btn');
   const quizNavStarredBtn = document.getElementById('quiz-nav-starred-btn');
   const quizNavHistoryBtn = document.getElementById('quiz-nav-history-btn');
+  const quizNavMySetsBtn = document.getElementById('quiz-nav-mysets-btn');
   const quizNavLeaderboardBtn = document.getElementById('quiz-nav-leaderboard-btn');
   const quizNavAdminBtn = document.getElementById('quiz-nav-admin-btn');
   const quizStarBtn = document.getElementById('quiz-star-btn');
@@ -904,6 +1002,9 @@ export function initQuizListeners() {
   const cbtHistFilterButtons = document.querySelectorAll('.cbt-hist-filter-btn');
   const quizAiGenForm = document.getElementById('quiz-ai-gen-form');
   const quizJsonImportForm = document.getElementById('quiz-json-import-form');
+  const quizSetSaveBtn = document.getElementById('quiz-set-save-btn');
+  const quizCopyPromptBtn = document.getElementById('quiz-copy-prompt-btn');
+  const quizDailyPublishBtn = document.getElementById('quiz-daily-publish-btn');
 
   if (quizBtn) quizBtn.addEventListener('click', () => openQuizModal('daily'));
   if (quizModalClose) quizModalClose.addEventListener('click', closeQuizModal);
@@ -918,8 +1019,39 @@ export function initQuizListeners() {
   if (quizNavWrongBtn) quizNavWrongBtn.addEventListener('click', () => switchQuizNav('wrong'));
   if (quizNavStarredBtn) quizNavStarredBtn.addEventListener('click', () => switchQuizNav('starred'));
   if (quizNavHistoryBtn) quizNavHistoryBtn.addEventListener('click', () => switchQuizNav('history'));
+  if (quizNavMySetsBtn) quizNavMySetsBtn.addEventListener('click', () => switchQuizNav('mysets'));
   if (quizNavLeaderboardBtn) quizNavLeaderboardBtn.addEventListener('click', () => switchQuizNav('leaderboard'));
   if (quizNavAdminBtn) quizNavAdminBtn.addEventListener('click', () => switchQuizNav('admin'));
+
+  quizCopyPromptBtn?.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(document.getElementById('quiz-notebook-prompt')?.value || '');
+    showToast('NotebookLM 프롬프트를 복사했습니다.', 'success');
+  });
+
+  quizSetSaveBtn?.addEventListener('click', async () => {
+    const status = document.getElementById('quiz-set-status');
+    try {
+      const quizzes = JSON.parse(document.getElementById('quiz-set-json')?.value || '');
+      const body = { title: document.getElementById('quiz-set-title')?.value || '', expertise: document.getElementById('quiz-set-expertise')?.value || '', quizzes };
+      const res = await fetch('/api/quiz/my-sets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json(); if (!res.ok) throw new Error(data.detail || '저장 실패');
+      if (status) { status.className = 'admin-status-msg success'; status.textContent = 'JSON 검증을 통과해 초안으로 저장했습니다.'; }
+      document.getElementById('quiz-set-json').value = ''; loadMyQuizSets();
+    } catch (err) {
+      if (status) { status.className = 'admin-status-msg error'; status.textContent = err instanceof SyntaxError ? '유효한 JSON 배열인지 확인하세요.' : err.message; }
+    }
+  });
+
+  quizDailyPublishBtn?.addEventListener('click', async () => {
+    const status = document.getElementById('quiz-daily-status');
+    try {
+      const assigned_date = document.getElementById('quiz-daily-date')?.value || '';
+      const quiz_ids = (document.getElementById('quiz-daily-ids')?.value || '').split(',').map(value => Number(value.trim())).filter(Number.isInteger);
+      const res = await fetch('/api/admin/quiz/daily-sets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assigned_date, quiz_ids }) });
+      const data = await res.json(); if (!res.ok) throw new Error(data.detail || '게시 실패');
+      if (status) { status.className = 'admin-status-msg success'; status.textContent = `${assigned_date} 세트를 변경 불가 상태로 게시했습니다.`; }
+    } catch (err) { if (status) { status.className = 'admin-status-msg error'; status.textContent = err.message; } }
+  });
 
   if (quizStarBtn) quizStarBtn.addEventListener('click', toggleStarCurrentQuiz);
   if (quizHintBtn) quizHintBtn.addEventListener('click', () => quizHintBox?.classList.toggle('hidden'));
