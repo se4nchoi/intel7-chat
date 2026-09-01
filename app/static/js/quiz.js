@@ -146,7 +146,6 @@ export function switchQuizNav(navKey, meta = {}) {
   const quizTabLeaderboardContent = document.getElementById('quiz-tab-leaderboard-content');
   const quizTabAdminContent = document.getElementById('quiz-tab-admin-content');
   const quizTabMySetsContent = document.getElementById('quiz-tab-mysets-content');
-  const quizQuestionSidebarSection = document.querySelector('.quiz-question-sidebar-section');
   const cbtMainHeader = document.getElementById('cbt-main-header');
   const cbtProgressRow = document.getElementById('cbt-progress-row');
   const cbtCurrentTopicTitle = document.getElementById('cbt-current-topic-title');
@@ -164,7 +163,6 @@ export function switchQuizNav(navKey, meta = {}) {
 
   if (cbtMainHeader) cbtMainHeader.classList.toggle('hidden', isAdmin);
   if (cbtProgressRow) cbtProgressRow.classList.toggle('hidden', !isQuizRunner);
-  quizQuestionSidebarSection?.classList.toggle('hidden', !isQuizRunner);
 
   const topicConfig = {
     daily: { title: '⚡ 오늘의 퀴즈', desc: '오늘의 퀴즈를 풀어 STREAK을 이어가세요. 점수는 모든 공용 퀴즈에서 획득할 수 있습니다.' },
@@ -482,6 +480,7 @@ async function openSidebarCategoryPage(category) {
 function restoreSidebarTopics() {
   sidebarCategoryQuizzes = null;
   document.querySelectorAll('.cbt-sidebar-section').forEach(item => item.classList.remove('hidden'));
+  document.querySelector('.quiz-question-sidebar-section')?.classList.add('hidden');
   document.getElementById('quiz-sidebar-back-btn')?.classList.add('hidden');
   const title = document.getElementById('quiz-question-panel-title');
   if (title) title.textContent = '📋 문제 목록';
