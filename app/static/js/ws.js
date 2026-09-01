@@ -7,7 +7,8 @@ import { showToast } from './utils.js';
 import { updateMessageReactionsInDOM } from './reactions.js';
 import { fetchActivePinnedMessages } from './pins.js';
 import { emitAttention, updateDocumentTitle } from './notifications.js';
-import { displayNickname, renderOnlineList, getOrCreateDm } from './dm.js';
+import { displayNickname, renderOnlineList, getOrCreateDm, userDirectory } from './dm.js';
+
 import { getOrCreateChannel, channelsDirectory } from './channels.js';
 import { appendMessageNode, setMentionUsers } from './chat.js';
 
@@ -128,7 +129,8 @@ export function initWebSocket(callbacks = {}) {
       case 'dm': {
         const partner = data.from_nick === myNick ? data.to_nick : data.from_nick;
         const partnerUserId = data.from_nick === myNick ? data.to_user_id : data.from_user_id;
-        getOrCreateDm(partner, partnerUserId);
+        const conv = getOrCreateDm(partner, partnerUserId);
+        conv.lastActivityTime = Math.max(conv.lastActivityTime || 0, new Date(data.created_at || Date.now()).getTime());
 
         const dmMessage = {
           msgType: 'dm',
@@ -158,7 +160,6 @@ export function initWebSocket(callbacks = {}) {
           }
         }
 
-
         const isOwn = data.from_nick === myNick || (myUserId !== null && Number(data.from_user_id) === myUserId);
         if (!isOwn && !data.history) {
           const senderDisplay = displayNickname(data.from_nick);
@@ -170,9 +171,11 @@ export function initWebSocket(callbacks = {}) {
             onSelectConv: callbacks.onSwitchConv,
           });
         }
+        if (callbacks.onDmsUpdated) callbacks.onDmsUpdated();
         if (callbacks.onNewMessage) callbacks.onNewMessage(dmMessage);
         break;
       }
+
 
       case 'reaction_updated': {
         const msgType = data.message_type;
@@ -234,8 +237,35 @@ export function initWebSocket(callbacks = {}) {
           });
         });
         renderOnlineList(userList, callbacks.onOpenDm);
+        if (callbacks.onDmsUpdated) callbacks.onDmsUpdated();
         break;
       }
+
+      case 'history_ready': {
+        const dmHasOlder = data.dm_has_older && typeof data.dm_has_older === 'object' ? data.dm_has_older : {};
+        Object.entries(dmHasOlder).forEach(([partner, hasOlder]) => {
+          getOrCreateDm(partner).hasOlder = Boolean(hasOlder);
+        });
+        if (data.unread_counts && typeof data.unread_counts === 'object') {
+          state.unreadCounts.channels = {};
+          state.unreadCounts.dms = {};
+          let total = 0;
+          Object.entries(data.unread_counts).forEach(([k, v]) => {
+            const count = Number(v) || 0;
+            total += count;
+            if (k.startsWith('channel:')) {
+              state.unreadCounts.channels[k.replace('channel:', '')] = count;
+            } else if (k.startsWith('dm:')) {
+              state.unreadCounts.dms[k.replace('dm:', '')] = count;
+            }
+          });
+          updateDocumentTitle(total);
+        }
+        if (callbacks.onDmsUpdated) callbacks.onDmsUpdated();
+        if (callbacks.onUnreadUpdated) callbacks.onUnreadUpdated();
+        break;
+      }
+
 
       case 'error': {
         showToast(data.message || '오류가 발생했습니다.', 'error');

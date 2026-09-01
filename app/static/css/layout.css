@@ -250,6 +250,17 @@
   overflow: hidden;
 }
 
+.sidebar-section.collapsed {
+  flex: 0 0 auto !important;
+  min-height: 38px !important;
+  height: 38px !important;
+}
+.sidebar-section.collapsed .channel-list,
+.sidebar-section.collapsed .dm-list,
+.sidebar-section.collapsed .online-list {
+  display: none !important;
+}
+
 .sidebar-channels { flex: 1 1 35%; min-height: 42px; }
 .sidebar-channels .channel-list { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
 
@@ -258,6 +269,7 @@
 
 .sidebar-online { flex: 1 1 35%; min-height: 42px; }
 .sidebar-online .online-list { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+
 
 .sidebar-slider {
   display: flex;
@@ -430,6 +442,93 @@
   color: #fff;
   line-height: 1.3;
 }
+
+.conv-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.conv-icon {
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+.conv-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conv-mute-indicator {
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.conv-unread {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 700;
+  background: var(--accent);
+  color: #fff;
+  line-height: 1.3;
+}
+.dm-unread {
+  background: var(--dm-accent);
+}
+
+.online-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s;
+  min-width: 0;
+}
+.online-item:hover { background: var(--surface3); }
+.online-item.offline { cursor: default; opacity: .58; }
+.online-item.offline:hover { background: transparent; }
+
+.online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
+.online-dot.offline { background: var(--text-dim); }
+
+.online-nick {
+  flex: 1;
+  font-size: 0.87rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.online-nick.is-me { color: var(--accent); }
+
+.online-dm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 25px;
+  font-size: .68rem;
+  font-weight: 700;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(167,139,250,.12);
+  color: var(--dm-accent);
+  border: 1px solid rgba(167,139,250,.25);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .15s, opacity .15s;
+  opacity: 1;
+}
+.online-dm-btn:hover { background: rgba(167,139,250,.28); }
+
 
 .sidebar-backdrop {
   display: none;
