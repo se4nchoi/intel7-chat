@@ -20,9 +20,36 @@
       <button id="pinned-messages-btn" class="icon-btn pinned-messages-btn" type="button" title="고정된 메시지 보기" aria-label="고정된 메시지 보기">
         <span>📌</span><span id="pinned-count-badge" class="pinned-count-badge hidden">0</span>
       </button>
+      <div class="search-btn-container">
+        <button id="message-search-btn" class="icon-btn" type="button" title="메시지와 파일 검색" aria-label="메시지와 파일 검색">🔎</button>
+        <div id="search-hint-popover" class="nickname-hint-popover search-hint-popover hidden" role="tooltip" aria-live="polite">
+          <span class="hint-arrow"></span>
+          <div class="hint-body">
+            <span class="hint-icon">🔎</span>
+            <div class="hint-text">
+              <strong>대화와 파일을 검색하세요</strong>
+              <span>현재 대화 전체 기록 또는 접근 가능한 모든 대화에서 검색할 수 있어요.</span>
+            </div>
+          </div>
+          <button id="search-hint-close" class="hint-close-btn" type="button" aria-label="검색 도움말 닫기">×</button>
+        </div>
+      </div>
       <span id="chat-area-desc" class="chat-area-desc"></span>
     </div>
     <span id="retention-note" class="retention-note">⚠️ HTTP LAN · 암호화되지 않음 · 민감정보 공유 금지</span>
+  </div>
+  <div id="message-search-drawer" class="message-search-drawer hidden" aria-label="메시지와 파일 검색">
+    <form id="message-search-form" class="message-search-form">
+      <input id="message-search-input" type="search" minlength="2" maxlength="100" placeholder="메시지 또는 파일명 검색" autocomplete="off" />
+      <select id="message-search-scope" aria-label="검색 범위">
+        <option value="current">현재 대화</option>
+        <option value="global">전체 검색</option>
+      </select>
+      <button type="submit">검색</button>
+      <button id="message-search-close" type="button" aria-label="검색 닫기">✕</button>
+    </form>
+    <div id="message-search-status" class="message-search-status">두 글자 이상 입력하세요.</div>
+    <div id="message-search-results" class="message-search-results"></div>
   </div>
   <div id="pinned-messages-drawer" class="pinned-messages-drawer hidden" aria-label="고정된 메시지 목록">
     <div class="pinned-drawer-header">

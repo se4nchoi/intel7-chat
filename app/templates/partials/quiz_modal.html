@@ -15,7 +15,7 @@
       <div class="cbt-header-right">
         <div class="cbt-streak-pill">
           <span class="cbt-streak-flame">🔥</span>
-          <span id="quiz-stat-streak">0일 연속</span>
+          <span id="quiz-stat-streak">STREAK 0</span>
         </div>
       </div>
     </div>
@@ -66,6 +66,10 @@
               <span class="cbt-nav-text">내가 푼 문제</span>
               <span id="sidebar-count-history" class="cbt-sidebar-count-badge">0</span>
             </button>
+            <button id="quiz-nav-mysets-btn" class="cbt-nav-item" type="button" data-nav="mysets">
+              <span class="cbt-nav-icon">🧩</span>
+              <span class="cbt-nav-text">내 문제집 만들기</span>
+            </button>
           </div>
         </div>
 
@@ -91,7 +95,7 @@
         <div id="cbt-main-header" class="cbt-main-header">
           <div class="cbt-topic-info">
             <h3 id="cbt-current-topic-title" class="cbt-current-topic-title">⚡ 오늘의 퀴즈</h3>
-            <span id="cbt-topic-desc" class="cbt-topic-desc">매일 엄선된 5개 문제를 풀고 연속 점수를 획득하세요.</span>
+            <span id="cbt-topic-desc" class="cbt-topic-desc">오늘의 퀴즈로 STREAK을 이어가세요.</span>
           </div>
           <!-- Progress Row -->
           <div id="cbt-progress-row" class="cbt-progress-row">
@@ -117,7 +121,7 @@
             <div id="quiz-card" class="cbt-card">
               <!-- Card Header: Category & Action Badges -->
               <div class="cbt-card-header">
-                <span id="quiz-category-tag" class="cbt-category-tag">PLC/시퀀스</span>
+                <span id="quiz-category-tag" class="cbt-category-tag">PLC</span>
                 <div class="cbt-header-badges">
                   <button id="quiz-star-btn" class="cbt-star-btn" type="button" title="문제 보관/북마크">⭐ <span id="quiz-star-label">보관</span></button>
                   <button id="quiz-hint-btn" class="cbt-hint-btn" type="button" title="힌트 보기">💡 힌트</button>
@@ -128,7 +132,7 @@
               </div>
 
               <!-- Question Text -->
-              <h3 id="quiz-question-text" class="cbt-question-text"></h3>
+              <div id="quiz-question-text" class="cbt-question-text"></div>
 
               <!-- Hint Box (Toggled on click) -->
               <div id="quiz-hint-box" class="cbt-hint-box hidden">
@@ -184,7 +188,7 @@
               <!-- Feedback / Explanation Card -->
               <div id="quiz-feedback-box" class="cbt-feedback-box hidden">
                 <div id="quiz-result-banner" class="cbt-result-banner correct">
-                  <span id="quiz-result-icon">⭕</span>
+                  <span id="quiz-result-icon">✅</span>
                   <div>
                     <strong id="quiz-result-title">정답입니다! (+20점)</strong>
                     <div id="quiz-result-answers" class="cbt-result-answers"></div>
@@ -207,13 +211,40 @@
           </div>
         </div>
 
+        <div id="quiz-tab-mysets-content" class="quiz-tab-content cbt-content-pane hidden">
+          <div class="quiz-community-grid">
+            <section class="cbt-admin-card">
+              <h3 class="cbt-admin-title">🧠 NotebookLM으로 문제집 만들기</h3>
+              <p class="cbt-admin-desc">분야를 고른 뒤 아래 프롬프트를 NotebookLM에 붙여넣으세요. 이미지는 제외하고, 회로나 도면은 문제 본문의 Markdown 코드 블록에 ASCII로 표현합니다.</p>
+              <label for="quiz-set-expertise">전문 분야</label>
+              <select id="quiz-set-expertise" class="form-select"></select>
+              <label for="quiz-notebook-prompt">NotebookLM 프롬프트</label>
+              <textarea id="quiz-notebook-prompt" class="quiz-prompt-box" rows="9" readonly></textarea>
+              <button id="quiz-copy-prompt-btn" type="button" class="secondary-btn">프롬프트 복사</button>
+            </section>
+            <section class="cbt-admin-card">
+              <h3 class="cbt-admin-title">📥 생성된 JSON 검증·저장</h3>
+              <label for="quiz-set-title">문제집 제목</label>
+              <input id="quiz-set-title" type="text" maxlength="80" placeholder="예: PLC 인터록 핵심 10제" />
+              <label for="quiz-set-json">JSON 배열</label>
+              <textarea id="quiz-set-json" rows="12" placeholder='[{"difficulty":"medium","question_type":"multiple_choice","question":"...","options":["1. ...","2. ...","3. ...","4. ..."],"correct_answers":["1"],"hint":"...","explanation":"...","source_ref":"..."}]'></textarea>
+              <p id="quiz-set-status" class="admin-status-msg"></p>
+              <button id="quiz-set-save-btn" type="button" class="cbt-action-btn">초안 저장</button>
+            </section>
+            <section class="cbt-admin-card full-width">
+              <h3 class="cbt-admin-title">내 문제집</h3>
+              <div id="quiz-mysets-list" class="quiz-set-list"></div>
+            </section>
+          </div>
+        </div>
+
         <!-- Tab: 내가 푼 문제 (토픽별 아코디언 / 드롭다운 그룹 리스트) -->
         <div id="quiz-tab-history-content" class="quiz-tab-content cbt-content-pane hidden">
           <!-- Filter Bar: All / Solved Correct / Solved Wrong -->
           <div class="cbt-history-filter-bar">
             <div class="cbt-history-filters">
               <button class="cbt-hist-filter-btn active" data-filter="all" type="button">전체 보기</button>
-              <button class="cbt-hist-filter-btn" data-filter="correct" type="button">⭕ 맞힌 문제</button>
+              <button class="cbt-hist-filter-btn" data-filter="correct" type="button">✅ 맞힌 문제</button>
               <button class="cbt-hist-filter-btn" data-filter="wrong" type="button">❌ 틀린 문제</button>
             </div>
             <span id="history-total-summary" class="cbt-history-summary">총 0문제 풀이 완료</span>
@@ -253,7 +284,7 @@
                   <th>사용자</th>
                   <th>점수</th>
                   <th>정답수</th>
-                  <th>연속 정답</th>
+                  <th>STREAK</th>
                 </tr>
               </thead>
               <tbody id="leaderboard-tbody"></tbody>
@@ -264,6 +295,20 @@
         <!-- Tab 3: 퀴즈 관리 (관리자 전용) -->
         <div id="quiz-tab-admin-content" class="quiz-tab-content cbt-content-pane hidden">
           <div class="cbt-admin-grid">
+            <div class="cbt-admin-card full-width">
+              <h3 class="cbt-admin-title">✅ 사용자 문제집 승인</h3>
+              <p class="cbt-admin-desc">승인된 문항만 공용 연습 풀에 추가됩니다. 승인 후 생성된 문제 ID로 미래 날짜의 오늘의 퀴즈를 게시할 수 있습니다.</p>
+              <div id="admin-quiz-submissions-list" class="quiz-set-list"></div>
+            </div>
+            <div class="cbt-admin-card full-width">
+              <h3 class="cbt-admin-title">📅 오늘의 퀴즈 게시</h3>
+              <div class="quiz-schedule-row">
+                <input id="quiz-daily-date" type="date" />
+                <input id="quiz-daily-ids" type="text" placeholder="퀴즈 ID (예: 12, 15, 18, 21, 23)" />
+                <button id="quiz-daily-publish-btn" type="button" class="cbt-action-btn">고정 게시</button>
+              </div>
+              <p id="quiz-daily-status" class="admin-status-msg">게시한 날짜의 세트는 순위 공정성을 위해 변경할 수 없습니다.</p>
+            </div>
             <!-- AI Generation Section -->
             <div class="cbt-admin-card">
               <h3 class="cbt-admin-title">🤖 AI 퀴즈 자동 생성 (Gemini API)</h3>
@@ -272,7 +317,7 @@
                 <div class="form-row-2">
                   <div>
                     <label for="quiz-gen-category">과목 / 카테고리</label>
-                    <input id="quiz-gen-category" type="text" value="PLC/시퀀스" required />
+                    <input id="quiz-gen-category" type="text" value="PLC" required />
                   </div>
                   <div>
                     <label for="quiz-gen-count">출제 문항 수</label>

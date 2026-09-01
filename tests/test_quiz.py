@@ -31,6 +31,30 @@ def test_quiz_normalization():
     assert quiz_ai.check_quiz_answer(["인터록", "인터록 회로"], "틀린답") is False
 
 
+def test_all_first_attempts_score_but_only_daily_quizzes_extend_streak(temp_db):
+    user = database.create_user("daily_only", "hash")
+    daily = database.get_daily_quizzes(user["id"], count=1)[0]
+    extra_id = database.create_quiz_batch([{
+        "category": "PLC", "difficulty": "hard", "question_type": "short_answer",
+        "question": "연습 문제", "correct_answers": ["CORRECT"], "options": None,
+        "hint": "", "explanation": "", "source_ref": "",
+    }])[0]
+
+    practice = database.submit_quiz_answer(user["id"], extra_id, "CORRECT")
+    assert practice["score_earned"] == 30
+    assert practice["user_stats"]["current_streak"] == 0
+    assert database.get_quiz_leaderboard("daily")[0]["score"] == 30
+
+    retry = database.retry_quiz_answer(user["id"], extra_id, "CORRECT")
+    assert retry["score_earned"] == 0
+
+    answer = daily.get("correct_answers", ["Y0"])[0]
+    scored = database.submit_quiz_answer(user["id"], daily["id"], answer)
+    assert scored["score_earned"] in {0, 20}
+    assert scored["user_stats"]["current_streak"] == 1
+    assert database.get_quiz_leaderboard("daily")[0]["user_id"] == user["id"]
+
+
 def test_quiz_seeding_and_retrieval(temp_db):
     u1 = database.create_user("student1", auth.hash_secret("pass123"))
     quizzes = database.get_daily_quizzes(u1["id"], count=10)
@@ -106,6 +130,28 @@ def test_quiz_leaderboard_and_badges(temp_db):
     assert stats1["total_solved"] == 2
     assert stats1["total_correct"] == 2
     assert stats1["accuracy"] == 100.0
+
+
+def test_quiz_leaderboard_equal_scores_rank_earliest_first(temp_db):
+    later_user = database.create_user("later-user", auth.hash_secret("pass123"))
+    earlier_user = database.create_user("earlier-user", auth.hash_secret("pass123"))
+    quiz = database.get_daily_quizzes(later_user["id"], count=1)[0]
+
+    correct_answer = quiz["correct_answers"][0] if quiz.get("correct_answers") else "Y0"
+    database.submit_quiz_answer(later_user["id"], quiz["id"], correct_answer)
+    database.submit_quiz_answer(earlier_user["id"], quiz["id"], correct_answer)
+    with database.get_connection() as conn:
+        conn.execute("UPDATE quiz_submissions SET submitted_at=? WHERE user_id=?",
+                     ("2026-09-01T10:00:00Z", later_user["id"]))
+        conn.execute("UPDATE quiz_submissions SET submitted_at=? WHERE user_id=?",
+                     ("2026-09-01T09:00:00Z", earlier_user["id"]))
+        conn.commit()
+
+    for period in ("daily", "weekly", "all"):
+        leaderboard = database.get_quiz_leaderboard(period=period)
+        assert leaderboard[0]["user_id"] == earlier_user["id"]
+        assert leaderboard[0]["score"] == leaderboard[1]["score"]
+    assert database.get_user_quiz_badge(earlier_user["id"])["type"] == "rank"
 
 
 def test_batch_creation_and_admin_view(temp_db):

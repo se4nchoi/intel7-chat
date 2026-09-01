@@ -64,6 +64,7 @@ def test_protected_http_routes_require_login():
     assert client.get("/api/messages").status_code == 401
     assert client.get("/api/storage").status_code == 401
     assert client.get("/api/files/missing").status_code == 401
+    assert client.get("/api/search?q=test&scope=global").status_code == 401
     assert client.post("/api/files", content=b"x", headers={**ORIGIN, "X-File-Name": "x.gwx"}).status_code == 401
 
 def test_registration_requires_correct_enrollment_code(monkeypatch):
@@ -206,6 +207,37 @@ def test_direct_message_attachments_are_visible_only_to_participants():
     assert recipient.get(attachment["url"]).status_code == 200
     assert outsider.get(attachment["url"]).status_code == 404
     assert database.get_recent_direct_messages(outsider.get("/api/auth/me").json()["id"]) == []
+
+def test_search_current_and_global_history_includes_attachment_names():
+    alice, alice_user = session_client("search-alice")
+    bob, bob_user = session_client("search-bob")
+    outsider, _ = session_client("search-outsider")
+    attachment = upload(alice, "ladder-diagram.pdf", b"diagram").json()
+    assert database.claim_attachments([attachment["id"]], alice_user["id"])
+    database.save_message("search-alice", "공개 제어 회로", user_id=alice_user["id"],
+                          attachment_ids=[attachment["id"]], channel_id=1)
+    database.save_direct_message(alice_user, bob_user, "private calibration note")
+
+    current = alice.get("/api/search", params={"q": "ladder", "scope": "current",
+        "conversation_type": "channel", "conversation_id": "1"})
+    assert current.status_code == 200
+    assert current.json()["results"][0]["attachments"][0]["name"] == "ladder-diagram.pdf"
+
+    bob_global = bob.get("/api/search", params={"q": "calibration", "scope": "global"}).json()
+    assert any(result["message_type"] == "dm" for result in bob_global["results"])
+    outsider_global = outsider.get("/api/search", params={"q": "calibration", "scope": "global"}).json()
+    assert outsider_global["results"] == []
+    assert alice.get("/api/search", params={"q": "__", "scope": "global"}).json()["results"] == []
+
+def test_search_hides_moderated_messages_from_students():
+    student, student_user = session_client("search-student")
+    admin, _ = session_client("search-admin", role="admin")
+    message = database.save_message("search-student", "hidden searchable phrase", user_id=student_user["id"])
+    database.set_message_hidden(int(message["message_id"].split(":")[1]), True)
+
+    params = {"q": "searchable", "scope": "global"}
+    assert student.get("/api/search", params=params).json()["results"] == []
+    assert len(admin.get("/api/search", params=params).json()["results"]) == 1
 
 def test_public_and_direct_history_can_load_older_pages():
     viewer, viewer_user = session_client("history-viewer")

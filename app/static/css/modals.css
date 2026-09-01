@@ -277,6 +277,37 @@
   overflow-y: auto;
 }
 
+/* Modular admin rows (the legacy stylesheet used .admin-user-row). */
+.admin-user {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(280px, auto);
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.admin-user.inactive { opacity: .68; }
+.admin-user-identity { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.admin-user-identity strong, .admin-user-identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-user-identity small { color: var(--text-muted); font-size: .76rem; }
+.admin-user-controls { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; min-width: 0; }
+.admin-user-controls select,
+.admin-user-controls input[type="password"] { width: auto !important; min-width: 105px; padding: 7px 9px !important; font-size: .82rem !important; }
+.admin-user-controls input[type="password"] { width: 145px !important; }
+.admin-user-controls button,
+.admin-user > button { width: auto !important; padding: 7px 12px !important; font-size: .82rem !important; }
+
+@media (max-width: 620px) {
+  .modal-box { padding: 22px 18px 18px; }
+  .admin-panel { max-height: 92vh; }
+  .admin-user { grid-template-columns: 1fr; }
+  .admin-user-controls { justify-content: flex-start; }
+  .admin-user-controls input[type="password"] { flex: 1 1 130px; width: auto !important; }
+}
+
 .admin-user-row {
   display: flex;
   align-items: center;

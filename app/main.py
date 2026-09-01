@@ -13,7 +13,7 @@ import uuid
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Deque, Dict, Optional, Set
 from urllib.parse import unquote, urlsplit
@@ -46,7 +46,9 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     get_user_quiz_badge, get_user_quiz_badges_map, create_quiz, create_quiz_batch,
     get_all_quizzes_admin, delete_quiz, save_quiz_source_document, get_quiz_source_documents,
     toggle_quiz_bookmark, get_quiz_review_list, retry_quiz_answer,
-    get_quiz_categories_summary, get_quiz_sidebar_counts)
+    get_quiz_categories_summary, get_quiz_sidebar_counts, search_conversation_history,
+    QUIZ_EXPERTISES, create_user_quiz_set, list_user_quiz_sets, submit_user_quiz_set,
+    review_user_quiz_set, assign_daily_quizzes)
 from app.quiz_ai import generate_quizzes_with_gemini, check_quiz_answer, normalize_quiz_answer
 
 CONFIG = load_config()
@@ -1009,6 +1011,32 @@ async def api_messages(request: Request):
     users = list_mentionable_users()
     return [with_mentions(message, users) for message in get_recent_messages()]
 
+@app.get("/api/search")
+async def api_search_messages(request: Request, q: str, scope: str = "current",
+                              conversation_type: Optional[str] = None,
+                              conversation_id: Optional[str] = None, limit: int = 50):
+    user = request_user(request)
+    query = q.strip()
+    if len(query) < 2:
+        raise HTTPException(400, "검색어는 두 글자 이상 입력하세요.")
+    if scope not in {"current", "global"}:
+        raise HTTPException(400, "유효하지 않은 검색 범위입니다.")
+    if scope == "current":
+        if conversation_type not in {"channel", "dm"} or not conversation_id:
+            raise HTTPException(400, "현재 대화 정보가 필요합니다.")
+        if conversation_type == "dm":
+            partner = get_user_by_username(conversation_id)
+            if not partner or partner["id"] == user["id"]:
+                raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
+            conversation_id = str(partner["id"])
+    else:
+        conversation_type = None
+        conversation_id = None
+    results = search_conversation_history(user["id"], query,
+        is_admin=user["role"] == "admin", conversation_type=conversation_type,
+        conversation_id=conversation_id, limit=limit)
+    return {"query": query, "scope": scope, "results": results, "count": len(results)}
+
 @app.get("/api/history/public")
 async def public_message_history(request: Request, before_id: Optional[int] = None):
     user = request_user(request)
@@ -1325,6 +1353,59 @@ async def api_quiz_stats(request: Request):
     user = request_user(request)
     return get_user_quiz_stats(user["id"])
 
+@app.get("/api/quiz/expertises")
+async def api_quiz_expertises(request: Request):
+    request_user(request)
+    return {"expertises": list(QUIZ_EXPERTISES)}
+
+@app.get("/api/quiz/my-sets")
+async def api_my_quiz_sets(request: Request):
+    user=request_user(request)
+    return {"sets": list_user_quiz_sets(owner_user_id=user["id"])}
+
+@app.post("/api/quiz/my-sets", status_code=201)
+async def api_create_my_quiz_set(request: Request):
+    if not request_origin_is_allowed(request): raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user=request_user(request); data=await read_json_body(request)
+    try:
+        created=create_user_quiz_set(user["id"], str(data.get("expertise", "")), str(data.get("title", "")), data.get("quizzes"))
+    except ValueError as exc: raise HTTPException(400, str(exc)) from exc
+    return created
+
+@app.post("/api/quiz/my-sets/{set_id}/submit")
+async def api_submit_my_quiz_set(set_id: int, request: Request):
+    if not request_origin_is_allowed(request): raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user=request_user(request)
+    if not submit_user_quiz_set(set_id, user["id"]): raise HTTPException(409, "제출할 수 없는 문제집입니다.")
+    return {"status":"pending_review", "set_id":set_id}
+
+@app.get("/api/admin/quiz/submissions")
+async def api_admin_quiz_submissions(request: Request):
+    require_admin(request)
+    return {"sets": list_user_quiz_sets(status="pending_review")}
+
+@app.post("/api/admin/quiz/submissions/{set_id}/review")
+async def api_admin_review_quiz_submission(set_id: int, request: Request):
+    if not request_origin_is_allowed(request): raise HTTPException(403, "허용되지 않은 요청입니다.")
+    admin=require_admin(request); data=await read_json_body(request); approve=data.get("approve"); note=str(data.get("note", ""))
+    if not isinstance(approve, bool):
+        raise HTTPException(400, "approve는 true 또는 false여야 합니다.")
+    try: created_ids=review_user_quiz_set(set_id, admin["id"], approve, note)
+    except ValueError as exc: raise HTTPException(409, str(exc)) from exc
+    return {"status":"approved" if approve else "rejected", "created_ids":created_ids}
+
+@app.post("/api/admin/quiz/daily-sets")
+async def api_admin_assign_daily_set(request: Request):
+    if not request_origin_is_allowed(request): raise HTTPException(403, "허용되지 않은 요청입니다.")
+    admin=require_admin(request); data=await read_json_body(request)
+    assigned_date=str(data.get("assigned_date", "")).strip(); quiz_ids=data.get("quiz_ids", [])
+    try:
+        if not isinstance(quiz_ids, list): raise ValueError("quiz_ids는 배열이어야 합니다.")
+        date.fromisoformat(assigned_date); ids=[int(value) for value in quiz_ids]
+        set_id=assign_daily_quizzes(assigned_date, ids, admin["id"])
+    except (ValueError, TypeError) as exc: raise HTTPException(400, str(exc)) from exc
+    return {"status":"published", "set_id":set_id, "assigned_date":assigned_date}
+
 
 @app.post("/api/admin/quiz/ai-generate")
 async def api_admin_quiz_ai_generate(request: Request):
@@ -1338,7 +1419,7 @@ async def api_admin_quiz_ai_generate(request: Request):
     content_type = request.headers.get("content-type", "")
     if content_type.startswith("multipart/form-data"):
         form = await request.form()
-        category = str(form.get("category", "PLC/시퀀스")).strip()
+        category = str(form.get("category", "PLC")).strip()
         count = int(form.get("count", 5))
         file_obj = form.get("file")
         text_content = str(form.get("text_content", "")).strip()
@@ -1355,7 +1436,7 @@ async def api_admin_quiz_ai_generate(request: Request):
             raise HTTPException(400, "파일 또는 텍스트 내용을 입력하세요.")
     else:
         data = await read_json_body(request)
-        category = str(data.get("category", "PLC/시퀀스")).strip()
+        category = str(data.get("category", "PLC")).strip()
         count = int(data.get("count", 5))
         text_content = str(data.get("text_content", "")).strip()
         if not text_content:

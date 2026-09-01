@@ -103,7 +103,7 @@ def generate_quizzes_with_gemini(
     raw_content: bytes | str,
     is_pdf: bool = False,
     count: int = 5,
-    category: str = "PLC/시퀀스",
+    category: str = "PLC",
     model: str = "gemini-2.5-flash",
 ) -> List[Dict[str, Any]]:
     """Calls the Google Gemini API to generate structured educational quizzes from PDF or text."""

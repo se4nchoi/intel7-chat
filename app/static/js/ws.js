@@ -10,7 +10,7 @@ import { emitAttention, updateDocumentTitle } from './notifications.js';
 import { displayNickname, renderOnlineList, getOrCreateDm, userDirectory } from './dm.js';
 
 import { getOrCreateChannel, channelsDirectory } from './channels.js';
-import { appendMessageNode, setMentionUsers } from './chat.js';
+import { appendMessageNode, setMentionUsers, refreshRenderedAuthorNames } from './chat.js';
 
 const RECONNECT_DELAY = 3000;
 let reconnectTimer = null;
@@ -242,6 +242,7 @@ export function initWebSocket(callbacks = {}) {
           });
         });
         renderOnlineList(userList, callbacks.onOpenDm);
+        refreshRenderedAuthorNames();
         if (callbacks.onDmsUpdated) callbacks.onDmsUpdated();
         break;
       }

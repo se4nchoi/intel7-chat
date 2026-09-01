@@ -56,6 +56,22 @@ export function validLink(href) {
   }
 }
 
+function createWarningLink(url, label) {
+  const link = document.createElement('a');
+  link.href = url.href;
+  link.textContent = label;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.className = 'message-external-link';
+  link.title = '외부 링크 — 클릭하면 이동 전 확인합니다.';
+  link.addEventListener('click', event => {
+    if (!confirm(`외부 링크로 이동합니다.\n\n${url.href}\n\n신뢰할 수 있는 주소인지 확인한 뒤 계속하세요.`)) {
+      event.preventDefault();
+    }
+  });
+  return link;
+}
+
 export function appendInlineMarkdown(parent, source) {
   const pattern = /(\*\*([^*\n]+)\*\*|~~([^~\n]+)~~|`([^`\n]+)`|\[([^\]\n]+)\]\(([^)\s]+)\)|\*([^*\n]+)\*)/g;
   let cursor = 0;
@@ -74,11 +90,7 @@ export function appendInlineMarkdown(parent, source) {
     } else if (match[5] !== undefined) {
       const url = validLink(match[6]);
       if (url) {
-        node = document.createElement('a');
-        node.href = url.href;
-        node.textContent = match[5];
-        node.target = '_blank';
-        node.rel = 'noopener noreferrer';
+        node = createWarningLink(url, match[5]);
       } else {
         node = document.createTextNode(match[0]);
       }
@@ -167,6 +179,27 @@ export function renderMarkdown(container, source) {
     }
     appendParagraph(container, paragraphLines);
   }
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) {
+    if (!walker.currentNode.parentElement?.closest('a, code')) textNodes.push(walker.currentNode);
+  }
+  const urlPattern = /https?:\/\/[^\s<>()]+/gi;
+  textNodes.forEach(textNode => {
+    const text = textNode.nodeValue || '';
+    const matches = [...text.matchAll(urlPattern)];
+    if (!matches.length) return;
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    matches.forEach(match => {
+      if (match.index > cursor) fragment.append(text.slice(cursor, match.index));
+      const url = validLink(match[0]);
+      fragment.append(url ? createWarningLink(url, match[0]) : match[0]);
+      cursor = match.index + match[0].length;
+    });
+    if (cursor < text.length) fragment.append(text.slice(cursor));
+    textNode.replaceWith(fragment);
+  });
 }
 
 export function highlightMentions(container, mentions) {
