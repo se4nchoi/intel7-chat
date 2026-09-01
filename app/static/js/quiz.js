@@ -891,7 +891,7 @@ export function renderLeaderboard(list) {
     const name = document.createElement('strong');
     name.className = 'podium-name';
     name.textContent = item.display_name || item.username;
-    if (item.current_streak > 0) {
+    if (item.current_streak >= 3) {
       const fire = document.createElement('span'); fire.className = 'quiz-fire-badge'; fire.textContent = '🔥 FIRE 꾸준러';
       name.append(' ', fire);
     }
@@ -922,7 +922,7 @@ export function renderLeaderboard(list) {
     const tdUser = document.createElement('td');
     const uName = item.display_name || item.username;
     tdUser.textContent = uName + (Number(item.user_id) === myUserId ? ' (나)' : '');
-    if (item.current_streak > 0) {
+    if (item.current_streak >= 3) {
       const fire = document.createElement('span'); fire.className = 'quiz-fire-badge'; fire.textContent = '🔥 FIRE 꾸준러';
       tdUser.append(' ', fire);
     }
