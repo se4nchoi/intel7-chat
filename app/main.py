@@ -45,7 +45,8 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     get_daily_quizzes, submit_quiz_answer, get_user_quiz_stats, get_quiz_leaderboard,
     get_user_quiz_badge, get_user_quiz_badges_map, create_quiz, create_quiz_batch,
     get_all_quizzes_admin, delete_quiz, save_quiz_source_document, get_quiz_source_documents,
-    toggle_quiz_bookmark, get_quiz_review_list, retry_quiz_answer)
+    toggle_quiz_bookmark, get_quiz_review_list, retry_quiz_answer,
+    get_quiz_categories_summary, get_quiz_sidebar_counts)
 from app.quiz_ai import generate_quizzes_with_gemini, check_quiz_answer, normalize_quiz_answer
 
 CONFIG = load_config()
@@ -1211,14 +1212,34 @@ async def download_file(attachment_id: str,request: Request):
 # ==========================================
 
 @app.get("/api/quiz/today")
-async def api_quiz_today(request: Request):
+async def api_quiz_today(
+    request: Request,
+    category: Optional[str] = None,
+    count: int = 5,
+):
     user = request_user(request)
-    quizzes = get_daily_quizzes(user["id"])
+    quizzes = get_daily_quizzes(user["id"], count=count, category=category)
     stats = get_user_quiz_stats(user["id"])
     return {
         "quizzes": quizzes,
         "stats": stats,
+        "category": category or "daily",
     }
+
+
+@app.get("/api/quiz/categories")
+async def api_quiz_categories(request: Request):
+    request_user(request)
+    return {
+        "categories": get_quiz_categories_summary(),
+    }
+
+
+@app.get("/api/quiz/sidebar-counts")
+async def api_quiz_sidebar_counts(request: Request):
+    user = request_user(request)
+    return get_quiz_sidebar_counts(user["id"])
+
 
 
 @app.post("/api/quiz/submit")

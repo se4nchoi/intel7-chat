@@ -182,7 +182,7 @@ def test_quiz_bookmark_and_review_api():
     assert wrong_resp.status_code == 200
     assert wrong_resp.json()["count"] == 1
 
-    # 5. Retry in practice mode
+    # 5. Retry in practice mode (solve correctly)
     retry_resp = client.post(
         "/api/quiz/retry",
         json={"quiz_id": q1["id"], "answer": "Y0"},
@@ -190,4 +190,50 @@ def test_quiz_bookmark_and_review_api():
     )
     assert retry_resp.status_code == 200
     assert retry_resp.json()["is_correct"] is True
+
+    # 6. Verify quiz remains in wrong list (retained for future review)
+    wrong_after_retry = client.get("/api/quiz/review?mode=wrong")
+    assert wrong_after_retry.status_code == 200
+    assert wrong_after_retry.json()["count"] == 1
+    assert wrong_after_retry.json()["quizzes"][0]["is_correct"] is True
+    assert wrong_after_retry.json()["quizzes"][0]["had_wrong"] is True
+
+    # 7. Check review history ("내가 푼 문제")
+    history_resp = client.get("/api/quiz/review?mode=history")
+    assert history_resp.status_code == 200
+    assert history_resp.json()["count"] >= 1
+    assert any(q["id"] == q1["id"] for q in history_resp.json()["quizzes"])
+
+
+
+def test_quiz_categories_and_sidebar_counts():
+    client, user = session_client("david", role="student")
+
+    # 1. Categories endpoint
+    cat_resp = client.get("/api/quiz/categories")
+    assert cat_resp.status_code == 200
+    cats = cat_resp.json()["categories"]
+    assert len(cats) > 0
+    assert any(c["category"] == "PLC/시퀀스" for c in cats)
+
+    # 2. Sidebar counts before any action
+    count_resp = client.get("/api/quiz/sidebar-counts")
+    assert count_resp.status_code == 200
+    counts = count_resp.json()
+    assert counts["wrong"] == 0
+    assert counts["starred"] == 0
+    assert counts["history"] == 0
+
+    # 3. Category filtering in /api/quiz/today
+    plc_resp = client.get("/api/quiz/today?category=PLC/시퀀스")
+    assert plc_resp.status_code == 200
+    plc_quizzes = plc_resp.json()["quizzes"]
+    assert len(plc_quizzes) > 0
+    assert all(q["category"] == "PLC/시퀀스" for q in plc_quizzes)
+
+    # 4. Random mode
+    rnd_resp = client.get("/api/quiz/today?category=random")
+    assert rnd_resp.status_code == 200
+    assert len(rnd_resp.json()["quizzes"]) > 0
+
 

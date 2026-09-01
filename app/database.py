@@ -319,6 +319,11 @@ def _migrate_v10(conn: sqlite3.Connection) -> None:
     )""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_bm_user ON quiz_bookmarks(user_id, quiz_id)")
 
+def _migrate_v11(conn: sqlite3.Connection) -> None:
+    """Add had_wrong_attempt column to quiz_submissions to retain quizzes in wrong list even after retry success."""
+    _add_column_if_missing(conn, "quiz_submissions", "had_wrong_attempt", "INTEGER NOT NULL DEFAULT 0")
+    conn.execute("UPDATE quiz_submissions SET had_wrong_attempt = 1 WHERE is_correct = 0")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -330,7 +335,9 @@ _MIGRATIONS = [
     _migrate_v8,
     _migrate_v9,
     _migrate_v10,
+    _migrate_v11,
 ]
+
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
     current = _get_schema_version(conn)
@@ -1613,11 +1620,72 @@ def get_user_quiz_bookmarks_set(user_id: int) -> Set[int]:
         return {r["quiz_id"] for r in rows}
 
 
-def get_daily_quizzes(user_id: int, count: int = 5) -> List[Dict[str, Any]]:
-    """Returns active educational quizzes with the current user's submission & bookmark state."""
+def get_quiz_categories_summary() -> List[Dict[str, Any]]:
+    """Returns unique categories and their active quiz counts."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT category, COUNT(*) as count
+            FROM quizzes
+            WHERE is_active = 1
+            GROUP BY category
+            ORDER BY count DESC, category ASC
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_quiz_sidebar_counts(user_id: int) -> Dict[str, int]:
+    """Returns count stats for sidebar badges (wrong, starred, history/solved)."""
+    with get_connection() as conn:
+        total_quizzes = conn.execute("SELECT COUNT(*) FROM quizzes WHERE is_active = 1").fetchone()[0]
+        wrong_count = conn.execute("""
+            SELECT COUNT(DISTINCT q.id)
+            FROM quizzes q
+            JOIN quiz_submissions qs ON q.id = qs.quiz_id
+            WHERE qs.user_id = ? AND (qs.is_correct = 0 OR qs.had_wrong_attempt = 1) AND q.is_active = 1
+        """, (user_id,)).fetchone()[0]
+        starred_count = conn.execute("""
+            SELECT COUNT(DISTINCT q.id)
+            FROM quizzes q
+            JOIN quiz_bookmarks qb ON q.id = qb.quiz_id
+            WHERE qb.user_id = ? AND q.is_active = 1
+        """, (user_id,)).fetchone()[0]
+        history_count = conn.execute("""
+            SELECT COUNT(DISTINCT q.id)
+            FROM quizzes q
+            JOIN quiz_submissions qs ON q.id = qs.quiz_id
+            WHERE qs.user_id = ? AND q.is_active = 1
+        """, (user_id,)).fetchone()[0]
+        return {
+            "total_quizzes": total_quizzes,
+            "wrong": wrong_count,
+            "starred": starred_count,
+            "history": history_count,
+        }
+
+
+def get_daily_quizzes(
+    user_id: int,
+    count: int = 5,
+    category: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Returns active educational quizzes with the current user's submission & bookmark state.
+    Supports topic category filtering or 'random'/'all' modes.
+    """
     with get_connection() as conn:
         starred_set = get_user_quiz_bookmarks_set(user_id)
-        rows = conn.execute("""
+        where_clause = "WHERE q.is_active = 1"
+        params: List[Any] = [user_id]
+
+        is_random = category in ("random", "all_random", "all")
+
+        if category and category not in ("all", "random", "all_random", "daily"):
+            where_clause += " AND q.category = ?"
+            params.append(category)
+
+        order_by = "ORDER BY RANDOM()" if is_random else "ORDER BY q.id ASC"
+        params.append(count)
+
+        query = f"""
             SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
                    q.image_filename, q.options_json, q.correct_answers_json,
                    q.hint, q.explanation, q.source_ref, q.daily_date,
@@ -1625,10 +1693,11 @@ def get_daily_quizzes(user_id: int, count: int = 5) -> List[Dict[str, Any]]:
                    qs.score_earned, qs.submitted_at
             FROM quizzes q
             LEFT JOIN quiz_submissions qs ON q.id = qs.quiz_id AND qs.user_id = ?
-            WHERE q.is_active = 1
-            ORDER BY q.id ASC
+            {where_clause}
+            {order_by}
             LIMIT ?
-        """, (user_id, count)).fetchall()
+        """
+        rows = conn.execute(query, tuple(params)).fetchall()
 
         quizzes = []
         for r in rows:
@@ -1663,7 +1732,7 @@ def get_daily_quizzes(user_id: int, count: int = 5) -> List[Dict[str, Any]]:
 
 
 def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, Any]]:
-    """Returns quizzes for review: 'wrong' (incorrect answers), 'starred' (bookmarks), or 'history' (all solved)."""
+    """Returns quizzes for review: 'wrong' (quizzes ever attempted incorrectly), 'starred' (bookmarks), or 'history' (all solved)."""
     with get_connection() as conn:
         starred_set = get_user_quiz_bookmarks_set(user_id)
         if mode == "wrong":
@@ -1672,10 +1741,10 @@ def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, An
                        q.image_filename, q.options_json, q.correct_answers_json,
                        q.hint, q.explanation, q.source_ref,
                        qs.id as submission_id, qs.user_answer, qs.is_correct,
-                       qs.score_earned, qs.submitted_at
+                       qs.score_earned, qs.submitted_at, qs.had_wrong_attempt
                 FROM quiz_submissions qs
                 JOIN quizzes q ON qs.quiz_id = q.id
-                WHERE qs.user_id = ? AND qs.is_correct = 0
+                WHERE qs.user_id = ? AND (qs.is_correct = 0 OR qs.had_wrong_attempt = 1)
                 ORDER BY qs.id DESC
             """, (user_id,)).fetchall()
         elif mode == "starred":
@@ -1684,7 +1753,7 @@ def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, An
                        q.image_filename, q.options_json, q.correct_answers_json,
                        q.hint, q.explanation, q.source_ref,
                        qs.id as submission_id, qs.user_answer, qs.is_correct,
-                       qs.score_earned, qs.submitted_at
+                       qs.score_earned, qs.submitted_at, qs.had_wrong_attempt
                 FROM quiz_bookmarks qb
                 JOIN quizzes q ON qb.quiz_id = q.id
                 LEFT JOIN quiz_submissions qs ON q.id = qs.quiz_id AND qs.user_id = ?
@@ -1697,7 +1766,7 @@ def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, An
                        q.image_filename, q.options_json, q.correct_answers_json,
                        q.hint, q.explanation, q.source_ref,
                        qs.id as submission_id, qs.user_answer, qs.is_correct,
-                       qs.score_earned, qs.submitted_at
+                       qs.score_earned, qs.submitted_at, qs.had_wrong_attempt
                 FROM quiz_submissions qs
                 JOIN quizzes q ON qs.quiz_id = q.id
                 WHERE qs.user_id = ?
@@ -1708,6 +1777,7 @@ def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, An
         for r in rows:
             is_solved = r["submission_id"] is not None
             options = json.loads(r["options_json"]) if r["options_json"] else None
+            had_wrong = bool(r["had_wrong_attempt"]) if "had_wrong_attempt" in r.keys() and r["had_wrong_attempt"] is not None else False
             item: Dict[str, Any] = {
                 "id": r["id"],
                 "category": r["category"],
@@ -1720,6 +1790,8 @@ def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, An
                 "source_ref": r["source_ref"] or "",
                 "is_solved": is_solved,
                 "is_starred": r["id"] in starred_set,
+                "had_wrong": had_wrong,
+                "is_mastered": bool(r["is_correct"]) if is_solved and had_wrong else False,
                 "user_answer": r["user_answer"] if is_solved else None,
                 "is_correct": bool(r["is_correct"]) if is_solved else None,
                 "score_earned": r["score_earned"] if is_solved else 0,
@@ -1732,7 +1804,7 @@ def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, An
 
 
 def retry_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str, Any]:
-    """Allows repeating a wrong or saved quiz in practice mode and updates review state."""
+    """Allows repeating a wrong or saved quiz in practice mode and updates review state while preserving wrong history."""
     from app.quiz_ai import check_quiz_answer
 
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -1746,21 +1818,22 @@ def retry_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str,
         correct_answers: List[str] = json.loads(quiz_row["correct_answers_json"])
         is_correct = 1 if check_quiz_answer(correct_answers, user_answer) else 0
 
-        # Update or insert practice submission
+        # Update or insert practice submission while preserving had_wrong_attempt
         existing = conn.execute(
-            "SELECT id FROM quiz_submissions WHERE quiz_id = ? AND user_id = ?",
+            "SELECT id, had_wrong_attempt, is_correct FROM quiz_submissions WHERE quiz_id = ? AND user_id = ?",
             (quiz_id, user_id)
         ).fetchone()
 
         if existing:
+            had_wrong = 1 if (existing["had_wrong_attempt"] or existing["is_correct"] == 0 or is_correct == 0) else 0
             conn.execute("""UPDATE quiz_submissions SET
-                user_answer = ?, is_correct = ?, submitted_at = ?
-                WHERE id = ?""", (user_answer, is_correct, now, existing["id"]))
+                user_answer = ?, is_correct = ?, submitted_at = ?, had_wrong_attempt = ?
+                WHERE id = ?""", (user_answer, is_correct, now, had_wrong, existing["id"]))
         else:
             conn.execute("""INSERT INTO quiz_submissions
-                (quiz_id, user_id, user_answer, is_correct, score_earned, submitted_at, submitted_date)
-                VALUES (?, ?, ?, ?, 0, ?, ?)""",
-                (quiz_id, user_id, user_answer, is_correct, now, today_str))
+                (quiz_id, user_id, user_answer, is_correct, score_earned, submitted_at, submitted_date, had_wrong_attempt)
+                VALUES (?, ?, ?, ?, 0, ?, ?, ?)""",
+                (quiz_id, user_id, user_answer, is_correct, now, today_str, 1 if is_correct == 0 else 0))
 
         stats = get_user_quiz_stats(user_id)
         return {
@@ -1813,9 +1886,10 @@ def submit_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str
 
         # Insert submission
         conn.execute("""INSERT INTO quiz_submissions
-            (quiz_id, user_id, user_answer, is_correct, score_earned, submitted_at, submitted_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (quiz_id, user_id, user_answer, is_correct, score_earned, now, today_str))
+            (quiz_id, user_id, user_answer, is_correct, score_earned, submitted_at, submitted_date, had_wrong_attempt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (quiz_id, user_id, user_answer, is_correct, score_earned, now, today_str, 1 if is_correct == 0 else 0))
+
 
         # Update or create user stats
         stats_row = conn.execute(

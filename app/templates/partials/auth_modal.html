@@ -1,0 +1,31 @@
+<div id="auth-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+  <div class="modal-box auth-modal-box">
+    <div class="modal-logo-container"><img src="/static/bamboochat-logo.png" alt="" class="modal-logo" /></div>
+    <h2 id="auth-title">{{ service_name }}</h2>
+    <p class="modal-warning">⚠️ 보내는 모든 메세지는 암호화되지 않습니다!</p>
+    <p class="modal-desc">비밀번호나 민감정보를 입력·공유하지 마세요.</p>
+    <form id="auth-form">
+      <label class="sr-only" for="username-input">아이디</label>
+      <input id="username-input" type="text" maxlength="30" minlength="2" placeholder="아이디" autocomplete="username" required autofocus />
+      <label class="sr-only" for="password-input">비밀번호</label>
+      <input id="password-input" type="password" minlength="5" placeholder="비밀번호 (5자 이상)" autocomplete="current-password" required />
+      <div id="register-fields" class="hidden">
+        <label class="sr-only" for="password-confirm-input">비밀번호 확인</label>
+        <input id="password-confirm-input" type="password" minlength="5" placeholder="비밀번호 확인" autocomplete="new-password" />
+        <label class="sr-only" for="enrollment-input">가입 코드</label>
+        <input id="enrollment-input" type="text" maxlength="128" placeholder="교실 가입 코드" autocomplete="off" />
+      </div>
+      <div id="auth-remember-row" class="auth-remember-row">
+        <label class="auth-remember-label" for="remember-id-input">
+          <input id="remember-id-input" type="checkbox" />
+          <span>아이디 저장</span>
+        </label>
+      </div>
+      <p id="auth-error" class="error-msg" aria-live="polite"></p>
+      <button id="auth-submit" type="submit">로그인</button>
+    </form>
+    {% if registration_enabled %}
+    <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">처음인가요? 계정 만들기</button>
+    {% endif %}
+  </div>
+</div>

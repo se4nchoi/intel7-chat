@@ -1,0 +1,31 @@
+<footer class="composer">
+  <div id="reply-preview" class="composer-preview reply-preview hidden">
+    <div><strong id="reply-preview-name"></strong><span id="reply-preview-text"></span></div>
+    <button id="reply-cancel" class="preview-remove" type="button" aria-label="답장 취소">×</button>
+  </div>
+  <div id="attachment-preview" class="composer-preview attachment-preview hidden">
+    <div id="attachment-list" class="attachment-queue" role="list"></div>
+  </div>
+  <div id="markdown-toolbar" class="markdown-toolbar" role="toolbar" aria-label="Markdown 서식">
+    <button type="button" data-markdown="bold" aria-label="굵게" title="굵게 (Ctrl+B)"><strong>B</strong></button>
+    <button type="button" data-markdown="italic" aria-label="기울임" title="기울임 (Ctrl+I)"><em>I</em></button>
+    <button type="button" data-markdown="strike" aria-label="취소선" title="취소선 (Ctrl+Shift+X)"><s>S</s></button>
+    <button type="button" data-markdown="code" aria-label="인라인 코드" title="인라인 코드"><code>&lt;/&gt;</code></button>
+    <button type="button" data-markdown="link" aria-label="링크" title="링크 (Ctrl+K)">🔗</button>
+    <button type="button" data-markdown="quote" aria-label="인용문" title="인용문">❯</button>
+    <button type="button" data-markdown="bullet" aria-label="글머리 목록" title="글머리 목록">•</button>
+    <button type="button" data-markdown="codeblock" aria-label="코드 블록" title="코드 블록">{ }</button>
+  </div>
+  <div id="mention-menu" class="mention-menu hidden" role="listbox" aria-label="멘션할 사용자"></div>
+  <div class="composer-row">
+    <input id="file-input" type="file" class="hidden" multiple data-max-file-mb="{{ max_file_mb }}" data-max-files="{{ max_files }}" />
+    <button id="attach-btn" class="composer-icon-btn" type="button" aria-label="파일 첨부" title="파일 첨부 (파일당 {{ max_file_mb }}MB, 최대 {{ max_files }}개)">＋</button>
+    <label class="sr-only" for="msg-input">메시지</label>
+    <textarea id="msg-input" rows="1" maxlength="{{ max_message_len }}" placeholder="메시지를 입력하세요" autocomplete="off"></textarea>
+    <button id="send-btn" type="button" aria-label="메시지 전송">전송</button>
+  </div>
+  <div class="composer-footer">
+    <span class="composer-hint"><kbd>Enter</kbd> 전송 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 · Markdown 지원</span>
+    <span id="char-count" class="char-count">0 / {{ max_message_len }}</span>
+  </div>
+</footer>

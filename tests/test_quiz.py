@@ -198,7 +198,10 @@ def test_quiz_review_and_retry(temp_db):
     retry_res = database.retry_quiz_answer(u1["id"], q1["id"], "Y0")
     assert retry_res["is_correct"] is True
 
-    # Now q1 is corrected in review
+    # Now q1 remains in wrong review list with is_correct = True (retained as mastered)
     wrong_after = database.get_quiz_review_list(u1["id"], mode="wrong")
-    assert len(wrong_after) == 0
+    assert len(wrong_after) == 1
+    assert wrong_after[0]["id"] == q1["id"]
+    assert wrong_after[0]["is_correct"] is True
+
 

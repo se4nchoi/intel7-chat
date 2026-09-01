@@ -1,0 +1,54 @@
+/* ========================================
+   Classroom Chat — variables.css
+   디자인 토큰, 테마 변수 및 글로벌 애니메이션
+   ======================================== */
+
+:root {
+  --bg:            #0f1117;
+  --surface:       #14171f;
+  --surface2:      #1e2235;
+  --surface3:      #252a3d;
+  --border:        #2a2e45;
+  --accent:        #4f8ef7;
+  --accent-dark:   #3a6fd8;
+  --text:          #e4e7f0;
+  --text-muted:    #7a82a6;
+  --text-dim:      #4e556e;
+  --own-bubble:    #1e3a6e;
+  --other-bubble:  #1e2235;
+  --dm-sent:       #2d1a5e;
+  --dm-recv:       #1a2e40;
+  --dm-accent:     #a78bfa;
+  --error:         #f87171;
+  --success:       #34d399;
+  --danger:        #f97316;
+  --font:          'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  --header-h:      52px;
+  --sidebar-w:     230px;
+  --safe-bottom:   env(safe-area-inset-bottom, 0px);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes hintPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 142, 247, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(79, 142, 247, 0); }
+}
