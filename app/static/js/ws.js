@@ -14,17 +14,20 @@ import { appendMessageNode, setMentionUsers, refreshRenderedAuthorNames } from '
 
 const RECONNECT_DELAY = 3000;
 let reconnectTimer = null;
+let activeCallbacks = {};
 
 export function setConnected(connected) {
-  state.isWsConnected = connected;
+  state.isWsConnected = connected === true;
   const statusEl = document.getElementById('conn-status');
   if (statusEl) {
-    statusEl.className = `conn-status ${connected ? 'connected' : 'disconnected'}`;
-    statusEl.textContent = connected ? '● 온라인' : '○ 오프라인';
+    const connecting = connected === null;
+    statusEl.className = `conn-status ${connected === true ? 'connected' : 'disconnected'}${connecting ? ' connecting' : ''}`;
+    statusEl.textContent = connected === true ? '● 온라인' : (connecting ? '↻ 재연결 중' : '○ 오프라인');
   }
 }
 
 export function initWebSocket(callbacks = {}) {
+  activeCallbacks = callbacks;
   if (state.socket) {
     state.socket.onclose = null;
     state.socket.close();
@@ -35,8 +38,10 @@ export function initWebSocket(callbacks = {}) {
   const wsUrl = `${proto}//${location.host}/ws`;
   const ws = new WebSocket(wsUrl);
   state.socket = ws;
+  setConnected(null);
 
   ws.onopen = () => {
+    if (state.socket !== ws) return;
     setConnected(true);
     state.reconnectAttempts = 0;
   };
@@ -371,22 +376,32 @@ export function initWebSocket(callbacks = {}) {
   };
 
   ws.onclose = () => {
+    // A socket can close after a newer socket has already been installed.
+    // Never let that stale event change the current connection indicator.
+    if (state.socket !== ws) return;
     setConnected(false);
+    if (ws.code === 1008) {
+      state.socket = null;
+      if (callbacks.onSessionExpired) callbacks.onSessionExpired();
+      return;
+    }
     if (state.currentUser) {
       scheduleReconnect(callbacks);
     }
   };
 
   ws.onerror = () => {
-    setConnected(false);
+    if (state.socket === ws) setConnected(false);
   };
 }
 
 function scheduleReconnect(callbacks) {
   if (reconnectTimer) return;
+  const reconnectCallbacks = callbacks && Object.keys(callbacks).length ? callbacks : activeCallbacks;
+  setConnected(null);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    if (state.currentUser) initWebSocket(callbacks);
+    if (state.currentUser) initWebSocket(reconnectCallbacks);
   }, RECONNECT_DELAY);
 }
 
@@ -395,6 +410,7 @@ export function sendWebSocketMessage(payload) {
     state.socket.send(JSON.stringify(payload));
     return true;
   }
-  showToast('서버와 연결이 끊겨 있습니다.', 'warning');
+  showToast('서버와 연결이 끊겨 있습니다. 재연결을 시도합니다.', 'warning');
+  if (state.currentUser && !reconnectTimer) scheduleReconnect(activeCallbacks);
   return false;
 }

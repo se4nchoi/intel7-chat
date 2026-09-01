@@ -5,7 +5,7 @@
 
 import { state, setCurrentUser, setActiveRoom } from './state.js';
 import { showToast } from './utils.js';
-import { initAuthListeners, bootstrapAuth, updateNickBadge, showNicknameHint, refreshStorageWarning } from './auth.js';
+import { initAuthListeners, bootstrapAuth, updateNickBadge, showNicknameHint, refreshStorageWarning, showAuthModal } from './auth.js';
 import { loadChannels, renderChannels, initChannelsListeners, channelsDirectory } from './channels.js';
 import { renderDms, displayNickname, getOrCreateDm } from './dm.js';
 import {
@@ -538,6 +538,11 @@ function initApp() {
         }
       },
       onLeaderboardInvalidated: (event) => handleLeaderboardInvalidated(event),
+      onSessionExpired: () => {
+        setCurrentUser(null);
+        if (state.socket) state.socket = null;
+        showAuthModal('세션이 만료되었습니다. 다시 로그인해 주세요.');
+      },
     });
     showNicknameHint();
     refreshQuizHeaderStreak();
