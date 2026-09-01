@@ -144,6 +144,10 @@ def init_db() -> None:
         conn.commit()
         _run_migrations(conn)
         seed_default_quizzes(conn)
+        # Community/reference samples are added after the empty-database seed so
+        # they do not suppress the original PLC/electrical sample set.
+        _migrate_v15(conn)
+        conn.commit()
 
 def _get_schema_version(conn: sqlite3.Connection) -> int:
     row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
@@ -375,6 +379,23 @@ def _migrate_v14(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE quizzes SET category='전기' WHERE category='CBT/전기기초'")
     conn.execute("UPDATE quizzes SET category='전자' WHERE category='CBT/디지털공학'")
 
+def _migrate_v15(conn: sqlite3.Connection) -> None:
+    """Seed beginner position-module error-code questions once."""
+    if conn.execute("SELECT COUNT(*) FROM quizzes").fetchone()[0] == 0:
+        return
+    for quiz in POSITION_MODULE_SAMPLE_QUIZZES:
+        exists = conn.execute("SELECT 1 FROM quizzes WHERE category=? AND question=?", (quiz["category"], quiz["question"])).fetchone()
+        if exists:
+            continue
+        conn.execute("""INSERT INTO quizzes
+            (category,difficulty,question_type,question,image_filename,options_json,
+             correct_answers_json,hint,explanation,source_ref,is_active,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,1,?)""", (
+            quiz["category"], quiz["difficulty"], quiz["question_type"], quiz["question"], "",
+            json.dumps(quiz["options"], ensure_ascii=False), json.dumps(quiz["correct_answers"], ensure_ascii=False),
+            quiz["hint"], quiz["explanation"], quiz["source_ref"], utc_now(),
+        ))
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -390,6 +411,7 @@ _MIGRATIONS = [
     _migrate_v12,
     _migrate_v13,
     _migrate_v14,
+    _migrate_v15,
 ]
 
 
@@ -1540,6 +1562,42 @@ DEFAULT_SAMPLE_QUIZZES = [
         "explanation": "정상 시 닫힌 접점을 직렬로 사용하면 비상 입력이나 단선 때 회로가 열려 안전 정지합니다.",
         "source_ref": "Q-Net 자동화설비산업기사 공개문제(안전제어) 범위 참고 재작성"
     }
+]
+
+def _position_mc(code: str, question: str, answer: str, distractors: List[str], explanation: str) -> Dict[str, Any]:
+    values = [answer, *distractors[:3]]
+    offset = int(code) % 4
+    options = values[offset:] + values[:offset]
+    correct_no = options.index(answer) + 1
+    return {
+        "category": "PLC",
+        "difficulty": "easy",
+        "question_type": "multiple_choice",
+        "question": question,
+        "options": [f"{i}. {value}" for i, value in enumerate(options, 1)],
+        "correct_answers": [str(correct_no), answer, f"{correct_no}. {answer}"],
+        "hint": f"위치결정 모듈 오류 코드 {code}의 명칭을 확인하세요.",
+        "explanation": explanation,
+        "source_ref": "위치결정모듈 사용자 매뉴얼 MR-J2S/QD75, 부록 오류 코드 및 버퍼 메모리 표 참고 재작성",
+    }
+
+POSITION_MODULE_SAMPLE_QUIZZES = [
+    _position_mc("507", "위치결정 모듈 오류 코드 507의 의미는?", "소프트웨어 스트로크 리미트(+)", ["소프트웨어 스트로크 리미트(-)", "지령속도 없음", "원점복귀 방식 에러"], "정방향(+) 소프트웨어 스트로크 리미트 초과를 나타냅니다."),
+    _position_mc("508", "오류 코드 508이 발생했을 때 가장 가까운 설명은?", "소프트웨어 스트로크 리미트(-)", ["소프트웨어 스트로크 리미트(+)", "PLC CPU 에러", "반경범위 외"], "역방향(-) 소프트웨어 스트로크 리미트 초과입니다."),
+    _position_mc("502", "오류 코드 502는 무엇을 의미하는가?", "데이터 No. 부정", ["축 Busy", "JOG 속도 제한값 에러", "원점 어드레스 설정 에러"], "위치결정 데이터 번호가 허용 범위를 벗어난 경우입니다."),
+    _position_mc("503", "오류 코드 503의 원인은?", "지령속도 없음", ["직선 이동량 범위 외", "중심점 설정 에러", "M코드 On 신호 On기동"], "위치결정 기동에 필요한 지령속도가 설정되지 않은 상태입니다."),
+    _position_mc("504", "오류 코드 504가 나타내는 것은?", "직선 이동량 범위 외", ["원호보간 불가", "단위그룹 불일치", "축 에러 리셋"], "직선 이동량이 모듈에서 허용하는 범위를 벗어난 경우입니다."),
+    _position_mc("514", "오류 코드 514의 의미는?", "현재값 변경범위 외", ["현재값 변경불가", "속도 제한값 범위 외", "조건 데이터 에러"], "현재값 변경에 사용한 어드레스가 허용 범위를 벗어난 경우입니다."),
+    _position_mc("518", "오류 코드 518은 어떤 설정과 관련되는가?", "운전패턴 범위 외", ["회전방향 설정 에러", "원점복귀 속도 에러", "보간모드 에러"], "설정한 운전 패턴 값이 허용 범위 밖일 때 발생합니다."),
+    _position_mc("519", "오류 코드 519는 어떤 상태에서 발생하는가?", "상대축 Busy 보간", ["PLC Ready Off", "플래시 ROM 쓰기 에러", "반경범위 외"], "상대축이 운전 중인데 보간 기동을 지령한 경우입니다."),
+    _position_mc("520", "오류 코드 520의 설명으로 옳은 것은?", "단위그룹 불일치", ["데이터 No. 부정", "원점복귀 방향 에러", "M코드 On 타이밍 에러"], "보간 속도 지정 방법과 합성 속도 등의 단위 그룹 설정이 맞지 않습니다."),
+    _position_mc("521", "오류 코드 521은 무엇을 뜻하는가?", "보간기술 명령부정", ["지령속도 설정 에러", "PLC Ready Off 기동", "현재값 갱신요구 에러"], "보간 제어에 사용한 명령 조합이 올바르지 않은 경우입니다."),
+    _position_mc("522", "오류 코드 522의 의미는?", "지령속도 설정 에러", ["보간모드 에러", "직선 이동량 범위 외", "JOG가속시간 선택 에러"], "보간 또는 위치결정에 지정한 지령속도 설정이 올바르지 않습니다."),
+    _position_mc("523", "오류 코드 523은 어떤 에러인가?", "보간모드 에러", ["단위 설정 범위 외", "축 에러 번호 부정", "원호보간 오차 허용범위 외"], "보간 모드와 관련된 설정 또는 운전 조건이 맞지 않습니다."),
+    _position_mc("530", "오류 코드 530의 의미는?", "어드레스 범위 외", ["속도 제한값 범위 외", "원점복귀 리트라이 에러", "데이터 No. 부정"], "이동 목표 어드레스가 허용 범위를 벗어난 경우입니다."),
+    _position_mc("536", "오류 코드 536이 발생하는 조건은?", "M코드 On 신호 On기동", ["PLC Ready Off 기동", "준비완료 Off 기동", "동시기동 불가"], "M코드 On 신호가 이미 On인 상태에서 위치결정을 기동한 경우입니다."),
+    _position_mc("538", "오류 코드 538의 의미는?", "준비완료 Off 기동", ["PLC Ready Off 기동", "M코드 On 신호 On기동", "원점복귀 방식 에러"], "QD75의 준비완료 신호가 Off인 상태에서 기동한 경우입니다."),
+    _position_mc("1517", "1축 버퍼 메모리 K1517이 나타내는 데이터는?", "인칭 이동량", ["JOG 속도", "JOG 가속시간", "축 에러 번호"], "K1517(축별 1517)은 인칭 이동량을 설정·전달하는 버퍼 메모리입니다."),
 ]
 
 QUIZ_EXPERTISES = ("PLC", "전기", "전자", "자동화설비")
