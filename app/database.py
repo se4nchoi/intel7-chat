@@ -1993,6 +1993,7 @@ def get_daily_quizzes(
     count: int = 5,
     category: Optional[str] = None,
     offset: int = 0,
+    exclude_ids: Optional[List[int]] = None,
 ) -> List[Dict[str, Any]]:
     """Returns active educational quizzes with the current user's submission & bookmark state.
     Supports topic category filtering or 'random'/'all' modes.
@@ -2008,6 +2009,11 @@ def get_daily_quizzes(
         if category and category not in ("all", "random", "all_random", "daily"):
             where_clause += " AND q.category = ?"
             params.append(category)
+
+        excluded = sorted({int(value) for value in (exclude_ids or []) if int(value) > 0})
+        if excluded:
+            where_clause += f" AND q.id NOT IN ({','.join('?' for _ in excluded)})"
+            params.extend(excluded)
 
         daily_join = ""
         if daily_set_id is not None:

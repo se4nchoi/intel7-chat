@@ -61,7 +61,7 @@ def test_random_prefers_unsolved_and_subjects_page_in_fives(temp_db):
     assert len(first) == 5
     solved_id = first[0]["id"]
     database.submit_quiz_answer(user["id"], solved_id, "definitely-wrong")
-    second = database.get_daily_quizzes(user["id"], count=5, category="random")
+    second = database.get_daily_quizzes(user["id"], count=5, category="random", exclude_ids=[item["id"] for item in first])
     assert len(second) == 5
     assert solved_id not in {item["id"] for item in second}
 

@@ -425,6 +425,7 @@ export async function fetchTodayQuizzes(category = null, append = false) {
   try {
     const params = new URLSearchParams({ count: '5', offset: String(quizPageOffset) });
     if (category) params.set('category', category);
+    if (append && category === 'random') params.set('exclude', todayQuizzes.map(item => item.id).join(','));
     const url = `/api/quiz/today?${params}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('퀴즈 목록을 불러오지 못했습니다.');

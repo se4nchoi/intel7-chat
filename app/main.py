@@ -1247,11 +1247,18 @@ async def api_quiz_today(
     category: Optional[str] = None,
     count: int = 5,
     offset: int = 0,
+    exclude: Optional[str] = None,
 ):
     user = request_user(request)
     count = max(1, min(int(count), 20))
     offset = max(0, int(offset))
-    quizzes = get_daily_quizzes(user["id"], count=count, category=category, offset=offset)
+    exclude_ids = []
+    if exclude:
+        try:
+            exclude_ids = [int(value) for value in exclude.split(",") if value.strip()]
+        except ValueError:
+            raise HTTPException(400, "exclude 문항 ID 형식이 올바르지 않습니다.")
+    quizzes = get_daily_quizzes(user["id"], count=count, category=category, offset=offset, exclude_ids=exclude_ids)
     stats = get_user_quiz_stats(user["id"])
     return {
         "quizzes": quizzes,
