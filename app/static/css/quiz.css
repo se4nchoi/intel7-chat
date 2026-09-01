@@ -117,6 +117,93 @@
   background: transparent !important;
 }
 
+/* Native form controls inside the quiz portal do not inherit the generic modal form theme. */
+.cbt-modal-box input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.cbt-modal-box select,
+.cbt-modal-box textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: #0d1017;
+  border: 1px solid #2a3043;
+  border-radius: 8px;
+  color: #e4e7f0;
+  caret-color: #93c5fd;
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  outline: none;
+  color-scheme: dark;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.cbt-modal-box textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.cbt-modal-box select {
+  cursor: pointer;
+}
+
+.cbt-modal-box select option {
+  background: #141722;
+  color: #e4e7f0;
+}
+
+.cbt-modal-box input::placeholder,
+.cbt-modal-box textarea::placeholder {
+  color: #68708a;
+  opacity: 1;
+}
+
+.cbt-modal-box input:hover:not(:disabled),
+.cbt-modal-box select:hover:not(:disabled),
+.cbt-modal-box textarea:hover:not(:disabled) {
+  border-color: #3d4660;
+}
+
+.cbt-modal-box input:focus,
+.cbt-modal-box select:focus,
+.cbt-modal-box textarea:focus {
+  background: #111520;
+  border-color: #4f8ef7;
+  box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.16);
+}
+
+.cbt-modal-box input:disabled,
+.cbt-modal-box select:disabled,
+.cbt-modal-box textarea:disabled,
+.cbt-modal-box textarea[readonly] {
+  background: #11141c;
+  border-color: #23293c;
+  color: #aab2c8;
+  cursor: not-allowed;
+  opacity: 0.82;
+}
+
+.cbt-modal-box label {
+  display: block;
+  margin: 4px 0 6px;
+  color: #aab2c8;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.cbt-modal-box input::selection,
+.cbt-modal-box textarea::selection {
+  background: rgba(79, 142, 247, 0.38);
+  color: #ffffff;
+}
+
+.cbt-modal-box input:-webkit-autofill,
+.cbt-modal-box input:-webkit-autofill:hover,
+.cbt-modal-box input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #e4e7f0;
+  box-shadow: 0 0 0 1000px #0d1017 inset;
+  caret-color: #93c5fd;
+}
+
 /* Window Titlebar */
 .cbt-top-header {
   flex-shrink: 0;
