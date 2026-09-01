@@ -159,13 +159,13 @@ export function switchQuizNav(navKey, meta = {}) {
   if (cbtProgressRow) cbtProgressRow.classList.toggle('hidden', !isQuizRunner);
 
   const topicConfig = {
-    daily: { title: '⚡ 오늘의 퀴즈', desc: '매일 엄선된 5개 문제를 풀고 연속 정답 스트릭을 달성하세요.' },
+    daily: { title: '⚡ 오늘의 퀴즈', desc: '오늘의 퀴즈를 풀어 STREAK을 이어가세요. 점수는 모든 공용 퀴즈에서 획득할 수 있습니다.' },
     random: { title: '🔀 전체 랜덤 퀴즈', desc: '전체 등록된 퀴즈에서 무작위로 추출된 5개 문제를 풉니다.' },
     wrong: { title: '❌ 오답 복습', desc: '이전에 틀렸던 문제를 다시 풀고 완전히 마스터해 보세요.' },
     starred: { title: '⭐ 중요 문제 보관함', desc: '풀이 중 별표(북마크)로 저장해 둔 핵심 문제들을 복습합니다.' },
     history: { title: '📜 내가 푼 문제', desc: '과목별로 풀이한 퀴즈 목록과 상세 해설을 확인하세요.' },
     mysets: { title: '🧩 내 문제집 만들기', desc: 'NotebookLM JSON을 검증해 초안으로 저장하고 관리자 검토를 요청하세요.' },
-    leaderboard: { title: '🏆 학습 랭킹 순위표', desc: '일일/주간/전체 퀴즈 점수 및 연속 스트릭 순위입니다.' },
+    leaderboard: { title: '🏆 학습 랭킹 순위표', desc: '모든 공용 퀴즈에서 획득한 일일/주간/전체 점수 순위입니다.' },
     admin: { title: '⚙️ 퀴즈 관리 센터', desc: '교재 PDF를 통한 AI 자동 출제 및 문제 목록을 관리합니다.' },
   };
 
@@ -478,7 +478,7 @@ export async function fetchReviewQuizzes(mode) {
 export function renderQuizStats() {
   if (!userQuizStats) return;
   const quizStatStreak = document.getElementById('quiz-stat-streak');
-  if (quizStatStreak) quizStatStreak.textContent = `${userQuizStats.current_streak || 0}일 연속`;
+  if (quizStatStreak) quizStatStreak.textContent = `STREAK ${userQuizStats.current_streak || 0}`;
   refreshQuizHeaderStreak();
 }
 
@@ -555,7 +555,8 @@ export function renderActiveQuiz() {
     quizTypeTag.textContent = typeMap[q.question_type] || q.question_type;
   }
   if (quizScoreBadge) {
-    quizScoreBadge.textContent = currentQuizNav === 'daily' ? '+20점' : '연습 · 0점';
+    const scoreMap = { easy: '+10점', medium: '+20점', hard: '+30점' };
+    quizScoreBadge.textContent = q.is_solved && currentQuizNav !== 'daily' ? '재풀이 · 0점' : (scoreMap[q.difficulty] || '+20점');
   }
   if (quizQuestionText) renderMarkdown(quizQuestionText, q.question);
 
@@ -704,8 +705,7 @@ export async function submitQuiz(answerVal = null) {
     showToast('오늘의 퀴즈는 한 번만 제출할 수 있습니다. 다시 풀기는 복습 탭을 이용해 주세요.', 'info');
     return;
   }
-  const isPracticeMode = currentQuizNav !== 'daily';
-  const endpoint = isPracticeMode ? '/api/quiz/retry' : '/api/quiz/submit';
+  const endpoint = q.is_solved ? '/api/quiz/retry' : '/api/quiz/submit';
 
   const quizAnswerInput = document.getElementById('quiz-answer-input');
   const quizSubmitBtn = document.getElementById('quiz-submit-btn');
@@ -742,7 +742,7 @@ export async function submitQuiz(answerVal = null) {
     refreshQuizSidebarCounts();
 
     if (data.is_correct) {
-      showToast(isPracticeMode ? '🎉 정답입니다! 멋지게 문제를 해결했습니다.' : `🎉 정답입니다! +${data.score_earned}점을 획득했습니다.`, 'success');
+      showToast(data.score_earned > 0 ? `🎉 정답입니다! +${data.score_earned}점을 획득했습니다.` : '🎉 재풀이 정답입니다!', 'success');
     } else {
       showToast('아쉽게도 오답입니다. 해설을 확인해 보세요.', 'info');
     }
@@ -800,7 +800,7 @@ export function renderLeaderboard(list) {
     score.textContent = `${item.score || 0}점`;
     const streak = document.createElement('small');
     streak.className = 'field-hint';
-    streak.textContent = item.current_streak ? `🔥 ${item.current_streak}일 연속` : '';
+    streak.textContent = item.current_streak ? `🔥 STREAK ${item.current_streak}` : '';
     card.append(icon, name, score, streak);
     leaderboardPodium.appendChild(card);
   });
@@ -830,7 +830,7 @@ export function renderLeaderboard(list) {
     tdCorrect.textContent = `${item.correct_count || 0}문제`;
 
     const tdStreak = document.createElement('td');
-    tdStreak.textContent = item.current_streak ? `🔥 ${item.current_streak}일` : '-';
+    tdStreak.textContent = item.current_streak ? `🔥 STREAK ${item.current_streak}` : '-';
 
     tr.append(tdRank, tdUser, tdScore, tdCorrect, tdStreak);
     leaderboardTbody.appendChild(tr);

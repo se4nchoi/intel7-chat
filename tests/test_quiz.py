@@ -31,25 +31,27 @@ def test_quiz_normalization():
     assert quiz_ai.check_quiz_answer(["인터록", "인터록 회로"], "틀린답") is False
 
 
-def test_only_frozen_daily_quizzes_can_score(temp_db):
+def test_all_first_attempts_score_but_only_daily_quizzes_extend_streak(temp_db):
     user = database.create_user("daily_only", "hash")
     daily = database.get_daily_quizzes(user["id"], count=1)[0]
     extra_id = database.create_quiz_batch([{
         "category": "PLC", "difficulty": "hard", "question_type": "short_answer",
-        "question": "연습 문제", "correct_answers": ["정답"], "options": None,
+        "question": "연습 문제", "correct_answers": ["CORRECT"], "options": None,
         "hint": "", "explanation": "", "source_ref": "",
     }])[0]
 
-    with pytest.raises(ValueError, match="오늘의 퀴즈"):
-        database.submit_quiz_answer(user["id"], extra_id, "정답")
+    practice = database.submit_quiz_answer(user["id"], extra_id, "CORRECT")
+    assert practice["score_earned"] == 30
+    assert practice["user_stats"]["current_streak"] == 0
+    assert database.get_quiz_leaderboard("daily")[0]["score"] == 30
 
-    practice = database.retry_quiz_answer(user["id"], extra_id, "정답")
-    assert practice["score_earned"] == 0
-    assert database.get_quiz_leaderboard("daily") == []
+    retry = database.retry_quiz_answer(user["id"], extra_id, "CORRECT")
+    assert retry["score_earned"] == 0
 
     answer = daily.get("correct_answers", ["Y0"])[0]
     scored = database.submit_quiz_answer(user["id"], daily["id"], answer)
     assert scored["score_earned"] in {0, 20}
+    assert scored["user_stats"]["current_streak"] == 1
     assert database.get_quiz_leaderboard("daily")[0]["user_id"] == user["id"]
 
 

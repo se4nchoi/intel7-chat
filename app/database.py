@@ -2102,11 +2102,10 @@ def submit_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str
 
         today_set = conn.execute("SELECT id FROM daily_quiz_sets WHERE assigned_date=? AND status='published'", (today_str,)).fetchone()
         assigned = today_set and conn.execute(
-            "SELECT points FROM daily_quiz_set_items WHERE set_id=? AND quiz_id=?",
+            "SELECT 1 FROM daily_quiz_set_items WHERE set_id=? AND quiz_id=?",
             (today_set["id"], quiz_id),
         ).fetchone()
-        if not assigned:
-            raise ValueError("오늘의 퀴즈로 배정된 문제만 점수를 받을 수 있습니다.")
+        is_daily_quiz = bool(assigned)
 
         # Check existing submission
         existing = conn.execute(
@@ -2120,10 +2119,8 @@ def submit_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str
         is_correct = 1 if check_quiz_answer(correct_answers, user_answer) else 0
 
         # Score calculation
-        if is_correct:
-            score_earned = int(assigned["points"])
-        else:
-            score_earned = 0
+        score_earned = ({"easy": 10, "medium": 20, "hard": 30}.get(quiz_row["difficulty"], 20)
+                        if is_correct else 0)
 
         # Insert submission
         conn.execute("""INSERT INTO quiz_submissions
@@ -2142,14 +2139,17 @@ def submit_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str
             curr_streak = stats_row["current_streak"]
             max_streak = stats_row["max_streak"]
 
-            if last_date == today_str:
-                streak = curr_streak
-            elif last_date == yesterday_str:
-                streak = curr_streak + 1
-            else:
-                streak = 1
-
-            max_streak = max(max_streak, streak)
+            streak = curr_streak
+            next_last_date = last_date
+            if is_daily_quiz:
+                if last_date == today_str:
+                    streak = curr_streak
+                elif last_date == yesterday_str:
+                    streak = curr_streak + 1
+                else:
+                    streak = 1
+                max_streak = max(max_streak, streak)
+                next_last_date = today_str
             total_score = stats_row["total_score"] + score_earned
             weekly_score = stats_row["weekly_score"] + score_earned
             total_solved = stats_row["total_solved"] + 1
@@ -2161,10 +2161,10 @@ def submit_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str
                 last_solved_date = ?
                 WHERE user_id = ?""",
                 (total_score, total_solved, total_correct, streak, max_streak,
-                 weekly_score, today_str, user_id))
+                 weekly_score, next_last_date, user_id))
         else:
-            streak = 1
-            max_streak = 1
+            streak = 1 if is_daily_quiz else 0
+            max_streak = streak
             total_score = score_earned
             weekly_score = score_earned
             total_solved = 1
@@ -2175,7 +2175,7 @@ def submit_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str
                  current_streak, max_streak, weekly_score, last_solved_date)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (user_id, total_score, total_solved, total_correct,
-                 streak, max_streak, weekly_score, today_str))
+                 streak, max_streak, weekly_score, today_str if is_daily_quiz else None))
 
         return {
             "quiz_id": quiz_id,
@@ -2229,20 +2229,19 @@ def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[s
     week_start = (datetime.now() - timedelta(days=datetime.now().weekday())).strftime("%Y-%m-%d")
     with get_connection() as conn:
         date_clause, params = "", []
-        if period == "daily": date_clause = "AND dqs.assigned_date = ?"; params.append(today_str)
-        elif period != "all": date_clause = "AND dqs.assigned_date >= ?"; params.append(week_start)
+        if period == "daily": date_clause = "AND qs.submitted_date = ?"; params.append(today_str)
+        elif period != "all": date_clause = "AND qs.submitted_date >= ?"; params.append(week_start)
         params.append(limit)
         rows = conn.execute(f"""
             SELECT qs.user_id, u.username, u.display_name,
-                   SUM(qs.score_earned) as score, SUM(qs.is_correct) as correct_count,
+                   SUM(qs.score_earned) as score,
+                   SUM(CASE WHEN qs.score_earned > 0 THEN 1 ELSE 0 END) as correct_count,
                    COUNT(qs.id) as solved_count, COALESCE(st.current_streak,0) as current_streak,
                    COALESCE(MAX(CASE WHEN qs.score_earned > 0 THEN qs.submitted_at END), MIN(qs.submitted_at)) as score_reached_at
             FROM quiz_submissions qs
-            JOIN daily_quiz_set_items dqi ON dqi.quiz_id=qs.quiz_id
-            JOIN daily_quiz_sets dqs ON dqs.id=dqi.set_id AND dqs.assigned_date=qs.submitted_date
             JOIN users u ON u.id=qs.user_id
             LEFT JOIN user_quiz_stats st ON st.user_id=qs.user_id
-            WHERE dqs.status='published' {date_clause}
+            WHERE 1=1 {date_clause}
             GROUP BY qs.user_id
             ORDER BY score DESC, score_reached_at ASC, qs.user_id ASC LIMIT ?
         """, params).fetchall()
@@ -2280,8 +2279,8 @@ def get_user_quiz_badge(user_id: int) -> Optional[Dict[str, Any]]:
             return {
                 "type": "streak",
                 "icon": "🔥",
-                "label": f"{streak}일 연속",
-                "title": f"퀴즈 {streak}일 연속 정답"
+                "label": f"STREAK {streak}",
+                "title": f"오늘의 퀴즈 STREAK {streak}"
             }
 
         if row["total_score"] >= 50:
@@ -2317,7 +2316,7 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
             if top_uid == uid:
                 badges[uid] = {"type": "rank", "icon": "👑", "label": "주간 1위", "title": "이번 주 퀴즈 1위"}
             elif st.get("current_streak", 0) >= 3:
-                badges[uid] = {"type": "streak", "icon": "🔥", "label": f"{st['current_streak']}일 연속", "title": f"퀴즈 {st['current_streak']}일 연속 정답"}
+                badges[uid] = {"type": "streak", "icon": "🔥", "label": f"STREAK {st['current_streak']}", "title": f"오늘의 퀴즈 STREAK {st['current_streak']}"}
             elif st.get("total_score", 0) >= 50:
                 badges[uid] = {"type": "score", "icon": "⚡", "label": f"{st['total_score']}점", "title": f"퀴즈 누적 {st['total_score']}점"}
             else:
