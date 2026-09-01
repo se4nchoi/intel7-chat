@@ -17,6 +17,9 @@ let quizPageOffset = 0;
 let quizPageLoading = false;
 let quizHasMore = true;
 let sidebarCategoryQuizzes = null;
+let sidebarCategoryName = '';
+let sidebarCategoryOffset = 0;
+let sidebarCategoryHasMore = false;
 
 export function getCategoryIcon(catName = '') {
   const lower = catName.toLowerCase();
@@ -466,11 +469,26 @@ async function openSidebarCategoryPage(category) {
   document.querySelectorAll('.cbt-sidebar-section').forEach(item => item.classList.toggle('hidden', item !== section));
   back?.classList.remove('hidden');
   if (title) title.textContent = `📋 ${category} 문제 목록`;
+  sidebarCategoryName = category;
+  sidebarCategoryOffset = 0;
+  sidebarCategoryHasMore = true;
+  sidebarCategoryQuizzes = [];
+  await loadSidebarCategoryPage(false);
+}
+
+async function loadSidebarCategoryPage(append = true) {
+  const category = sidebarCategoryName;
+  const more = document.getElementById('quiz-sidebar-more-btn');
+  if (!category || (!sidebarCategoryHasMore && append)) return;
   try {
-    const res = await fetch(`/api/quiz/today?category=${encodeURIComponent(category)}&count=200&offset=0`);
+    const res = await fetch(`/api/quiz/today?category=${encodeURIComponent(category)}&count=50&offset=${sidebarCategoryOffset}`);
     if (!res.ok) throw new Error('주제 문제 목록을 불러오지 못했습니다.');
-    sidebarCategoryQuizzes = (await res.json()).quizzes || [];
+    const page = (await res.json()).quizzes || [];
+    sidebarCategoryQuizzes = append ? sidebarCategoryQuizzes.concat(page) : page;
+    sidebarCategoryOffset += page.length;
+    sidebarCategoryHasMore = page.length === 50;
     renderSidebarQuestionList(sidebarCategoryQuizzes);
+    more?.classList.toggle('hidden', !sidebarCategoryHasMore);
   } catch (err) {
     const list = document.getElementById('quiz-sidebar-question-list');
     if (list) list.textContent = err.message;
@@ -479,6 +497,9 @@ async function openSidebarCategoryPage(category) {
 
 function restoreSidebarTopics() {
   sidebarCategoryQuizzes = null;
+  sidebarCategoryName = '';
+  sidebarCategoryOffset = 0;
+  sidebarCategoryHasMore = false;
   document.querySelectorAll('.cbt-sidebar-section').forEach(item => item.classList.remove('hidden'));
   document.querySelector('.quiz-question-sidebar-section')?.classList.add('hidden');
   document.getElementById('quiz-sidebar-back-btn')?.classList.add('hidden');
@@ -571,7 +592,11 @@ export function renderQuizPillNav() {
 
   if (quizPrevBtn) quizPrevBtn.disabled = currentQuizIndex === 0;
   const canLoadMore = currentQuizNav === 'random' || currentQuizNav.startsWith('category:');
-  if (quizNextBtn) quizNextBtn.disabled = currentQuizIndex === todayQuizzes.length - 1 && (!canLoadMore || !quizHasMore);
+  const atEnd = currentQuizIndex === todayQuizzes.length - 1;
+  if (quizNextBtn) {
+    quizNextBtn.disabled = atEnd && (!canLoadMore || !quizHasMore);
+    quizNextBtn.textContent = atEnd && canLoadMore && quizHasMore ? '5개 더' : '다음 문제 ▶';
+  }
 }
 
 function renderSidebarQuestionList(items = sidebarCategoryQuizzes || todayQuizzes) {
@@ -1064,6 +1089,7 @@ export function initQuizListeners() {
   const quizNavAdminBtn = document.getElementById('quiz-nav-admin-btn');
   const quizQuestionPanelToggle = document.getElementById('quiz-question-panel-toggle');
   const quizQuestionPanel = document.getElementById('quiz-question-panel');
+  const quizSidebarMoreBtn = document.getElementById('quiz-sidebar-more-btn');
   const quizSidebarBackBtn = document.getElementById('quiz-sidebar-back-btn');
   const quizStarBtn = document.getElementById('quiz-star-btn');
   const quizHintBtn = document.getElementById('quiz-hint-btn');
@@ -1103,6 +1129,7 @@ export function initQuizListeners() {
     if (chevron) chevron.textContent = collapsed ? '⌄' : '⌃';
   });
   quizSidebarBackBtn?.addEventListener('click', () => restoreSidebarTopics());
+  quizSidebarMoreBtn?.addEventListener('click', () => loadSidebarCategoryPage(true));
 
   quizCopyPromptBtn?.addEventListener('click', async () => {
     await navigator.clipboard.writeText(document.getElementById('quiz-notebook-prompt')?.value || '');

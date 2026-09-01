@@ -214,7 +214,7 @@
   text-align: left;
 }
 .quiz-panel-chevron { color: #7f8baa; font-size: .95rem; }
-.quiz-question-panel { margin-top: 6px; max-height: 245px; overflow-y: auto; transition: max-height .18s ease, opacity .18s ease; }
+.quiz-question-panel { margin-top: 6px; max-height: calc(100vh - 190px); overflow-y: auto; transition: max-height .18s ease, opacity .18s ease; }
 .quiz-question-panel.collapsed { max-height: 0; opacity: 0; overflow: hidden; margin-top: 0; }
 .quiz-sidebar-question-list { display: grid; gap: 4px; }
 .quiz-sidebar-question {
