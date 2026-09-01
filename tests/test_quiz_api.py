@@ -169,7 +169,7 @@ def test_admin_quiz_import_and_management():
 
     new_quiz_json = [
         {
-            "category": "PLC/시퀀스",
+            "category": "PLC",
             "difficulty": "easy",
             "question_type": "short_answer",
             "question": "PLC에서 내부 보조 릴레이로 사용하는 대표적인 디바이스 기호는?",
@@ -275,7 +275,7 @@ def test_quiz_categories_and_sidebar_counts():
     assert cat_resp.status_code == 200
     cats = cat_resp.json()["categories"]
     assert len(cats) > 0
-    assert any(c["category"] == "PLC/시퀀스" for c in cats)
+    assert any(c["category"] == "PLC" for c in cats)
 
     # 2. Sidebar counts before any action
     count_resp = client.get("/api/quiz/sidebar-counts")
@@ -286,11 +286,11 @@ def test_quiz_categories_and_sidebar_counts():
     assert counts["history"] == 0
 
     # 3. Category filtering in /api/quiz/today
-    plc_resp = client.get("/api/quiz/today?category=PLC/시퀀스")
+    plc_resp = client.get("/api/quiz/today?category=PLC")
     assert plc_resp.status_code == 200
     plc_quizzes = plc_resp.json()["quizzes"]
     assert len(plc_quizzes) > 0
-    assert all(q["category"] == "PLC/시퀀스" for q in plc_quizzes)
+    assert all(q["category"] == "PLC" for q in plc_quizzes)
 
     # 4. Random mode
     rnd_resp = client.get("/api/quiz/today?category=random")

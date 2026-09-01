@@ -1419,7 +1419,7 @@ async def api_admin_quiz_ai_generate(request: Request):
     content_type = request.headers.get("content-type", "")
     if content_type.startswith("multipart/form-data"):
         form = await request.form()
-        category = str(form.get("category", "PLC/시퀀스")).strip()
+        category = str(form.get("category", "PLC")).strip()
         count = int(form.get("count", 5))
         file_obj = form.get("file")
         text_content = str(form.get("text_content", "")).strip()
@@ -1436,7 +1436,7 @@ async def api_admin_quiz_ai_generate(request: Request):
             raise HTTPException(400, "파일 또는 텍스트 내용을 입력하세요.")
     else:
         data = await read_json_body(request)
-        category = str(data.get("category", "PLC/시퀀스")).strip()
+        category = str(data.get("category", "PLC")).strip()
         count = int(data.get("count", 5))
         text_content = str(data.get("text_content", "")).strip()
         if not text_content:

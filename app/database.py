@@ -262,7 +262,7 @@ def _migrate_v9(conn: sqlite3.Connection) -> None:
     )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS quizzes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        category TEXT NOT NULL DEFAULT 'PLC/시퀀스',
+        category TEXT NOT NULL DEFAULT 'PLC',
         difficulty TEXT NOT NULL DEFAULT 'medium',
         question_type TEXT NOT NULL DEFAULT 'multiple_choice',
         question TEXT NOT NULL,
@@ -362,6 +362,19 @@ def _migrate_v12(conn: sqlite3.Connection) -> None:
         FOREIGN KEY(quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
     )""")
 
+def _migrate_v13(conn: sqlite3.Connection) -> None:
+    """Normalize seeded quiz categories to the user-facing subject names."""
+    conn.execute("UPDATE quizzes SET category='PLC' WHERE category='PLC/시퀀스'")
+    conn.execute("UPDATE quizzes SET category='전기' WHERE category='CBT/전기기초'")
+    conn.execute("UPDATE quizzes SET category='전자' WHERE category='CBT/디지털공학'")
+    conn.execute("UPDATE quizzes SET category='자동화설비' WHERE category IN ('공압/유압', '생산자동화')")
+
+def _migrate_v14(conn: sqlite3.Connection) -> None:
+    """Apply subject-name normalization to databases seeded before v13."""
+    conn.execute("UPDATE quizzes SET category='PLC' WHERE category='PLC/시퀀스'")
+    conn.execute("UPDATE quizzes SET category='전기' WHERE category='CBT/전기기초'")
+    conn.execute("UPDATE quizzes SET category='전자' WHERE category='CBT/디지털공학'")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -375,6 +388,8 @@ _MIGRATIONS = [
     _migrate_v10,
     _migrate_v11,
     _migrate_v12,
+    _migrate_v13,
+    _migrate_v14,
 ]
 
 
@@ -1423,7 +1438,7 @@ def get_pinned_message_ids(
 
 DEFAULT_SAMPLE_QUIZZES = [
     {
-        "category": "PLC/시퀀스",
+        "category": "PLC",
         "difficulty": "medium",
         "question_type": "ladder_input",
         "question": "자기유지(Self-holding) 회로에서 출력 코일 Y0이 ON된 후 기동 스위치 X0을 떼어도 계속 전원이 공급되도록 X0과 병렬(OR)로 연결해야 하는 접점 디바이스 번호는 무엇인가?",
@@ -1435,7 +1450,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "source_ref": "PLC 시퀀스 실습 4강 - 자기유지 회로 p.12"
     },
     {
-        "category": "PLC/시퀀스",
+        "category": "PLC",
         "difficulty": "easy",
         "question_type": "multiple_choice",
         "question": "PLC 래더 다이어그램에서 두 개 이상의 a접점을 직렬로 연결할 때 사용하는 기본 명령어는 무엇인가?",
@@ -1446,7 +1461,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "source_ref": "PLC 기초 명령어 편람 p.5"
     },
     {
-        "category": "PLC/시퀀스",
+        "category": "PLC",
         "difficulty": "medium",
         "question_type": "short_answer",
         "question": "기본 단위가 100ms인 PLC 타이머(Timer)에서 3초를 지연 동작시키기 위해 입력해야 하는 설정값(K값)은 얼마인가?",
@@ -1458,7 +1473,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "source_ref": "PLC 타이머/카운터 응용 p.23"
     },
     {
-        "category": "CBT/전기기초",
+        "category": "전기",
         "difficulty": "medium",
         "question_type": "multiple_choice",
         "question": "3상 유도전동기의 회전 방향을 역회전으로 바꾸기 위한 가장 올바른 결선 변경 방법은?",
@@ -1466,10 +1481,10 @@ DEFAULT_SAMPLE_QUIZZES = [
         "correct_answers": ["1", "1번", "1. 3상 중 임의의 2선의 접속을 서로 바꾼다"],
         "hint": "3개 선 중 임의의 2개 선 위치를 맞바꾸면 회전자계 방향이 반전됩니다.",
         "explanation": "3상 교류 전동기(R, S, T)는 3상 중 임의의 두 선의 접속을 서로 바꾸면 회전자계의 방향이 반대가 되어 전동기가 역회전합니다.",
-        "source_ref": "전기기능사 필기 CBT 기출문제"
+        "source_ref": "Q-Net 전기 분야 출제범위 참고 재작성"
     },
     {
-        "category": "PLC/시퀀스",
+        "category": "PLC",
         "difficulty": "hard",
         "question_type": "short_answer",
         "question": "정회전 코일과 역회전 코일이 동시에 투입되어 선간 단락 사고가 발생하는 것을 막기 위해, 상대방 코일 전단에 자신의 b접점을 직렬 연결하는 제어 회로의 명칭은?",
@@ -1481,7 +1496,7 @@ DEFAULT_SAMPLE_QUIZZES = [
         "source_ref": "시퀀스 제어 핵심이론 p.31"
     },
     {
-        "category": "CBT/디지털공학",
+        "category": "전자",
         "difficulty": "easy",
         "question_type": "multiple_choice",
         "question": "2진수 10110(2)을 10진수로 올바르게 변환한 값은?",
@@ -1489,10 +1504,10 @@ DEFAULT_SAMPLE_QUIZZES = [
         "correct_answers": ["3", "3번", "22", "3. 22"],
         "hint": "각 자리수의 가중치(16, 8, 4, 2, 1) 중 1인 자리만 더해보세요: 16 + 4 + 2",
         "explanation": "16*1 + 8*0 + 4*1 + 2*1 + 1*0 = 16 + 4 + 2 = 22 입니다.",
-        "source_ref": "전자계산기일반 CBT 기출"
+        "source_ref": "Q-Net 전자·디지털공학 출제범위 참고 재작성"
     },
     {
-        "category": "PLC/시퀀스",
+        "category": "PLC",
         "difficulty": "medium",
         "question_type": "ladder_input",
         "question": "미쓰비시(MELSEC) PLC 래더 프로그래밍에서 모선(Bus bar)에서 b접점을 시작할 때 사용하는 니모닉(Mnemonic) 명령어는 무엇인가?",
@@ -1502,10 +1517,32 @@ DEFAULT_SAMPLE_QUIZZES = [
         "hint": "Load Inverse의 약자 3글자입니다.",
         "explanation": "모선에서 a접점 시작은 LD(Load), b접점 시작은 LDI(Load Inverse) 명령어를 사용합니다.",
         "source_ref": "MELSEC 명령어 일람표"
+    },
+    {
+        "category": "자동화설비",
+        "difficulty": "medium",
+        "question_type": "multiple_choice",
+        "question": "공압 회로에서 방향제어밸브의 주된 역할은 무엇인가?",
+        "options": ["1. 압축공기의 흐름 방향을 전환한다", "2. 전압을 정류한다", "3. 회전수를 측정한다", "4. 절연저항을 높인다"],
+        "correct_answers": ["1", "1번", "압축공기의 흐름 방향을 전환한다"],
+        "hint": "실린더의 전진·후진을 제어합니다.",
+        "explanation": "방향제어밸브는 공급·배기 경로를 바꿔 공압 액추에이터의 움직임을 제어합니다.",
+        "source_ref": "Q-Net 자동화설비산업기사 공개문제(공압) 범위 참고 재작성"
+    },
+    {
+        "category": "자동화설비",
+        "difficulty": "hard",
+        "question_type": "multiple_choice",
+        "question": "비상정지 회로에서 단선이 발생해도 안전 정지가 되도록 일반적으로 사용하는 접점은?",
+        "options": ["1. 정상 시 닫힌 b접점", "2. 정상 시 열린 a접점", "3. 아날로그 출력", "4. 타이머 출력만 사용"],
+        "correct_answers": ["1", "1번", "정상 시 닫힌 b접점"],
+        "hint": "정상 상태에서 닫혀 있어야 단선 시 회로가 열립니다.",
+        "explanation": "정상 시 닫힌 접점을 직렬로 사용하면 비상 입력이나 단선 때 회로가 열려 안전 정지합니다.",
+        "source_ref": "Q-Net 자동화설비산업기사 공개문제(안전제어) 범위 참고 재작성"
     }
 ]
 
-QUIZ_EXPERTISES = ("PLC", "전기기사", "전기기능사", "디지털공학", "공압/유압")
+QUIZ_EXPERTISES = ("PLC", "전기", "전자", "자동화설비")
 
 def normalize_quiz_import(items: Any, expertise: str) -> List[Dict[str, Any]]:
     if expertise not in QUIZ_EXPERTISES:
@@ -1662,7 +1699,7 @@ def seed_default_quizzes(conn: Optional[sqlite3.Connection] = None) -> None:
                  is_active, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
                 (
-                    q.get("category", "PLC/시퀀스"),
+                    q.get("category", "PLC"),
                     q.get("difficulty", "medium"),
                     q.get("question_type", "multiple_choice"),
                     q["question"],
@@ -1776,7 +1813,7 @@ def create_quiz_batch(
                  source_ref, daily_date, is_active, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
                 (
-                    q.get("category", "PLC/시퀀스"),
+                    q.get("category", "PLC"),
                     q.get("difficulty", "medium"),
                     q.get("question_type", "multiple_choice"),
                     q.get("question", ""),

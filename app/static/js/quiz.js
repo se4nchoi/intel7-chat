@@ -545,7 +545,7 @@ export function renderActiveQuiz() {
   const quizFeedbackBox = document.getElementById('quiz-feedback-box');
 
   currentSelectedOption = null;
-  if (quizCategoryTag) quizCategoryTag.textContent = q.category || 'PLC/시퀀스';
+  if (quizCategoryTag) quizCategoryTag.textContent = q.category || 'PLC';
   if (quizDifficultyTag) {
     const diffMap = { easy: '쉬움', medium: '보통', hard: '어려움' };
     quizDifficultyTag.textContent = diffMap[q.difficulty] || q.difficulty;
@@ -1130,7 +1130,7 @@ export function initQuizListeners() {
       if (quizGenSubmit) quizGenSubmit.disabled = true;
 
       const formData = new FormData();
-      formData.append('category', quizGenCategory ? quizGenCategory.value : 'PLC/시퀀스');
+      formData.append('category', quizGenCategory ? quizGenCategory.value : 'PLC');
       formData.append('count', quizGenCount ? quizGenCount.value : '5');
       if (quizGenFile && quizGenFile.files[0]) {
         formData.append('file', quizGenFile.files[0]);
