@@ -2333,6 +2333,18 @@ def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[s
     """Returns top ranked users for daily, weekly, or all-time educational quizzes."""
     today_str = datetime.now().strftime("%Y-%m-%d")
     week_start = (datetime.now() - timedelta(days=datetime.now().weekday())).strftime("%Y-%m-%d")
+    if period == "streak":
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        with get_connection() as conn:
+            rows = conn.execute("""SELECT st.user_id, u.username, u.display_name,
+                       st.total_score AS score, st.total_correct AS correct_count,
+                       st.total_solved AS solved_count, st.current_streak,
+                       st.last_solved_date AS score_reached_at
+                FROM user_quiz_stats st JOIN users u ON u.id=st.user_id
+                WHERE st.current_streak >= 3 AND st.last_solved_date >= ?
+                ORDER BY st.current_streak DESC, st.last_solved_date ASC, st.user_id ASC LIMIT ?""",
+                (yesterday, limit)).fetchall()
+        return [{**dict(row), "rank": rank} for rank, row in enumerate(rows, start=1)]
     with get_connection() as conn:
         date_clause, params = "", []
         if period == "daily": date_clause = "AND qs.submitted_date = ?"; params.append(today_str)
@@ -2385,7 +2397,7 @@ def get_user_quiz_badge(user_id: int) -> Optional[Dict[str, Any]]:
             return {
                 "type": "streak",
                 "icon": "🔥",
-                "label": "FIRE 꾸준러",
+                "label": "꾸준러",
                 "title": f"오늘의 퀴즈 {streak}일 연속"
             }
 
@@ -2422,7 +2434,7 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
             if top_uid == uid:
                 badges[uid] = {"type": "rank", "icon": "👑", "label": "주간 1위", "title": "이번 주 퀴즈 1위"}
             elif st.get("current_streak", 0) >= 3:
-                badges[uid] = {"type": "streak", "icon": "🔥", "label": "FIRE 꾸준러", "title": f"오늘의 퀴즈 {st['current_streak']}일 연속"}
+                badges[uid] = {"type": "streak", "icon": "🔥", "label": "꾸준러", "title": f"오늘의 퀴즈 {st['current_streak']}일 연속"}
             elif st.get("total_score", 0) >= 50:
                 badges[uid] = {"type": "score", "icon": "⚡", "label": f"{st['total_score']}점", "title": f"퀴즈 누적 {st['total_score']}점"}
             else:

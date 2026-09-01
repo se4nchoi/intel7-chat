@@ -1349,7 +1349,7 @@ async def api_quiz_review(request: Request, mode: str = "wrong"):
 @app.get("/api/quiz/leaderboard")
 async def api_quiz_leaderboard(request: Request, period: str = "weekly"):
     request_user(request)
-    if period not in {"daily", "weekly", "all"}:
+    if period not in {"daily", "weekly", "all", "streak"}:
         period = "weekly"
     leaderboard = get_quiz_leaderboard(period)
     return {
