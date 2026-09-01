@@ -77,18 +77,23 @@ async function switchConversation(type, id) {
   // Fetch conversation messages
   try {
     const endpoint = type === 'channel'
-      ? `/api/history/public`
+      ? (String(id) === '1' ? `/api/history/public` : `/api/channels/${id}/messages`)
       : `/api/history/dm/${encodeURIComponent(id)}`;
     const res = await fetch(endpoint, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
-      const messages = Array.isArray(data.messages) ? data.messages : [];
+      const rawMessages = Array.isArray(data.messages) ? data.messages : [];
+      const messages = rawMessages.map(m => ({
+        ...m,
+        msgType: type === 'channel' ? 'chat' : 'dm'
+      }));
       renderMessages(messages);
       if (loadOlderBtn) {
         loadOlderBtn.classList.toggle('hidden', !data.has_more);
       }
     }
   } catch { /* ignore */ }
+
 
 
   fetchActivePinnedMessages({ autoOpen: false });

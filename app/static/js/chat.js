@@ -473,9 +473,15 @@ export function appendMessageNode(msg, previousMsg) {
   const messageListEl = document.getElementById('message-list');
   if (!messageListEl) return;
 
-  const isChat = msg.msgType === 'chat';
+  const isChat = msg.msgType === 'chat'
+    || (state.activeRoom && state.activeRoom.type === 'channel')
+    || Boolean(msg.channel_id)
+    || Boolean(msg.nickname && !msg.from_nick);
+
   const myNick = state.currentUser ? state.currentUser.username : '';
-  const isOwn = isChat ? msg.nickname === myNick : msg.from_nick === myNick;
+  const isOwn = isChat
+    ? (msg.nickname === myNick || (state.currentUser && Number(msg.author_id) === Number(state.currentUser.id)))
+    : (msg.from_nick === myNick || (state.currentUser && Number(msg.from_user_id) === Number(state.currentUser.id)));
 
   const row = document.createElement('article');
   row.className = `msg-row ${isChat ? (isOwn ? 'own' : 'other') : (isOwn ? 'dm-own' : 'dm-recv')}`;
@@ -488,19 +494,24 @@ export function appendMessageNode(msg, previousMsg) {
     meta.className = 'msg-meta';
     const nick = document.createElement('span');
     nick.className = 'nick';
-    const displayName = displayNickname(msg.nickname);
+    const rawNick = msg.nickname || (msg.author_id ? `user-${msg.author_id}` : '익명');
+    const displayName = displayNickname(rawNick);
     nick.textContent = displayName;
-    const time = document.createElement('time');
-    time.dateTime = msg.created_at || '';
-    time.textContent = formatTime(msg.created_at);
+    nick.title = displayName !== rawNick ? `${displayName} (@${rawNick})` : `@${rawNick}`;
     meta.append(nick);
+
     if (msg.quiz_badge) {
       const badgeSpan = document.createElement('span');
       badgeSpan.className = `quiz-user-badge badge-${msg.quiz_badge.type}`;
       badgeSpan.textContent = `${msg.quiz_badge.icon} ${msg.quiz_badge.label}`;
       meta.appendChild(badgeSpan);
     }
+
+    const time = document.createElement('time');
+    time.dateTime = msg.created_at || '';
+    time.textContent = formatTime(msg.created_at);
     meta.appendChild(time);
+
     if (msg.is_pinned) {
       const pinBadge = document.createElement('span');
       pinBadge.className = 'pinned-indicator-badge';
@@ -512,7 +523,8 @@ export function appendMessageNode(msg, previousMsg) {
     const label = document.createElement('div');
     label.className = 'dm-label';
     const partnerNick = isOwn ? msg.to_nick : msg.from_nick;
-    const displayName = displayNickname(partnerNick);
+    const rawNick = partnerNick || (isOwn ? '나' : '상대방');
+    const displayName = displayNickname(rawNick);
     label.textContent = displayName;
     const time = document.createElement('time');
     time.className = 'dm-time';
@@ -527,6 +539,7 @@ export function appendMessageNode(msg, previousMsg) {
     }
     row.appendChild(label);
   }
+
 
   const shell = document.createElement('div');
   shell.className = 'message-shell';
@@ -575,11 +588,17 @@ export function renderMessages(messages = []) {
   if (loadOlderBtn) {
     messageListEl.appendChild(loadOlderBtn);
   }
-  messages.forEach((msg, idx) => {
+  const isChannel = !state.activeRoom || state.activeRoom.type === 'channel';
+  messages.forEach((rawMsg, idx) => {
+    const msg = {
+      ...rawMsg,
+      msgType: rawMsg.msgType || (isChannel ? 'chat' : 'dm')
+    };
     appendMessageNode(msg, idx > 0 ? messages[idx - 1] : null);
   });
   scrollBottom();
 }
+
 
 
 export function scrollBottom() {
