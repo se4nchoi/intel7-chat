@@ -1600,7 +1600,10 @@ POSITION_MODULE_SAMPLE_QUIZZES = [
     _position_mc("1517", "1축 버퍼 메모리 K1517이 나타내는 데이터는?", "인칭 이동량", ["JOG 속도", "JOG 가속시간", "축 에러 번호"], "K1517(축별 1517)은 인칭 이동량을 설정·전달하는 버퍼 메모리입니다."),
 ]
 
-QUIZ_EXPERTISES = ("PLC", "전기", "전자", "자동화설비")
+QUIZ_EXPERTISES = (
+    "PLC", "전기", "전자", "자동화설비",
+    "전기기능사", "전기기사", "디지털공학", "공압/유압",
+)
 
 def normalize_quiz_import(items: Any, expertise: str) -> List[Dict[str, Any]]:
     if expertise not in QUIZ_EXPERTISES:

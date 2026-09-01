@@ -465,6 +465,11 @@ export async function fetchTodayQuizzes(category = null, append = false) {
   }
 }
 
+function updateExpertiseEmoji(value) {
+  const preview = document.getElementById('quiz-set-expertise-emoji');
+  if (preview) preview.textContent = getCategoryIcon(value || '');
+}
+
 function updateDailyCompletionCover() {
   const cover = document.getElementById('quiz-daily-complete-cover');
   if (!cover) return;
@@ -971,8 +976,13 @@ export async function loadMyQuizSets() {
     const expertises = (await expertiseRes.json()).expertises || [];
     if (expertise && !expertise.options.length) {
       expertises.forEach(value => expertise.add(new Option(value, value)));
-      expertise.addEventListener('change', () => { if (prompt) prompt.value = notebookPrompt(expertise.value); });
+      expertise.addEventListener('change', () => {
+        updateExpertiseEmoji(expertise.value);
+        if (prompt) prompt.value = notebookPrompt(expertise.value);
+      });
     }
+    if (expertise && !expertise.value && expertises.length) expertise.value = expertises[0];
+    updateExpertiseEmoji(expertise?.value || expertises[0] || 'PLC');
     if (prompt) prompt.value = notebookPrompt(expertise?.value || expertises[0] || 'PLC');
     renderMyQuizSets((await setsRes.json()).sets || []);
   } catch (err) {

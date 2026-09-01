@@ -237,7 +237,11 @@
               <h3 class="cbt-admin-title">🧠 NotebookLM으로 문제집 만들기</h3>
               <p class="cbt-admin-desc">분야를 고른 뒤 아래 프롬프트를 NotebookLM에 붙여넣으세요. 이미지는 제외하고, 회로나 도면은 문제 본문의 Markdown 코드 블록에 ASCII로 표현합니다.</p>
               <label for="quiz-set-expertise">전문 분야</label>
-              <select id="quiz-set-expertise" class="form-select"></select>
+              <div class="quiz-expertise-picker-row">
+                <span id="quiz-set-expertise-emoji" class="quiz-expertise-emoji" aria-hidden="true">📚</span>
+                <select id="quiz-set-expertise" class="form-select" aria-label="전문 분야"></select>
+              </div>
+              <p class="field-hint">분야에 맞는 아이콘은 자동으로 선택됩니다.</p>
               <label for="quiz-notebook-prompt">NotebookLM 프롬프트</label>
               <textarea id="quiz-notebook-prompt" class="quiz-prompt-box" rows="9" readonly></textarea>
               <button id="quiz-copy-prompt-btn" type="button" class="secondary-btn">프롬프트 복사</button>
