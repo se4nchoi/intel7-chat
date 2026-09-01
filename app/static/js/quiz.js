@@ -957,8 +957,12 @@ export function renderLeaderboard(list) {
   });
 }
 
-function notebookPrompt(expertise) {
+function notebookPromptLegacy(expertise) {
   return `아래 자료만 근거로 ${expertise} 분야의 학습 퀴즈를 만들어 주세요. 결과는 설명이나 Markdown 울타리 없이 유효한 JSON 배열만 출력하세요. 각 객체는 difficulty(easy|medium|hard), question_type(multiple_choice|short_answer|ladder_input), question, options, correct_answers, hint, explanation, source_ref 필드만 가집니다. 객관식 options는 정확히 4개이며 정답 번호와 보기 본문을 correct_answers에 함께 넣으세요. 단답형/래더형 options는 null입니다. 외부 이미지·URL·HTML은 사용하지 마세요. 회로 또는 도면이 필요하면 question 문자열 안에 삼중 백틱으로 감싼 고정폭 ASCII 도면을 넣으세요. 자료에 없는 사실은 추측하지 말고, 문항마다 충분한 해설과 자료 위치를 넣으세요.`;
+}
+
+function notebookPromptV2(expertise) {
+  return `당신은 ${expertise} 분야의 자격시험 출제자입니다. 사용자가 제공한 자료에만 근거하여 초급~중급 학습 퀴즈를 10문항 만들어 주세요.\n\n출력 규칙(중요): 응답 전체는 설명·제목·Markdown fence 없이 JSON 배열 하나만 출력합니다. 첫 글자는 [, 마지막 글자는 ]이어야 합니다. JSON은 큰따옴표를 사용하고 trailing comma를 넣지 않습니다.\n각 객체는 difficulty, question_type, question, options, correct_answers, hint, explanation, source_ref 키만 사용합니다. category, id, image_filename, image_url 같은 추가 키는 금지합니다.\ndifficulty는 easy|medium|hard 중 하나, question_type은 multiple_choice|short_answer|ladder_input 중 하나입니다. 객관식 options는 정확히 4개이고 correct_answers에는 정답 번호(예: \"2\")와 정답 문구를 함께 넣습니다. 단답형/래더형 options는 null입니다.\n이미지·이미지 URL·HTML·외부 링크는 금지합니다. 도면이 필요하면 question 문자열 안에만 삼중 백틱 ASCII 코드 블록을 넣습니다(전체 JSON을 fence로 감싸면 안 됩니다). 자료에 없는 수치·규정·오류 코드·정답은 추측하지 말고 source_ref에 장·절·페이지를 적습니다.\n모든 문항은 ${expertise} 범위에만 해당해야 합니다. 위 규칙을 지켜 JSON 배열만 출력하세요.`;
 }
 
 function setStatusLabel(status) {
@@ -978,12 +982,12 @@ export async function loadMyQuizSets() {
       expertises.forEach(value => expertise.add(new Option(value, value)));
       expertise.addEventListener('change', () => {
         updateExpertiseEmoji(expertise.value);
-        if (prompt) prompt.value = notebookPrompt(expertise.value);
+        if (prompt) prompt.value = notebookPromptV2(expertise.value);
       });
     }
     if (expertise && !expertise.value && expertises.length) expertise.value = expertises[0];
     updateExpertiseEmoji(expertise?.value || expertises[0] || 'PLC');
-    if (prompt) prompt.value = notebookPrompt(expertise?.value || expertises[0] || 'PLC');
+    if (prompt) prompt.value = notebookPromptV2(expertise?.value || expertises[0] || 'PLC');
     renderMyQuizSets((await setsRes.json()).sets || []);
   } catch (err) {
     list.textContent = err.message;
