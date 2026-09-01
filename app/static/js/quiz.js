@@ -13,6 +13,9 @@ let currentQuizNav = 'daily';
 let solvedHistoryQuizzes = [];
 let currentHistoryFilter = 'all';
 let currentLeaderboardPeriod = 'weekly';
+let quizPageOffset = 0;
+let quizPageLoading = false;
+let quizHasMore = true;
 
 export function getCategoryIcon(catName = '') {
   const lower = catName.toLowerCase();
@@ -404,25 +407,36 @@ export function renderSolvedHistoryAccordion() {
   });
 }
 
-export async function fetchTodayQuizzes(category = null) {
+export async function fetchTodayQuizzes(category = null, append = false) {
   if (!state.currentUser) return;
   const quizLoadingText = document.getElementById('quiz-loading-text');
   const quizLoadingState = document.getElementById('quiz-loading-state');
   const quizContainer = document.getElementById('quiz-container');
 
-  if (quizLoadingText) quizLoadingText.textContent = '문제를 불러오는 중입니다...';
-  quizLoadingState?.classList.remove('hidden');
-  quizContainer?.classList.add('hidden');
+  if (quizPageLoading) return;
+  quizPageLoading = true;
+  if (!append) {
+    quizPageOffset = 0;
+    quizHasMore = true;
+    if (quizLoadingText) quizLoadingText.textContent = '문제를 불러오는 중입니다...';
+    quizLoadingState?.classList.remove('hidden');
+    quizContainer?.classList.add('hidden');
+  }
   try {
-    const url = category ? `/api/quiz/today?category=${encodeURIComponent(category)}` : '/api/quiz/today';
+    const params = new URLSearchParams({ count: '5', offset: String(quizPageOffset) });
+    if (category) params.set('category', category);
+    const url = `/api/quiz/today?${params}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('퀴즈 목록을 불러오지 못했습니다.');
     const data = await res.json();
-    todayQuizzes = data.quizzes || [];
+    const page = data.quizzes || [];
+    quizHasMore = page.length === 5;
+    todayQuizzes = append ? todayQuizzes.concat(page) : page;
+    quizPageOffset += page.length;
     userQuizStats = data.stats || null;
     renderQuizStats();
     if (todayQuizzes.length > 0) {
-      currentQuizIndex = 0;
+      if (!append) currentQuizIndex = 0;
       renderQuizPillNav();
       renderActiveQuiz();
       quizLoadingState?.classList.add('hidden');
@@ -436,6 +450,8 @@ export async function fetchTodayQuizzes(category = null) {
     }
   } catch (err) {
     if (quizLoadingText) quizLoadingText.textContent = err.message || '오류가 발생했습니다.';
+  } finally {
+    quizPageLoading = false;
   }
 }
 
@@ -520,7 +536,8 @@ export function renderQuizPillNav() {
   }
 
   if (quizPrevBtn) quizPrevBtn.disabled = currentQuizIndex === 0;
-  if (quizNextBtn) quizNextBtn.disabled = currentQuizIndex === todayQuizzes.length - 1;
+  const canLoadMore = currentQuizNav === 'random' || currentQuizNav.startsWith('category:');
+  if (quizNextBtn) quizNextBtn.disabled = currentQuizIndex === todayQuizzes.length - 1 && (!canLoadMore || !quizHasMore);
 }
 
 export function renderActiveQuiz() {
@@ -1067,11 +1084,20 @@ export function initQuizListeners() {
   }
 
   if (quizNextBtn) {
-    quizNextBtn.addEventListener('click', () => {
+    quizNextBtn.addEventListener('click', async () => {
       if (currentQuizIndex < todayQuizzes.length - 1) {
         currentQuizIndex++;
         renderQuizPillNav();
         renderActiveQuiz();
+      } else if (currentQuizNav === 'random' || currentQuizNav.startsWith('category:')) {
+        const category = currentQuizNav === 'random' ? 'random' : currentQuizNav.replace('category:', '');
+        const previousLength = todayQuizzes.length;
+        await fetchTodayQuizzes(category, true);
+        if (todayQuizzes.length > previousLength) {
+          currentQuizIndex = previousLength;
+          renderQuizPillNav();
+          renderActiveQuiz();
+        }
       }
     });
   }

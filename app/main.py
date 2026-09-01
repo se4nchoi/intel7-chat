@@ -1246,9 +1246,12 @@ async def api_quiz_today(
     request: Request,
     category: Optional[str] = None,
     count: int = 5,
+    offset: int = 0,
 ):
     user = request_user(request)
-    quizzes = get_daily_quizzes(user["id"], count=count, category=category)
+    count = max(1, min(int(count), 20))
+    offset = max(0, int(offset))
+    quizzes = get_daily_quizzes(user["id"], count=count, category=category, offset=offset)
     stats = get_user_quiz_stats(user["id"])
     return {
         "quizzes": quizzes,

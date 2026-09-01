@@ -1992,6 +1992,7 @@ def get_daily_quizzes(
     user_id: int,
     count: int = 5,
     category: Optional[str] = None,
+    offset: int = 0,
 ) -> List[Dict[str, Any]]:
     """Returns active educational quizzes with the current user's submission & bookmark state.
     Supports topic category filtering or 'random'/'all' modes.
@@ -2015,8 +2016,12 @@ def get_daily_quizzes(
             params.append(daily_set_id)
             order_by = "ORDER BY dqi.position ASC"
         else:
-            order_by = "ORDER BY RANDOM()" if is_random else "ORDER BY q.id ASC"
-        params.append(count)
+            if is_random:
+                # Prefer unseen questions; once exhausted, fill the set with solved ones.
+                order_by = "ORDER BY CASE WHEN qs.id IS NULL THEN 0 ELSE 1 END, RANDOM()"
+            else:
+                order_by = "ORDER BY q.id ASC"
+        params.extend([count, max(0, int(offset))])
 
         query = f"""
             SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
@@ -2029,7 +2034,7 @@ def get_daily_quizzes(
             LEFT JOIN quiz_submissions qs ON q.id = qs.quiz_id AND qs.user_id = ?
             {where_clause}
             {order_by}
-            LIMIT ?
+            LIMIT ? OFFSET ?
         """
         rows = conn.execute(query, tuple(params)).fetchall()
 

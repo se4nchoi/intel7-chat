@@ -55,6 +55,22 @@ def test_all_first_attempts_score_but_only_daily_quizzes_extend_streak(temp_db):
     assert database.get_quiz_leaderboard("daily")[0]["user_id"] == user["id"]
 
 
+def test_random_prefers_unsolved_and_subjects_page_in_fives(temp_db):
+    user = database.create_user("explorer", "hash")
+    first = database.get_daily_quizzes(user["id"], count=5, category="random")
+    assert len(first) == 5
+    solved_id = first[0]["id"]
+    database.submit_quiz_answer(user["id"], solved_id, "definitely-wrong")
+    second = database.get_daily_quizzes(user["id"], count=5, category="random")
+    assert len(second) == 5
+    assert solved_id not in {item["id"] for item in second}
+
+    plc_first = database.get_daily_quizzes(user["id"], count=5, category="PLC", offset=0)
+    plc_next = database.get_daily_quizzes(user["id"], count=5, category="PLC", offset=5)
+    assert plc_first and plc_next
+    assert {item["id"] for item in plc_first}.isdisjoint({item["id"] for item in plc_next})
+
+
 def test_quiz_seeding_and_retrieval(temp_db):
     u1 = database.create_user("student1", auth.hash_secret("pass123"))
     quizzes = database.get_daily_quizzes(u1["id"], count=10)
