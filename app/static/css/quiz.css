@@ -190,6 +190,48 @@
   font-weight: 650;
 }
 
+.cbt-streak-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid #3a4053;
+  border-radius: 999px;
+  color: #aab2c8;
+  background: rgba(35, 41, 60, .45);
+  font-size: .78rem;
+  cursor: help;
+}
+.cbt-streak-pill.has-streak {
+  border-color: rgba(249, 115, 22, .78);
+  color: #fed7aa;
+  background: rgba(127, 29, 29, .22);
+  box-shadow: 0 0 10px rgba(249, 115, 22, .24), inset 0 0 8px rgba(239, 68, 68, .1);
+}
+.cbt-streak-pill:hover { border-color: #fb923c; box-shadow: 0 0 16px rgba(239, 68, 68, .5), inset 0 0 10px rgba(249, 115, 22, .16); }
+.cbt-streak-pill::after {
+  content: '오늘의 퀴즈를 풀어야 STREAK이 유지됩니다';
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  top: calc(100% + 8px);
+  width: max-content;
+  max-width: 240px;
+  padding: 7px 9px;
+  border: 1px solid #7c2d12;
+  border-radius: 7px;
+  background: #241316;
+  color: #fed7aa;
+  font-size: .72rem;
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity .15s ease, transform .15s ease;
+}
+.cbt-streak-pill:hover::after, .cbt-streak-pill:focus-within::after { opacity: 1; transform: translateY(0); }
+
 .quiz-fire-badge {
   display: inline-block;
   padding: 1px 5px;
@@ -542,11 +584,35 @@
 }
 
 .cbt-quiz-wrap {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
 }
+
+.quiz-daily-complete-cover {
+  position: absolute;
+  z-index: 10;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px;
+  border: 1px solid rgba(249, 115, 22, .5);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(28, 18, 25, .97), rgba(18, 24, 38, .98));
+  box-shadow: 0 0 35px rgba(249, 115, 22, .12);
+  color: #f8fafc;
+  text-align: center;
+}
+.quiz-daily-complete-cover strong { font-size: 1.3rem; color: #fed7aa; }
+.quiz-daily-complete-cover span { color: #fdba74; }
+.quiz-daily-complete-cover small { color: #aab2c8; }
+.quiz-confetti { font-size: 1.8rem; letter-spacing: 8px; animation: quizConfettiFloat 1.8s ease-in-out infinite; }
+@keyframes quizConfettiFloat { 50% { transform: translateY(-5px) rotate(-2deg); } }
 
 /* Main CBT Question Card */
 .cbt-card {

@@ -35,6 +35,7 @@ export async function refreshQuizHeaderStreak() {
   if (!state.currentUser) return;
   const headerQuizStreak = document.getElementById('header-quiz-streak');
   const headerStreakCount = document.getElementById('header-streak-count');
+  const quizStreakPill = document.getElementById('quiz-streak-pill');
   try {
     const res = await fetch('/api/quiz/stats');
     if (!res.ok) return;
@@ -42,6 +43,7 @@ export async function refreshQuizHeaderStreak() {
     userQuizStats = data;
     if (headerQuizStreak && headerStreakCount) {
       const streak = data.current_streak || 0;
+      quizStreakPill?.classList.toggle('has-streak', streak > 0);
       if (streak > 0) {
         headerStreakCount.textContent = streak;
         headerQuizStreak.classList.remove('hidden');
@@ -440,6 +442,7 @@ export async function fetchTodayQuizzes(category = null, append = false) {
     quizHasMore = page.length === 5;
     todayQuizzes = append ? todayQuizzes.concat(page) : page;
     quizPageOffset += page.length;
+    updateDailyCompletionCover();
     userQuizStats = data.stats || null;
     renderQuizStats();
     if (todayQuizzes.length > 0) {
@@ -460,6 +463,13 @@ export async function fetchTodayQuizzes(category = null, append = false) {
   } finally {
     quizPageLoading = false;
   }
+}
+
+function updateDailyCompletionCover() {
+  const cover = document.getElementById('quiz-daily-complete-cover');
+  if (!cover) return;
+  const complete = currentQuizNav === 'daily' && todayQuizzes.length > 0 && todayQuizzes.every(item => item.is_solved);
+  cover.classList.toggle('hidden', !complete);
 }
 
 async function openSidebarCategoryPage(category) {
@@ -835,6 +845,7 @@ export async function submitQuiz(answerVal = null) {
     }
     renderQuizPillNav();
     renderActiveQuiz();
+    updateDailyCompletionCover();
     refreshQuizSidebarCounts();
 
     if (data.is_correct) {
@@ -1113,6 +1124,7 @@ export function initQuizListeners() {
   const quizSetSaveBtn = document.getElementById('quiz-set-save-btn');
   const quizCopyPromptBtn = document.getElementById('quiz-copy-prompt-btn');
   const quizDailyPublishBtn = document.getElementById('quiz-daily-publish-btn');
+  const quizFarmPointsBtn = document.getElementById('quiz-farm-points-btn');
 
   if (quizBtn) quizBtn.addEventListener('click', () => openQuizModal('daily'));
   if (quizModalClose) quizModalClose.addEventListener('click', closeQuizModal);
@@ -1138,6 +1150,7 @@ export function initQuizListeners() {
   });
   quizSidebarBackBtn?.addEventListener('click', () => restoreSidebarTopics());
   quizSidebarMoreBtn?.addEventListener('click', () => loadSidebarCategoryPage(true));
+  quizFarmPointsBtn?.addEventListener('click', () => switchQuizNav('random'));
 
   quizCopyPromptBtn?.addEventListener('click', async () => {
     await navigator.clipboard.writeText(document.getElementById('quiz-notebook-prompt')?.value || '');
