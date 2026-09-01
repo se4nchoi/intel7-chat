@@ -143,6 +143,7 @@ export function switchQuizNav(navKey, meta = {}) {
   const quizTabLeaderboardContent = document.getElementById('quiz-tab-leaderboard-content');
   const quizTabAdminContent = document.getElementById('quiz-tab-admin-content');
   const quizTabMySetsContent = document.getElementById('quiz-tab-mysets-content');
+  const quizQuestionSidebarSection = document.querySelector('.quiz-question-sidebar-section');
   const cbtMainHeader = document.getElementById('cbt-main-header');
   const cbtProgressRow = document.getElementById('cbt-progress-row');
   const cbtCurrentTopicTitle = document.getElementById('cbt-current-topic-title');
@@ -160,6 +161,7 @@ export function switchQuizNav(navKey, meta = {}) {
 
   if (cbtMainHeader) cbtMainHeader.classList.toggle('hidden', isAdmin);
   if (cbtProgressRow) cbtProgressRow.classList.toggle('hidden', !isQuizRunner);
+  quizQuestionSidebarSection?.classList.toggle('hidden', !isQuizRunner);
 
   const topicConfig = {
     daily: { title: '⚡ 오늘의 퀴즈', desc: '오늘의 퀴즈를 풀어 STREAK을 이어가세요. 점수는 모든 공용 퀴즈에서 획득할 수 있습니다.' },
@@ -501,7 +503,6 @@ export function renderQuizStats() {
 
 export function renderQuizPillNav() {
   const cbtProgressCount = document.getElementById('cbt-progress-count');
-  const quizSetRange = document.getElementById('quiz-set-range');
   const cbtProgressPercent = document.getElementById('cbt-progress-percent');
   const cbtProgressFill = document.getElementById('cbt-progress-fill');
   const quizPillNav = document.getElementById('quiz-pill-nav');
@@ -513,12 +514,7 @@ export function renderQuizPillNav() {
   const pct = Math.round((currentNum / total) * 100);
 
   if (cbtProgressCount) cbtProgressCount.textContent = `${currentNum} / ${total}`;
-  if (quizSetRange) {
-    const setStart = Math.floor(currentQuizIndex / 5) * 5 + 1;
-    const setEnd = Math.min(setStart + 4, total);
-    const subject = currentQuizNav.startsWith('category:') ? currentQuizNav.replace('category:', '') : (currentQuizNav === 'random' ? '랜덤' : '오늘의 퀴즈');
-    quizSetRange.textContent = `${subject} · 문제 ${setStart}–${setEnd}${quizHasMore && setEnd === total ? ' · 다음 세트 있음' : ''}`;
-  }
+  renderSidebarQuestionList();
   if (cbtProgressPercent) cbtProgressPercent.textContent = `${pct}%`;
   if (cbtProgressFill) cbtProgressFill.style.width = `${pct}%`;
 
@@ -546,6 +542,23 @@ export function renderQuizPillNav() {
   if (quizPrevBtn) quizPrevBtn.disabled = currentQuizIndex === 0;
   const canLoadMore = currentQuizNav === 'random' || currentQuizNav.startsWith('category:');
   if (quizNextBtn) quizNextBtn.disabled = currentQuizIndex === todayQuizzes.length - 1 && (!canLoadMore || !quizHasMore);
+}
+
+function renderSidebarQuestionList() {
+  const list = document.getElementById('quiz-sidebar-question-list');
+  if (!list) return;
+  list.replaceChildren();
+  todayQuizzes.forEach((q, idx) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `quiz-sidebar-question${idx === currentQuizIndex ? ' active' : ''}`;
+    if (q.is_solved) button.classList.add(q.is_correct ? 'solved-correct' : 'solved-wrong');
+    const number = document.createElement('span'); number.className = 'quiz-sidebar-question-number'; number.textContent = String(idx + 1);
+    const label = document.createElement('span'); label.className = 'quiz-sidebar-question-label'; label.textContent = q.question || '문제';
+    button.append(number, label);
+    button.addEventListener('click', () => { currentQuizIndex = idx; renderQuizPillNav(); renderActiveQuiz(); });
+    list.appendChild(button);
+  });
 }
 
 export function renderActiveQuiz() {
@@ -1016,6 +1029,8 @@ export function initQuizListeners() {
   const quizNavMySetsBtn = document.getElementById('quiz-nav-mysets-btn');
   const quizNavLeaderboardBtn = document.getElementById('quiz-nav-leaderboard-btn');
   const quizNavAdminBtn = document.getElementById('quiz-nav-admin-btn');
+  const quizQuestionPanelToggle = document.getElementById('quiz-question-panel-toggle');
+  const quizQuestionPanel = document.getElementById('quiz-question-panel');
   const quizStarBtn = document.getElementById('quiz-star-btn');
   const quizHintBtn = document.getElementById('quiz-hint-btn');
   const quizHintBox = document.getElementById('quiz-hint-box');
@@ -1047,6 +1062,12 @@ export function initQuizListeners() {
   if (quizNavMySetsBtn) quizNavMySetsBtn.addEventListener('click', () => switchQuizNav('mysets'));
   if (quizNavLeaderboardBtn) quizNavLeaderboardBtn.addEventListener('click', () => switchQuizNav('leaderboard'));
   if (quizNavAdminBtn) quizNavAdminBtn.addEventListener('click', () => switchQuizNav('admin'));
+  quizQuestionPanelToggle?.addEventListener('click', () => {
+    const collapsed = quizQuestionPanel?.classList.toggle('collapsed');
+    quizQuestionPanelToggle.setAttribute('aria-expanded', String(!collapsed));
+    const chevron = quizQuestionPanelToggle.querySelector('.quiz-panel-chevron');
+    if (chevron) chevron.textContent = collapsed ? '⌄' : '⌃';
+  });
 
   quizCopyPromptBtn?.addEventListener('click', async () => {
     await navigator.clipboard.writeText(document.getElementById('quiz-notebook-prompt')?.value || '');
