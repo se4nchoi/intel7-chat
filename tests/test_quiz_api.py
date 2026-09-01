@@ -102,6 +102,21 @@ def test_community_quiz_import_rejects_uncontrolled_fields():
     assert bad.status_code == 400
 
 
+def test_owner_can_correct_draft_expertise_but_not_approved_set():
+    student, _ = session_client("editor", role="student")
+    payload = {"title": "잘못 분류된 문제집", "expertise": "PLC", "quizzes": [{
+        "difficulty": "easy", "question_type": "short_answer", "question": "2진수 10은?",
+        "options": None, "correct_answers": ["2"], "hint": "", "explanation": "", "source_ref": "",
+    }]}
+    created = student.post("/api/quiz/my-sets", json=payload, headers=ORIGIN)
+    set_id = created.json()["id"]
+    edited = student.patch(f"/api/quiz/my-sets/{set_id}", json={**payload, "title": "전자 기초 문제집", "expertise": "전자"}, headers=ORIGIN)
+    assert edited.status_code == 200
+    assert edited.json()["expertise"] == "전자"
+    assert edited.json()["status"] == "draft"
+    assert student.patch(f"/api/quiz/my-sets/{set_id}", json={**payload, "expertise": "임의 분야"}, headers=ORIGIN).status_code == 400
+
+
 def test_quiz_today_and_submit_flow(monkeypatch):
     client, user = session_client("alice", role="student")
     broadcast_events = []

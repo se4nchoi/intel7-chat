@@ -20,6 +20,7 @@ let sidebarCategoryQuizzes = null;
 let sidebarCategoryName = '';
 let sidebarCategoryOffset = 0;
 let sidebarCategoryHasMore = false;
+let editingMySetId = null;
 
 export function getCategoryIcon(catName = '') {
   const lower = catName.toLowerCase();
@@ -1008,6 +1009,20 @@ function renderMyQuizSets(sets) {
     if (set.review_note) { const note = document.createElement('small'); note.textContent = `검토 의견: ${set.review_note}`; info.append(note); }
     card.appendChild(info);
     if (set.status === 'draft' || set.status === 'rejected') {
+      const editButton = document.createElement('button'); editButton.type = 'button'; editButton.className = 'secondary-btn'; editButton.textContent = '수정';
+      editButton.addEventListener('click', () => {
+        editingMySetId = set.id;
+        const expertise = document.getElementById('quiz-set-expertise');
+        const titleInput = document.getElementById('quiz-set-title');
+        const jsonInput = document.getElementById('quiz-set-json');
+        if (expertise) expertise.value = set.expertise;
+        updateExpertiseEmoji(set.expertise);
+        if (titleInput) titleInput.value = set.title;
+        if (jsonInput) jsonInput.value = JSON.stringify(set.quizzes, null, 2);
+        document.getElementById('quiz-set-save-btn').textContent = '수정 저장';
+        document.getElementById('quiz-set-status').textContent = '문제집을 수정 중입니다.';
+      });
+      card.appendChild(editButton);
       const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary-btn'; button.textContent = '검토 요청';
       button.addEventListener('click', async () => {
         const res = await fetch(`/api/quiz/my-sets/${set.id}/submit`, { method: 'POST' });
@@ -1176,10 +1191,11 @@ export function initQuizListeners() {
     try {
       const quizzes = JSON.parse(document.getElementById('quiz-set-json')?.value || '');
       const body = { title: document.getElementById('quiz-set-title')?.value || '', expertise: document.getElementById('quiz-set-expertise')?.value || '', quizzes };
-      const res = await fetch('/api/quiz/my-sets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const editing = editingMySetId !== null;
+      const res = await fetch(editing ? `/api/quiz/my-sets/${editingMySetId}` : '/api/quiz/my-sets', { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json(); if (!res.ok) throw new Error(data.detail || '저장 실패');
       if (status) { status.className = 'admin-status-msg success'; status.textContent = 'JSON 검증을 통과해 초안으로 저장했습니다.'; }
-      document.getElementById('quiz-set-json').value = ''; loadMyQuizSets();
+      document.getElementById('quiz-set-json').value = ''; editingMySetId = null; quizSetSaveBtn.textContent = '초안 저장'; loadMyQuizSets();
     } catch (err) {
       if (status) { status.className = 'admin-status-msg error'; status.textContent = err instanceof SyntaxError ? '유효한 JSON 배열인지 확인하세요.' : err.message; }
     }

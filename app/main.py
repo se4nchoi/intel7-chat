@@ -47,7 +47,7 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     get_all_quizzes_admin, delete_quiz, save_quiz_source_document, get_quiz_source_documents,
     toggle_quiz_bookmark, get_quiz_review_list, retry_quiz_answer,
     get_quiz_categories_summary, get_quiz_sidebar_counts, search_conversation_history,
-    QUIZ_EXPERTISES, create_user_quiz_set, list_user_quiz_sets, submit_user_quiz_set,
+    QUIZ_EXPERTISES, create_user_quiz_set, update_user_quiz_set, list_user_quiz_sets, submit_user_quiz_set,
     review_user_quiz_set, assign_daily_quizzes)
 from app.quiz_ai import generate_quizzes_with_gemini, check_quiz_answer, normalize_quiz_answer
 
@@ -1381,6 +1381,16 @@ async def api_create_my_quiz_set(request: Request):
         created=create_user_quiz_set(user["id"], str(data.get("expertise", "")), str(data.get("title", "")), data.get("quizzes"))
     except ValueError as exc: raise HTTPException(400, str(exc)) from exc
     return created
+
+@app.patch("/api/quiz/my-sets/{set_id}")
+async def api_update_my_quiz_set(set_id: int, request: Request):
+    if not request_origin_is_allowed(request): raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user=request_user(request); data=await read_json_body(request)
+    try:
+        updated=update_user_quiz_set(set_id, user["id"], str(data.get("expertise", "")), str(data.get("title", "")), data.get("quizzes"))
+    except ValueError as exc: raise HTTPException(400, str(exc)) from exc
+    if not updated: raise HTTPException(409, "초안 또는 반려된 문제집만 수정할 수 있습니다.")
+    return updated
 
 @app.post("/api/quiz/my-sets/{set_id}/submit")
 async def api_submit_my_quiz_set(set_id: int, request: Request):

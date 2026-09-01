@@ -1658,6 +1658,21 @@ def create_user_quiz_set(owner_user_id: int, expertise: str, title: str, items: 
         conn.commit()
         return get_user_quiz_set(int(cur.lastrowid), owner_user_id)
 
+def update_user_quiz_set(set_id: int, owner_user_id: int, expertise: str, title: str, items: Any) -> Optional[Dict[str, Any]]:
+    title = title.strip()
+    if not 2 <= len(title) <= 80:
+        raise ValueError("문제집 제목은 2~80자여야 합니다.")
+    quizzes = normalize_quiz_import(items, expertise)
+    now = utc_now()
+    with get_connection() as conn:
+        cur = conn.execute("""UPDATE user_quiz_sets
+            SET expertise=?, title=?, quizzes_json=?, status='draft', review_note='',
+                submitted_at=NULL, updated_at=?
+            WHERE id=? AND owner_user_id=? AND status IN ('draft','rejected')""",
+            (expertise, title, json.dumps(quizzes, ensure_ascii=False), now, set_id, owner_user_id))
+        conn.commit()
+        return get_user_quiz_set(set_id, owner_user_id) if cur.rowcount else None
+
 def get_user_quiz_set(set_id: int, owner_user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         params: List[Any] = [set_id]
