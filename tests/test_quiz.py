@@ -108,6 +108,28 @@ def test_quiz_leaderboard_and_badges(temp_db):
     assert stats1["accuracy"] == 100.0
 
 
+def test_quiz_leaderboard_equal_scores_rank_earliest_first(temp_db):
+    later_user = database.create_user("later-user", auth.hash_secret("pass123"))
+    earlier_user = database.create_user("earlier-user", auth.hash_secret("pass123"))
+    quiz = database.get_daily_quizzes(later_user["id"], count=1)[0]
+
+    correct_answer = quiz["correct_answers"][0] if quiz.get("correct_answers") else "Y0"
+    database.submit_quiz_answer(later_user["id"], quiz["id"], correct_answer)
+    database.submit_quiz_answer(earlier_user["id"], quiz["id"], correct_answer)
+    with database.get_connection() as conn:
+        conn.execute("UPDATE quiz_submissions SET submitted_at=? WHERE user_id=?",
+                     ("2026-09-01T10:00:00Z", later_user["id"]))
+        conn.execute("UPDATE quiz_submissions SET submitted_at=? WHERE user_id=?",
+                     ("2026-09-01T09:00:00Z", earlier_user["id"]))
+        conn.commit()
+
+    for period in ("daily", "weekly", "all"):
+        leaderboard = database.get_quiz_leaderboard(period=period)
+        assert leaderboard[0]["user_id"] == earlier_user["id"]
+        assert leaderboard[0]["score"] == leaderboard[1]["score"]
+    assert database.get_user_quiz_badge(earlier_user["id"])["type"] == "rank"
+
+
 def test_batch_creation_and_admin_view(temp_db):
     u_admin = database.create_user("admin", auth.hash_secret("admin123"), role="admin")
 

@@ -27,6 +27,7 @@ import {
   pendingAttachments,
 } from './chat.js';
 import { initWebSocket, sendWebSocketMessage } from './ws.js';
+import { initSearchListeners, showSearchHint } from './search.js';
 import { fetchActivePinnedMessages, initPinsListeners } from './pins.js';
 import {
   initQuizListeners,
@@ -481,6 +482,7 @@ function initApp() {
   initChannelsListeners(switchConversation);
   initPinsListeners();
   initQuizListeners();
+  initSearchListeners(switchConversation);
   initSidebarSections();
 
   // 4. Load older messages button
@@ -541,6 +543,7 @@ function initApp() {
     refreshQuizHeaderStreak();
     refreshQuizSidebarCounts();
     refreshStorageWarning();
+    setTimeout(showSearchHint, 12000);
   };
 
 

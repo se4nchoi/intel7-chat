@@ -273,7 +273,7 @@ export function createMessageActions(msg) {
 
   const replyBtn = document.createElement('button');
   replyBtn.type = 'button';
-  replyBtn.textContent = '답장';
+  replyBtn.textContent = '답장 ↩️';
   replyBtn.addEventListener('click', () => {
     const currentKey = `${state.activeRoom.type}:${state.activeRoom.id}`;
     const authorNick = isChat ? msg.nickname : msg.from_nick;
@@ -289,7 +289,9 @@ export function createMessageActions(msg) {
   const reactBtn = document.createElement('button');
   reactBtn.type = 'button';
   reactBtn.className = 'msg-action-react-btn';
-  reactBtn.textContent = '반응';
+  reactBtn.textContent = '😀+';
+  reactBtn.title = '반응 남기기';
+  reactBtn.setAttribute('aria-label', '반응 남기기');
   reactBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     openReactionPicker(msg, reactBtn);
@@ -299,7 +301,7 @@ export function createMessageActions(msg) {
   const pinBtn = document.createElement('button');
   pinBtn.type = 'button';
   pinBtn.className = 'msg-action-pin-btn';
-  pinBtn.textContent = msg.is_pinned ? '고정 해제' : '고정';
+  pinBtn.textContent = msg.is_pinned ? '고정 해제 📌' : '고정 📌';
   pinBtn.addEventListener('click', () => toggleMessagePin(msg));
   actions.appendChild(pinBtn);
 
@@ -315,13 +317,13 @@ export function createMessageActions(msg) {
   if (isAdmin && isChat) {
     const hideBtn = document.createElement('button');
     hideBtn.type = 'button';
-    hideBtn.textContent = msg.is_hidden ? '숨김 해제' : '숨김';
+    hideBtn.textContent = msg.is_hidden ? '숨김 해제 👁️' : '숨김 🙈';
     hideBtn.addEventListener('click', () => toggleMessageHidden(msg));
     actions.appendChild(hideBtn);
 
     const moveBtn = document.createElement('button');
     moveBtn.type = 'button';
-    moveBtn.textContent = '이동';
+    moveBtn.textContent = '이동 ➡️';
     moveBtn.addEventListener('click', () => openMoveMessageModal(msg));
     actions.appendChild(moveBtn);
   }
@@ -508,11 +510,12 @@ export function appendMessageNode(msg, previousMsg) {
     const meta = document.createElement('div');
     meta.className = 'msg-meta';
     const nick = document.createElement('span');
-    nick.className = 'nick';
+    nick.className = 'nick message-author-name';
     const rawNick = msg.nickname || (msg.author_id ? `user-${msg.author_id}` : '익명');
     const displayName = displayNickname(rawNick);
     nick.textContent = displayName;
-    nick.title = displayName !== rawNick ? `${displayName} (@${rawNick})` : `@${rawNick}`;
+    nick.dataset.username = rawNick;
+    nick.title = `@${rawNick}`;
     meta.append(nick);
 
     if (msg.quiz_badge) {
@@ -540,7 +543,12 @@ export function appendMessageNode(msg, previousMsg) {
     const partnerNick = isOwn ? msg.to_nick : msg.from_nick;
     const rawNick = partnerNick || (isOwn ? '나' : '상대방');
     const displayName = displayNickname(rawNick);
-    label.textContent = displayName;
+    const author = document.createElement('span');
+    author.className = 'message-author-name';
+    author.dataset.username = rawNick;
+    author.textContent = displayName;
+    author.title = `@${rawNick}`;
+    label.appendChild(author);
     const time = document.createElement('time');
     time.className = 'dm-time';
     time.dateTime = msg.created_at || '';
@@ -917,7 +925,10 @@ export function updateMessageInDOM(editedMsg) {
   const row = document.querySelector(`.msg-row[data-message-id="${editedMsg.message_id}"]`);
   if (!row) return;
   const bubble = row.querySelector('.msg-bubble');
-  if (bubble) bubble.innerHTML = renderMarkdown(editedMsg.content || '');
+  if (bubble) {
+    renderMarkdown(bubble, editedMsg.content || '');
+    highlightMentions(bubble, editedMsg.mentions);
+  }
   if (editedMsg.edited_at) {
     let editedBadge = row.querySelector('.edited-indicator');
     if (!editedBadge) {
@@ -954,5 +965,13 @@ export function applyAttachmentDeletedInDOM(attachmentId) {
       deletedLabel.textContent = '[삭제된 파일]';
       el.replaceWith(deletedLabel);
     }
+  });
+}
+
+export function refreshRenderedAuthorNames() {
+  document.querySelectorAll('.message-author-name[data-username]').forEach(element => {
+    const username = element.dataset.username;
+    element.textContent = displayNickname(username);
+    element.title = `@${username}`;
   });
 }

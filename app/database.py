@@ -807,6 +807,55 @@ def get_recent_messages(limit: int = 100, before_id: Optional[int] = None,
         ).fetchall()}
     return [_message_public(row, items[row["id"]], reactions.get(row["id"], []), is_pinned=(row["id"] in pinned_ids)) for row in rows]
 
+def search_conversation_history(user_id: int, query: str, *, is_admin: bool = False,
+                                conversation_type: Optional[str] = None,
+                                conversation_id: Optional[str] = None,
+                                limit: int = 50) -> List[Dict[str, Any]]:
+    """Search accessible message text and attachment filenames."""
+    escaped = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    needle = f"%{escaped}%"
+    limit = max(1, min(int(limit), 100))
+    results: List[Dict[str, Any]] = []
+    with get_connection() as conn:
+        if conversation_type in (None, "channel"):
+            params: List[Any] = [needle, needle]
+            clauses = ["(m.content LIKE ? ESCAPE '\\' COLLATE NOCASE OR EXISTS (SELECT 1 FROM message_attachments ma JOIN attachments a ON a.id=ma.attachment_id WHERE ma.message_id=m.id AND ma.original_name LIKE ? ESCAPE '\\' COLLATE NOCASE))"]
+            if not is_admin:
+                clauses.append("m.is_hidden=0")
+            if conversation_type == "channel":
+                clauses.append("m.channel_id=?")
+                params.append(int(conversation_id or 0))
+            params.append(limit)
+            rows = conn.execute(f"""SELECT m.*, c.display_name AS channel_display_name
+                FROM messages m JOIN channels c ON c.id=m.channel_id
+                WHERE {' AND '.join(clauses)} ORDER BY m.id DESC LIMIT ?""", params).fetchall()
+            attachment_map = _message_attachments(conn, [row["id"] for row in rows])
+            for row in rows:
+                results.append({"message_type": "channel", "message_id": f"public:{row['id']}",
+                    "conversation_id": str(row["channel_id"]), "conversation_name": row["channel_display_name"],
+                    "author": row["nickname"], "content": row["content"], "created_at": row["created_at"],
+                    "attachments": attachment_map.get(row["id"], [])})
+
+        if conversation_type in (None, "dm"):
+            params = [user_id, user_id, needle, needle]
+            clauses = ["(dm.sender_user_id=? OR dm.recipient_user_id=?)",
+                       "(dm.content LIKE ? ESCAPE '\\' COLLATE NOCASE OR EXISTS (SELECT 1 FROM direct_message_attachments dma JOIN attachments a ON a.id=dma.attachment_id WHERE dma.direct_message_id=dm.id AND dma.original_name LIKE ? ESCAPE '\\' COLLATE NOCASE))"]
+            if conversation_type == "dm":
+                partner_id = int(conversation_id or 0)
+                clauses.append("((dm.sender_user_id=? AND dm.recipient_user_id=?) OR (dm.sender_user_id=? AND dm.recipient_user_id=?))")
+                params.extend([user_id, partner_id, partner_id, user_id])
+            params.append(limit)
+            rows = conn.execute(f"SELECT dm.* FROM direct_messages dm WHERE {' AND '.join(clauses)} ORDER BY dm.id DESC LIMIT ?", params).fetchall()
+            attachment_map = _direct_message_attachments(conn, [row["id"] for row in rows])
+            for row in rows:
+                partner = row["recipient_nickname"] if row["sender_user_id"] == user_id else row["sender_nickname"]
+                results.append({"message_type": "dm", "message_id": f"dm:{row['id']}",
+                    "conversation_id": partner, "conversation_name": partner,
+                    "author": row["sender_nickname"], "content": row["content"], "created_at": row["created_at"],
+                    "attachments": attachment_map.get(row["id"], [])})
+    results.sort(key=lambda item: (item["created_at"], item["message_id"]), reverse=True)
+    return results[:limit]
+
 def _direct_message_attachments(conn: sqlite3.Connection,
                                 ids: List[int]) -> Dict[int, List[Dict[str, Any]]]:
     result = {message_id: [] for message_id in ids}
@@ -1985,6 +2034,7 @@ def get_user_quiz_stats(user_id: int) -> Dict[str, Any]:
 def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[str, Any]]:
     """Returns top ranked users for daily, weekly, or all-time educational quizzes."""
     today_str = datetime.now().strftime("%Y-%m-%d")
+    week_start = (datetime.now() - timedelta(days=datetime.now().weekday())).strftime("%Y-%m-%d")
     with get_connection() as conn:
         if period == "daily":
             rows = conn.execute("""
@@ -1992,13 +2042,14 @@ def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[s
                        SUM(qs.score_earned) as score,
                        SUM(qs.is_correct) as correct_count,
                        COUNT(qs.id) as solved_count,
-                       COALESCE(st.current_streak, 0) as current_streak
+                       COALESCE(st.current_streak, 0) as current_streak,
+                       COALESCE(MAX(CASE WHEN qs.score_earned > 0 THEN qs.submitted_at END), MIN(qs.submitted_at)) as score_reached_at
                 FROM quiz_submissions qs
                 JOIN users u ON qs.user_id = u.id
                 LEFT JOIN user_quiz_stats st ON qs.user_id = st.user_id
                 WHERE qs.submitted_date = ?
                 GROUP BY qs.user_id
-                ORDER BY score DESC, correct_count DESC, qs.user_id ASC
+                ORDER BY score DESC, score_reached_at ASC, qs.user_id ASC
                 LIMIT ?
             """, (today_str, limit)).fetchall()
         elif period == "all":
@@ -2008,11 +2059,13 @@ def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[s
                        st.total_correct as correct_count,
                        st.total_solved as solved_count,
                        st.current_streak,
-                       st.max_streak
+                       st.max_streak,
+                       (SELECT COALESCE(MAX(CASE WHEN qs.score_earned > 0 THEN qs.submitted_at END), MIN(qs.submitted_at))
+                        FROM quiz_submissions qs WHERE qs.user_id=st.user_id) as score_reached_at
                 FROM user_quiz_stats st
                 JOIN users u ON st.user_id = u.id
                 WHERE st.total_score > 0 OR st.total_solved > 0
-                ORDER BY st.total_score DESC, st.current_streak DESC, st.user_id ASC
+                ORDER BY st.total_score DESC, score_reached_at ASC, st.user_id ASC
                 LIMIT ?
             """, (limit,)).fetchall()
         else:  # weekly
@@ -2021,13 +2074,15 @@ def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[s
                        st.weekly_score as score,
                        st.total_correct as correct_count,
                        st.total_solved as solved_count,
-                       st.current_streak
+                       st.current_streak,
+                       (SELECT COALESCE(MAX(CASE WHEN qs.score_earned > 0 THEN qs.submitted_at END), MIN(qs.submitted_at))
+                        FROM quiz_submissions qs WHERE qs.user_id=st.user_id AND qs.submitted_date >= ?) as score_reached_at
                 FROM user_quiz_stats st
                 JOIN users u ON st.user_id = u.id
                 WHERE st.weekly_score > 0 OR st.total_score > 0
-                ORDER BY st.weekly_score DESC, st.total_score DESC, st.current_streak DESC, st.user_id ASC
+                ORDER BY st.weekly_score DESC, score_reached_at ASC, st.user_id ASC
                 LIMIT ?
-            """, (limit,)).fetchall()
+            """, (week_start, limit)).fetchall()
 
         results = []
         for rank, r in enumerate(rows, start=1):
@@ -2047,12 +2102,16 @@ def get_user_quiz_badge(user_id: int) -> Optional[Dict[str, Any]]:
             return None
 
         # Check weekly 1st place
+        week_start = (datetime.now() - timedelta(days=datetime.now().weekday())).strftime("%Y-%m-%d")
         top_user = conn.execute("""
-            SELECT user_id FROM user_quiz_stats
-            WHERE weekly_score > 0
-            ORDER BY weekly_score DESC, total_score DESC
+            SELECT st.user_id,
+                   (SELECT COALESCE(MAX(CASE WHEN qs.score_earned > 0 THEN qs.submitted_at END), MIN(qs.submitted_at))
+                    FROM quiz_submissions qs WHERE qs.user_id=st.user_id AND qs.submitted_date >= ?) as score_reached_at
+            FROM user_quiz_stats st
+            WHERE st.weekly_score > 0
+            ORDER BY st.weekly_score DESC, score_reached_at ASC, st.user_id ASC
             LIMIT 1
-        """).fetchone()
+        """, (week_start,)).fetchone()
 
         if top_user and top_user["user_id"] == user_id:
             return {
@@ -2089,12 +2148,16 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
     badges: Dict[int, Optional[Dict[str, Any]]] = {}
     with get_connection() as conn:
         # Check weekly top user
+        week_start = (datetime.now() - timedelta(days=datetime.now().weekday())).strftime("%Y-%m-%d")
         top_user = conn.execute("""
-            SELECT user_id FROM user_quiz_stats
-            WHERE weekly_score > 0
-            ORDER BY weekly_score DESC, total_score DESC
+            SELECT st.user_id,
+                   (SELECT COALESCE(MAX(CASE WHEN qs.score_earned > 0 THEN qs.submitted_at END), MIN(qs.submitted_at))
+                    FROM quiz_submissions qs WHERE qs.user_id=st.user_id AND qs.submitted_date >= ?) as score_reached_at
+            FROM user_quiz_stats st
+            WHERE st.weekly_score > 0
+            ORDER BY st.weekly_score DESC, score_reached_at ASC, st.user_id ASC
             LIMIT 1
-        """).fetchone()
+        """, (week_start,)).fetchone()
         top_uid = top_user["user_id"] if top_user else None
 
         placeholders = ",".join("?" for _ in user_ids)

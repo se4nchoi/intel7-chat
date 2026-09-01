@@ -232,7 +232,7 @@ export function renderSolvedHistoryAccordion() {
   const wrongCount = totalSolved - correctCount;
 
   if (historyTotalSummary) {
-    historyTotalSummary.textContent = `총 ${totalSolved}문제 풀이 완료 (⭕ ${correctCount}개 정답 / ❌ ${wrongCount}개 오답)`;
+    historyTotalSummary.textContent = `총 ${totalSolved}문제 풀이 완료 (✅ ${correctCount}개 정답 / ❌ ${wrongCount}개 오답)`;
   }
 
   if (filtered.length === 0) {
@@ -285,7 +285,7 @@ export function renderSolvedHistoryAccordion() {
     if (groupCorrect > 0) {
       const p = document.createElement('span');
       p.className = 'cbt-topic-stat-pill correct';
-      p.textContent = `⭕ ${groupCorrect}`;
+      p.textContent = `✅ ${groupCorrect}`;
       statsArea.appendChild(p);
     }
     if (groupWrong > 0) {
@@ -315,7 +315,7 @@ export function renderSolvedHistoryAccordion() {
 
       const statusIcon = document.createElement('span');
       statusIcon.className = `cbt-hist-status ${q.is_correct ? 'correct' : 'wrong'}`;
-      statusIcon.textContent = q.is_correct ? '⭕' : '❌';
+      statusIcon.textContent = q.is_correct ? '✅' : '❌';
 
       const qTitle = document.createElement('span');
       qTitle.className = 'cbt-hist-q-title';
@@ -583,7 +583,7 @@ export function renderActiveQuiz() {
       quizAnswerInput.disabled = Boolean(q.is_solved && !isPracticeMode);
     }
     if (quizSubmitBtn) {
-      quizSubmitBtn.disabled = false;
+      quizSubmitBtn.disabled = Boolean(q.is_solved && !isPracticeMode);
       quizSubmitBtn.textContent = (q.is_solved && isPracticeMode) ? '다시 풀기' : (q.is_solved ? '제출 완료' : '정답 제출');
     }
   }
@@ -652,7 +652,7 @@ export function renderQuizFeedback(q) {
   if (quizResultBanner) {
     quizResultBanner.className = `cbt-result-banner ${isCorrect ? 'correct' : 'wrong'}`;
   }
-  if (quizResultIcon) quizResultIcon.textContent = isCorrect ? '⭕' : '❌';
+  if (quizResultIcon) quizResultIcon.textContent = isCorrect ? '✅' : '❌';
   if (quizResultTitle) {
     if (currentQuizNav === 'daily') {
       quizResultTitle.textContent = isCorrect ? `정답입니다! (+${q.score_earned || 20}점)` : '오답입니다!';
@@ -694,7 +694,11 @@ export async function toggleStarCurrentQuiz() {
 export async function submitQuiz(answerVal = null) {
   const q = todayQuizzes[currentQuizIndex];
   if (!q) return;
-  const isPracticeMode = currentQuizNav !== 'daily' || Boolean(q.is_solved);
+  if (currentQuizNav === 'daily' && q.is_solved) {
+    showToast('오늘의 퀴즈는 한 번만 제출할 수 있습니다. 다시 풀기는 복습 탭을 이용해 주세요.', 'info');
+    return;
+  }
+  const isPracticeMode = currentQuizNav !== 'daily';
   const endpoint = isPracticeMode ? '/api/quiz/retry' : '/api/quiz/submit';
 
   const quizAnswerInput = document.getElementById('quiz-answer-input');

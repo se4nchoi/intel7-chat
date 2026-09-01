@@ -46,7 +46,7 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     get_user_quiz_badge, get_user_quiz_badges_map, create_quiz, create_quiz_batch,
     get_all_quizzes_admin, delete_quiz, save_quiz_source_document, get_quiz_source_documents,
     toggle_quiz_bookmark, get_quiz_review_list, retry_quiz_answer,
-    get_quiz_categories_summary, get_quiz_sidebar_counts)
+    get_quiz_categories_summary, get_quiz_sidebar_counts, search_conversation_history)
 from app.quiz_ai import generate_quizzes_with_gemini, check_quiz_answer, normalize_quiz_answer
 
 CONFIG = load_config()
@@ -1008,6 +1008,32 @@ async def api_messages(request: Request):
     request_user(request)
     users = list_mentionable_users()
     return [with_mentions(message, users) for message in get_recent_messages()]
+
+@app.get("/api/search")
+async def api_search_messages(request: Request, q: str, scope: str = "current",
+                              conversation_type: Optional[str] = None,
+                              conversation_id: Optional[str] = None, limit: int = 50):
+    user = request_user(request)
+    query = q.strip()
+    if len(query) < 2:
+        raise HTTPException(400, "검색어는 두 글자 이상 입력하세요.")
+    if scope not in {"current", "global"}:
+        raise HTTPException(400, "유효하지 않은 검색 범위입니다.")
+    if scope == "current":
+        if conversation_type not in {"channel", "dm"} or not conversation_id:
+            raise HTTPException(400, "현재 대화 정보가 필요합니다.")
+        if conversation_type == "dm":
+            partner = get_user_by_username(conversation_id)
+            if not partner or partner["id"] == user["id"]:
+                raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
+            conversation_id = str(partner["id"])
+    else:
+        conversation_type = None
+        conversation_id = None
+    results = search_conversation_history(user["id"], query,
+        is_admin=user["role"] == "admin", conversation_type=conversation_type,
+        conversation_id=conversation_id, limit=limit)
+    return {"query": query, "scope": scope, "results": results, "count": len(results)}
 
 @app.get("/api/history/public")
 async def public_message_history(request: Request, before_id: Optional[int] = None):
