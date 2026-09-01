@@ -2381,12 +2381,12 @@ def get_user_quiz_badge(user_id: int) -> Optional[Dict[str, Any]]:
             }
 
         streak = row["current_streak"]
-        if streak >= 3:
+        if streak >= 1:
             return {
                 "type": "streak",
                 "icon": "🔥",
-                "label": f"STREAK {streak}",
-                "title": f"오늘의 퀴즈 STREAK {streak}"
+                "label": "FIRE 꾸준러",
+                "title": f"오늘의 퀴즈 {streak}일 연속"
             }
 
         if row["total_score"] >= 50:
@@ -2421,8 +2421,8 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
                 continue
             if top_uid == uid:
                 badges[uid] = {"type": "rank", "icon": "👑", "label": "주간 1위", "title": "이번 주 퀴즈 1위"}
-            elif st.get("current_streak", 0) >= 3:
-                badges[uid] = {"type": "streak", "icon": "🔥", "label": f"STREAK {st['current_streak']}", "title": f"오늘의 퀴즈 STREAK {st['current_streak']}"}
+            elif st.get("current_streak", 0) >= 1:
+                badges[uid] = {"type": "streak", "icon": "🔥", "label": "FIRE 꾸준러", "title": f"오늘의 퀴즈 {st['current_streak']}일 연속"}
             elif st.get("total_score", 0) >= 50:
                 badges[uid] = {"type": "score", "icon": "⚡", "label": f"{st['total_score']}점", "title": f"퀴즈 누적 {st['total_score']}점"}
             else:

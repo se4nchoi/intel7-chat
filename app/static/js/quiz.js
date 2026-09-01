@@ -547,7 +547,7 @@ export async function fetchReviewQuizzes(mode) {
 export function renderQuizStats() {
   if (!userQuizStats) return;
   const quizStatStreak = document.getElementById('quiz-stat-streak');
-  if (quizStatStreak) quizStatStreak.textContent = `STREAK ${userQuizStats.current_streak || 0}`;
+  if (quizStatStreak) quizStatStreak.textContent = `${userQuizStats.current_streak || 0}일 연속 🔥`;
   refreshQuizHeaderStreak();
 }
 
@@ -891,6 +891,10 @@ export function renderLeaderboard(list) {
     const name = document.createElement('strong');
     name.className = 'podium-name';
     name.textContent = item.display_name || item.username;
+    if (item.current_streak > 0) {
+      const fire = document.createElement('span'); fire.className = 'quiz-fire-badge'; fire.textContent = '🔥 FIRE 꾸준러';
+      name.append(' ', fire);
+    }
     const score = document.createElement('span');
     score.className = 'podium-score';
     score.textContent = `${item.score || 0}점`;
@@ -918,6 +922,10 @@ export function renderLeaderboard(list) {
     const tdUser = document.createElement('td');
     const uName = item.display_name || item.username;
     tdUser.textContent = uName + (Number(item.user_id) === myUserId ? ' (나)' : '');
+    if (item.current_streak > 0) {
+      const fire = document.createElement('span'); fire.className = 'quiz-fire-badge'; fire.textContent = '🔥 FIRE 꾸준러';
+      tdUser.append(' ', fire);
+    }
 
     const tdScore = document.createElement('td');
     tdScore.innerHTML = `<strong style="color: #60a5fa;">${item.score || 0}점</strong>`;
@@ -926,7 +934,7 @@ export function renderLeaderboard(list) {
     tdCorrect.textContent = `${item.correct_count || 0}문제`;
 
     const tdStreak = document.createElement('td');
-    tdStreak.textContent = item.current_streak ? `🔥 STREAK ${item.current_streak}` : '-';
+    tdStreak.textContent = item.current_streak ? `${item.current_streak}일 연속 🔥` : '-';
 
     tr.append(tdRank, tdUser, tdScore, tdCorrect, tdStreak);
     leaderboardTbody.appendChild(tr);

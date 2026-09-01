@@ -190,6 +190,18 @@
   font-weight: 650;
 }
 
+.quiz-fire-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid rgba(249, 115, 22, .42);
+  border-radius: 4px;
+  color: #fdba74;
+  font-size: .68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .quiz-question-panel-heading { display: flex; align-items: center; gap: 4px; }
 .quiz-question-panel-heading .quiz-question-panel-toggle { flex: 1; }
 .quiz-sidebar-back-btn {
