@@ -190,6 +190,15 @@
   font-weight: 650;
 }
 
+.cbt-set-range {
+  flex: 0 0 auto;
+  margin-right: 10px;
+  color: #aab2c8;
+  font-size: 0.76rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 .cbt-modal-box input::selection,
 .cbt-modal-box textarea::selection {
   background: rgba(79, 142, 247, 0.38);

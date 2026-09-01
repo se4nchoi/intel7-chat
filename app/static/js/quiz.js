@@ -501,6 +501,7 @@ export function renderQuizStats() {
 
 export function renderQuizPillNav() {
   const cbtProgressCount = document.getElementById('cbt-progress-count');
+  const quizSetRange = document.getElementById('quiz-set-range');
   const cbtProgressPercent = document.getElementById('cbt-progress-percent');
   const cbtProgressFill = document.getElementById('cbt-progress-fill');
   const quizPillNav = document.getElementById('quiz-pill-nav');
@@ -512,6 +513,12 @@ export function renderQuizPillNav() {
   const pct = Math.round((currentNum / total) * 100);
 
   if (cbtProgressCount) cbtProgressCount.textContent = `${currentNum} / ${total}`;
+  if (quizSetRange) {
+    const setStart = Math.floor(currentQuizIndex / 5) * 5 + 1;
+    const setEnd = Math.min(setStart + 4, total);
+    const subject = currentQuizNav.startsWith('category:') ? currentQuizNav.replace('category:', '') : (currentQuizNav === 'random' ? '랜덤' : '오늘의 퀴즈');
+    quizSetRange.textContent = `${subject} · 문제 ${setStart}–${setEnd}${quizHasMore && setEnd === total ? ' · 다음 세트 있음' : ''}`;
+  }
   if (cbtProgressPercent) cbtProgressPercent.textContent = `${pct}%`;
   if (cbtProgressFill) cbtProgressFill.style.width = `${pct}%`;
 
