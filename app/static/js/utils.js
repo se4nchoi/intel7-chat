@@ -247,9 +247,11 @@ export async function copyText(text, successMsg = '클립보드에 복사했습�
     ta.style.position = 'fixed';
     ta.style.opacity = '0';
     document.body.appendChild(ta);
+    ta.focus();
     ta.select();
+    ta.setSelectionRange(0, ta.value.length);
     try {
-      document.execCommand('copy');
+      if (!document.execCommand('copy')) throw new Error('copy command rejected');
       showToast(successMsg, 'success');
     } catch {
       showToast('복사에 실패했습니다.', 'error');

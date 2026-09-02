@@ -3,7 +3,7 @@
 // ============================================================
 
 import { state } from './state.js';
-import { renderMarkdown, showToast } from './utils.js';
+import { copyText, renderMarkdown, showToast } from './utils.js';
 
 let todayQuizzes = [];
 let currentQuizIndex = 0;
@@ -1050,26 +1050,78 @@ export async function fetchAdminQuizSubmissions() {
     const sets = (await res.json()).sets || []; list.replaceChildren();
     if (!sets.length) { list.textContent = '검토 대기 중인 문제집이 없습니다.'; return; }
     sets.forEach(set => {
-      const card = document.createElement('article'); card.className = 'quiz-set-item';
-      const info = document.createElement('div');
-      const title = document.createElement('strong'); title.textContent = set.title;
-      const meta = document.createElement('span'); meta.textContent = `${set.display_name || set.username} · ${set.expertise} · ${set.quizzes.length}문항`;
-      info.append(title, meta); card.appendChild(info);
-      [['승인', true], ['반려', false]].forEach(([label, approve]) => {
-        const button = document.createElement('button'); button.type = 'button'; button.className = approve ? 'cbt-action-btn' : 'danger-btn'; button.textContent = label;
-        button.addEventListener('click', async () => {
-          const note = prompt(`${label} 의견 (선택)`) || '';
-          const review = await fetch(`/api/admin/quiz/submissions/${set.id}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approve, note }) });
-          const data = await review.json(); if (!review.ok) throw new Error(data.detail || `${label} 실패`);
-          if (data.created_ids?.length) document.getElementById('quiz-daily-ids').value = data.created_ids.join(', ');
-          showToast(approve ? '승인되어 공용 풀에 추가됐습니다.' : '문제집을 반려했습니다.', 'success');
-          fetchAdminQuizSubmissions(); fetchAdminQuizzes(); fetchCategoriesSummary();
-        });
-        card.appendChild(button);
+      const card = document.createElement('details'); card.className = 'admin-submission-card';
+      const summary = document.createElement('summary');
+      const heading = document.createElement('span'); heading.className = 'admin-submission-heading'; heading.textContent = set.title;
+      const meta = document.createElement('span'); meta.className = 'admin-submission-meta'; meta.textContent = `${set.display_name || set.username} · ${set.expertise} · ${set.quizzes.length}문항`;
+      summary.append(heading, meta); card.appendChild(summary);
+
+      const body = document.createElement('div'); body.className = 'admin-submission-body';
+      const preview = document.createElement('div'); preview.className = 'admin-submission-preview';
+      set.quizzes.forEach((quiz, index) => {
+        const row = document.createElement('article'); row.className = 'admin-submission-question';
+        const qTitle = document.createElement('strong'); qTitle.textContent = `${index + 1}. ${quiz.question}`;
+        const qMeta = document.createElement('small');
+        const answer = Array.isArray(quiz.correct_answers) ? quiz.correct_answers.join(', ') : '';
+        qMeta.textContent = `${quiz.question_type} · ${quiz.difficulty} · 정답: ${answer}`;
+        row.append(qTitle, qMeta);
+        if (Array.isArray(quiz.options)) {
+          const options = document.createElement('ol'); quiz.options.forEach(value => { const li = document.createElement('li'); li.textContent = value; options.appendChild(li); }); row.appendChild(options);
+        }
+        if (quiz.explanation) { const explanation = document.createElement('p'); explanation.textContent = `해설: ${quiz.explanation}`; row.appendChild(explanation); }
+        preview.appendChild(row);
       });
-      list.appendChild(card);
+      const editorLabel = document.createElement('label'); editorLabel.textContent = '검토 중 수정 가능한 JSON';
+      const editor = document.createElement('textarea'); editor.className = 'admin-submission-json'; editor.rows = 12; editor.value = JSON.stringify(set.quizzes, null, 2);
+      const note = document.createElement('textarea'); note.className = 'admin-review-note'; note.rows = 2; note.placeholder = '승인/반려 의견 (선택)';
+      const status = document.createElement('p'); status.className = 'admin-status-msg';
+      const actions = document.createElement('div'); actions.className = 'admin-review-actions';
+      const save = document.createElement('button'); save.type = 'button'; save.className = 'secondary-btn'; save.textContent = '수정 내용 저장';
+      save.addEventListener('click', async () => {
+        try {
+          const quizzes = JSON.parse(editor.value);
+          const response = await fetch(`/api/admin/quiz/submissions/${set.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: set.title, expertise: set.expertise, quizzes }) });
+          const data = await response.json(); if (!response.ok) throw new Error(data.detail || '저장 실패');
+          status.className = 'admin-status-msg success'; status.textContent = '수정 내용을 저장했습니다. 다시 검토한 뒤 승인하세요.';
+          showToast('제출 문제집을 수정했습니다.', 'success');
+        } catch (err) { status.className = 'admin-status-msg error'; status.textContent = err instanceof SyntaxError ? 'JSON 형식을 확인하세요.' : err.message; }
+      });
+      actions.appendChild(save);
+      [['승인 및 게시', true], ['반려', false]].forEach(([label, approve]) => {
+        const button = document.createElement('button'); button.type = 'button'; button.className = approve ? 'cbt-action-btn compact' : 'danger-btn'; button.textContent = label;
+        button.addEventListener('click', async () => {
+          try {
+            if (approve && !confirm(`${set.quizzes.length}개 문항을 공용 풀에 게시하시겠습니까?`)) return;
+            const review = await fetch(`/api/admin/quiz/submissions/${set.id}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approve, note: note.value }) });
+            const data = await review.json(); if (!review.ok) throw new Error(data.detail || `${label} 실패`);
+            if (data.created_ids?.length) document.getElementById('quiz-daily-ids').value = data.created_ids.join(', ');
+            showToast(approve ? '승인되어 공용 풀에 추가됐습니다.' : '문제집을 반려했습니다.', 'success');
+            fetchAdminQuizSubmissions(); fetchAdminQuizzes(); fetchCategoriesSummary();
+          } catch (err) { status.className = 'admin-status-msg error'; status.textContent = err.message; }
+        });
+        actions.appendChild(button);
+      });
+      body.append(preview, editorLabel, editor, note, status, actions); card.appendChild(body); list.appendChild(card);
     });
   } catch (err) { list.textContent = err.message; }
+}
+
+function openAdminQuizEditor(quiz = null) {
+  const editor = document.getElementById('admin-quiz-editor');
+  if (!editor) return;
+  editor.classList.remove('hidden');
+  document.getElementById('admin-quiz-edit-id').value = quiz?.id || '';
+  document.getElementById('admin-quiz-category').value = quiz?.category || 'PLC';
+  document.getElementById('admin-quiz-difficulty').value = quiz?.difficulty || 'medium';
+  document.getElementById('admin-quiz-type').value = quiz?.question_type || 'multiple_choice';
+  document.getElementById('admin-quiz-question').value = quiz?.question || '';
+  document.getElementById('admin-quiz-options').value = Array.isArray(quiz?.options) ? quiz.options.join('\n') : '';
+  document.getElementById('admin-quiz-answers').value = Array.isArray(quiz?.correct_answers) ? quiz.correct_answers.join('\n') : '';
+  document.getElementById('admin-quiz-hint').value = quiz?.hint || '';
+  document.getElementById('admin-quiz-source').value = quiz?.source_ref || '';
+  document.getElementById('admin-quiz-explanation').value = quiz?.explanation || '';
+  document.getElementById('admin-quiz-editor-status').textContent = quiz ? `#${quiz.id} 문항을 수정합니다.` : '새 문항을 작성합니다.';
+  editor.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 export async function fetchAdminQuizzes() {
@@ -1117,7 +1169,11 @@ export async function fetchAdminQuizzes() {
         }
       });
 
-      item.append(title, delBtn);
+      const actions = document.createElement('div'); actions.className = 'admin-quiz-item-actions';
+      const editBtn = document.createElement('button'); editBtn.type = 'button'; editBtn.className = 'secondary-btn'; editBtn.textContent = '수정';
+      editBtn.addEventListener('click', () => openAdminQuizEditor(q));
+      actions.append(editBtn, delBtn);
+      item.append(title, actions);
       adminQuizList.appendChild(item);
     });
   } catch { /* admin fetch error */ }
@@ -1154,6 +1210,9 @@ export function initQuizListeners() {
   const quizCopyPromptBtn = document.getElementById('quiz-copy-prompt-btn');
   const quizDailyPublishBtn = document.getElementById('quiz-daily-publish-btn');
   const quizFarmPointsBtn = document.getElementById('quiz-farm-points-btn');
+  const adminQuizNewBtn = document.getElementById('admin-quiz-new-btn');
+  const adminQuizEditor = document.getElementById('admin-quiz-editor');
+  const adminQuizEditorCancel = document.getElementById('admin-quiz-editor-cancel');
 
   if (quizBtn) quizBtn.addEventListener('click', () => openQuizModal('daily'));
   if (quizModalClose) quizModalClose.addEventListener('click', closeQuizModal);
@@ -1180,10 +1239,42 @@ export function initQuizListeners() {
   quizSidebarBackBtn?.addEventListener('click', () => restoreSidebarTopics());
   quizSidebarMoreBtn?.addEventListener('click', () => loadSidebarCategoryPage(true));
   quizFarmPointsBtn?.addEventListener('click', () => switchQuizNav('random'));
+  adminQuizNewBtn?.addEventListener('click', () => openAdminQuizEditor());
+  adminQuizEditorCancel?.addEventListener('click', () => adminQuizEditor?.classList.add('hidden'));
+  adminQuizEditor?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const status = document.getElementById('admin-quiz-editor-status');
+    try {
+      const type = document.getElementById('admin-quiz-type').value;
+      const lines = id => document.getElementById(id).value.split('\n').map(value => value.trim()).filter(Boolean);
+      const payload = {
+        category: document.getElementById('admin-quiz-category').value.trim(),
+        difficulty: document.getElementById('admin-quiz-difficulty').value,
+        question_type: type,
+        question: document.getElementById('admin-quiz-question').value.trim(),
+        options: type === 'multiple_choice' ? lines('admin-quiz-options') : null,
+        correct_answers: lines('admin-quiz-answers'),
+        hint: document.getElementById('admin-quiz-hint').value.trim(),
+        source_ref: document.getElementById('admin-quiz-source').value.trim(),
+        explanation: document.getElementById('admin-quiz-explanation').value.trim(),
+      };
+      const id = document.getElementById('admin-quiz-edit-id').value;
+      const response = await fetch(id ? `/api/admin/quiz/${id}` : '/api/admin/quiz', {
+        method: id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      const data = await response.json(); if (!response.ok) throw new Error(data.detail || '저장 실패');
+      status.className = 'admin-status-msg success'; status.textContent = id ? `#${id} 문항을 수정했습니다.` : `#${data.quiz_id} 문항을 생성했습니다.`;
+      showToast(id ? '퀴즈를 수정했습니다.' : '새 퀴즈를 등록했습니다.', 'success');
+      await fetchAdminQuizzes(); fetchCategoriesSummary();
+      if (!id) adminQuizEditor.reset();
+    } catch (err) { status.className = 'admin-status-msg error'; status.textContent = err.message; }
+  });
 
   quizCopyPromptBtn?.addEventListener('click', async () => {
-    await navigator.clipboard.writeText(document.getElementById('quiz-notebook-prompt')?.value || '');
-    showToast('NotebookLM 프롬프트를 복사했습니다.', 'success');
+    await copyText(
+      document.getElementById('quiz-notebook-prompt')?.value || '',
+      'NotebookLM 프롬프트를 복사했습니다.',
+    );
   });
 
   quizSetSaveBtn?.addEventListener('click', async () => {

@@ -1256,7 +1256,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 250px;
+  max-height: 62vh;
   overflow-y: auto;
 }
 
@@ -1279,6 +1279,40 @@
   text-overflow: ellipsis;
   max-width: 480px;
 }
+
+.admin-quiz-heading-row,
+.admin-editor-actions,
+.admin-review-actions,
+.admin-quiz-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cbt-action-btn.compact { width: auto; margin-top: 0; white-space: nowrap; }
+.admin-quiz-editor {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 16px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0f131d;
+}
+.admin-quiz-editor.hidden { display: none; }
+.form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.form-row-3 > div, .form-row-2 > div { display: grid; gap: 5px; }
+.admin-submission-card { border: 1px solid #2d3548; border-radius: 10px; background: #111520; overflow: hidden; }
+.admin-submission-card summary { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px; cursor: pointer; }
+.admin-submission-heading { color: #f8fafc; font-weight: 750; }
+.admin-submission-meta { color: #94a3b8; font-size: .82rem; }
+.admin-submission-body { display: grid; gap: 12px; padding: 0 14px 14px; border-top: 1px solid #252c3d; }
+.admin-submission-preview { display: grid; gap: 8px; max-height: 360px; overflow: auto; padding-top: 12px; }
+.admin-submission-question { display: grid; gap: 5px; padding: 10px; background: #0c1018; border-radius: 8px; }
+.admin-submission-question strong { white-space: pre-wrap; }
+.admin-submission-question small, .admin-submission-question p { color: #aab4c6; margin: 0; }
+.admin-submission-question ol { margin: 3px 0 0 22px; color: #d7deea; }
+.admin-submission-json, .admin-review-note { width: 100%; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 
 .quiz-community-grid {
   display: grid;
@@ -1320,6 +1354,9 @@
   .quiz-community-grid { grid-template-columns: 1fr; }
   .quiz-schedule-row { grid-template-columns: 1fr; }
   .quiz-set-item { align-items: flex-start; flex-wrap: wrap; }
+  .form-row-3 { grid-template-columns: 1fr; }
+  .admin-submission-card summary { grid-template-columns: 1fr; }
+  .admin-review-actions, .admin-quiz-heading-row { align-items: stretch; flex-direction: column; }
 }
 
 .quiz-spinner {

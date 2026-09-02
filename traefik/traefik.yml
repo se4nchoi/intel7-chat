@@ -1,0 +1,35 @@
+# BambooChat Static Traefik v3 Configuration Template
+
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+api:
+  dashboard: false
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+
+  websecure:
+    address: ":443"
+
+providers:
+  file:
+    filename: "traefik/dynamic.yml"
+    watch: false
+
+certificatesResolvers:
+  vercel:
+    acme:
+      caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
+      storage: "traefik/data/acme-staging.json"
+      dnsChallenge:
+        provider: vercel
+        delayBeforeCheck: 60s

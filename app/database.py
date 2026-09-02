@@ -1727,6 +1727,25 @@ def review_user_quiz_set(set_id: int, admin_user_id: int, approve: bool, note: s
         conn.commit()
     return created_ids
 
+def update_pending_user_quiz_set(set_id: int, expertise: str, title: str, items: Any) -> Dict[str, Any]:
+    """Allow an administrator to correct a submission before making a review decision."""
+    title = title.strip()
+    if not 2 <= len(title) <= 80:
+        raise ValueError("문제집 제목은 2~80자여야 합니다.")
+    quizzes = normalize_quiz_import(items, expertise)
+    with get_connection() as conn:
+        cur = conn.execute("""UPDATE user_quiz_sets
+            SET expertise=?, title=?, quizzes_json=?, updated_at=?
+            WHERE id=? AND status='pending_review'""",
+            (expertise, title, json.dumps(quizzes, ensure_ascii=False), utc_now(), set_id))
+        conn.commit()
+        if not cur.rowcount:
+            raise ValueError("검토 대기 중인 문제집이 아닙니다.")
+    updated = get_user_quiz_set(set_id)
+    if not updated:
+        raise ValueError("문제집을 찾을 수 없습니다.")
+    return updated
+
 def ensure_daily_quiz_set(assigned_date: str, count: int = 5, created_by_user_id: Optional[int] = None) -> int:
     with get_connection() as conn:
         row=conn.execute("SELECT id FROM daily_quiz_sets WHERE assigned_date=?", (assigned_date,)).fetchone()
@@ -1905,6 +1924,31 @@ def create_quiz_batch(
                 ))
             created_ids.append(int(cur.lastrowid))
     return created_ids
+
+def update_quiz(quiz_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Update an existing quiz while retaining its identity, attempts, and set membership."""
+    category = str(data.get("category", "")).strip()
+    if not category or len(category) > 80:
+        raise ValueError("과목은 1~80자여야 합니다.")
+    normalized = normalize_quiz_import([data], "PLC")[0]
+    normalized["category"] = category
+    image_filename = str(data.get("image_filename", "")).strip()[:500]
+    is_active = 1 if data.get("is_active", True) else 0
+    with get_connection() as conn:
+        cur = conn.execute("""UPDATE quizzes SET
+            category=?, difficulty=?, question_type=?, question=?, image_filename=?,
+            options_json=?, correct_answers_json=?, hint=?, explanation=?, source_ref=?, is_active=?
+            WHERE id=?""", (
+            normalized["category"], normalized["difficulty"], normalized["question_type"],
+            normalized["question"], image_filename,
+            json.dumps(normalized.get("options"), ensure_ascii=False) if normalized.get("options") else None,
+            json.dumps(normalized["correct_answers"], ensure_ascii=False), normalized.get("hint", ""),
+            normalized.get("explanation", ""), normalized.get("source_ref", ""), is_active, quiz_id,
+        ))
+        conn.commit()
+        if not cur.rowcount:
+            return None
+    return next((item for item in get_all_quizzes_admin() if item["id"] == quiz_id), None)
 
 
 def get_all_quizzes_admin(limit: int = 200) -> List[Dict[str, Any]]:

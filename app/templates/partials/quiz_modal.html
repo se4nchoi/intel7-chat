@@ -376,7 +376,31 @@
 
             <!-- Existing Quizzes & Documents List -->
             <div class="cbt-admin-card full-width">
-              <h3 class="cbt-admin-title">📚 등록된 퀴즈 목록 (<span id="admin-quiz-total-count">0</span>개)</h3>
+              <div class="admin-quiz-heading-row">
+                <div>
+                  <h3 class="cbt-admin-title">📚 등록된 퀴즈 목록 (<span id="admin-quiz-total-count">0</span>개)</h3>
+                  <p class="cbt-admin-desc">문항 수정은 기존 응시 기록과 게시 세트의 문항 ID를 유지합니다.</p>
+                </div>
+                <button id="admin-quiz-new-btn" type="button" class="cbt-action-btn compact">+ 새 문항</button>
+              </div>
+              <form id="admin-quiz-editor" class="admin-quiz-editor hidden">
+                <input id="admin-quiz-edit-id" type="hidden" />
+                <div class="form-row-3">
+                  <div><label for="admin-quiz-category">과목</label><input id="admin-quiz-category" required /></div>
+                  <div><label for="admin-quiz-difficulty">난이도</label><select id="admin-quiz-difficulty"><option value="easy">쉬움</option><option value="medium">보통</option><option value="hard">어려움</option></select></div>
+                  <div><label for="admin-quiz-type">유형</label><select id="admin-quiz-type"><option value="multiple_choice">객관식</option><option value="short_answer">단답형</option><option value="ladder_input">래더 입력</option></select></div>
+                </div>
+                <label for="admin-quiz-question">문제</label><textarea id="admin-quiz-question" rows="4" required></textarea>
+                <label for="admin-quiz-options">보기 (객관식은 한 줄에 하나씩 정확히 4개)</label><textarea id="admin-quiz-options" rows="4"></textarea>
+                <label for="admin-quiz-answers">정답 (한 줄에 하나씩)</label><textarea id="admin-quiz-answers" rows="3" required></textarea>
+                <div class="form-row-2">
+                  <div><label for="admin-quiz-hint">힌트</label><textarea id="admin-quiz-hint" rows="2"></textarea></div>
+                  <div><label for="admin-quiz-source">출처</label><textarea id="admin-quiz-source" rows="2"></textarea></div>
+                </div>
+                <label for="admin-quiz-explanation">해설</label><textarea id="admin-quiz-explanation" rows="3"></textarea>
+                <p id="admin-quiz-editor-status" class="admin-status-msg"></p>
+                <div class="admin-editor-actions"><button type="button" id="admin-quiz-editor-cancel" class="secondary-btn">취소</button><button type="submit" class="cbt-action-btn compact">저장</button></div>
+              </form>
               <div id="admin-quiz-list" class="admin-quiz-list"></div>
             </div>
           </div>

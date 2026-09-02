@@ -44,11 +44,11 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     normalize_dm_conversation_id, pin_message, unpin_message, get_pinned_messages, get_pinned_message_ids,
     get_daily_quizzes, submit_quiz_answer, get_user_quiz_stats, get_quiz_leaderboard,
     get_user_quiz_badge, get_user_quiz_badges_map, create_quiz, create_quiz_batch,
-    get_all_quizzes_admin, delete_quiz, save_quiz_source_document, get_quiz_source_documents,
+    get_all_quizzes_admin, delete_quiz, update_quiz, save_quiz_source_document, get_quiz_source_documents,
     toggle_quiz_bookmark, get_quiz_review_list, retry_quiz_answer,
     get_quiz_categories_summary, get_quiz_sidebar_counts, search_conversation_history,
-    QUIZ_EXPERTISES, create_user_quiz_set, update_user_quiz_set, list_user_quiz_sets, submit_user_quiz_set,
-    review_user_quiz_set, assign_daily_quizzes)
+    QUIZ_EXPERTISES, normalize_quiz_import, create_user_quiz_set, update_user_quiz_set, list_user_quiz_sets, submit_user_quiz_set,
+    review_user_quiz_set, update_pending_user_quiz_set, assign_daily_quizzes)
 from app.quiz_ai import generate_quizzes_with_gemini, check_quiz_answer, normalize_quiz_answer
 
 CONFIG = load_config()
@@ -1414,6 +1414,19 @@ async def api_admin_review_quiz_submission(set_id: int, request: Request):
     except ValueError as exc: raise HTTPException(409, str(exc)) from exc
     return {"status":"approved" if approve else "rejected", "created_ids":created_ids}
 
+@app.patch("/api/admin/quiz/submissions/{set_id}")
+async def api_admin_update_quiz_submission(set_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    require_admin(request)
+    data = await read_json_body(request)
+    try:
+        updated = update_pending_user_quiz_set(
+            set_id, str(data.get("expertise", "")), str(data.get("title", "")), data.get("quizzes"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"status": "ok", "set": updated}
+
 @app.post("/api/admin/quiz/daily-sets")
 async def api_admin_assign_daily_set(request: Request):
     if not request_origin_is_allowed(request): raise HTTPException(403, "허용되지 않은 요청입니다.")
@@ -1525,6 +1538,37 @@ async def api_admin_quiz_list(request: Request):
         "quizzes": get_all_quizzes_admin(),
         "source_documents": get_quiz_source_documents(),
     }
+
+@app.post("/api/admin/quiz")
+async def api_admin_quiz_create(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    require_admin(request)
+    data = await read_json_body(request)
+    category = str(data.get("category", "")).strip()
+    if not category or len(category) > 80:
+        raise HTTPException(400, "과목은 1~80자여야 합니다.")
+    try:
+        normalized = normalize_quiz_import([data], "PLC")[0]
+        normalized["category"] = category
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    created_ids = create_quiz_batch([normalized])
+    return {"status": "ok", "quiz_id": created_ids[0]}
+
+@app.patch("/api/admin/quiz/{quiz_id}")
+async def api_admin_quiz_update(quiz_id: int, request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    require_admin(request)
+    data = await read_json_body(request)
+    try:
+        updated = update_quiz(quiz_id, data)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not updated:
+        raise HTTPException(404, "퀴즈를 찾을 수 없습니다.")
+    return {"status": "ok", "quiz": updated}
 
 
 @app.delete("/api/admin/quiz/{quiz_id}")
