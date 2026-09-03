@@ -177,8 +177,13 @@ export function emitAttention({
 }) {
   if (isOwnMessage || isHistory) return;
 
-  const isCurrentActive = Boolean(conversationId && conversationId === `${state.activeRoom.type}:${state.activeRoom.id}`);
-  const isMuted = conversationId ? isConversationMuted(state.activeRoom.type, state.activeRoom.id) : false;
+  const activeConversationId = `${state.activeRoom.type}:${state.activeRoom.id}`;
+  const isCurrentActive = Boolean(conversationId && conversationId === activeConversationId);
+  const separator = conversationId ? conversationId.indexOf(':') : -1;
+  const conversationType = separator > 0 ? conversationId.slice(0, separator) : '';
+  const conversationKey = separator > 0 ? conversationId.slice(separator + 1) : '';
+  const isMuted = Boolean(conversationType && conversationKey
+    && isConversationMuted(conversationType, conversationKey));
   const snoozed = isSnoozed();
 
   if (isCurrentActive || isMuted || snoozed) return;

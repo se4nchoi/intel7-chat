@@ -50,6 +50,23 @@ import {
 } from './notifications.js';
 import { playNotificationSound, setSoundMode, setSoundVolume } from './audio.js';
 
+function syncTouchableViewport() {
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  if (viewportHeight > 0) {
+    document.documentElement.style.setProperty('--app-height', `${Math.round(viewportHeight)}px`);
+  }
+}
+
+function initTouchableViewport() {
+  syncTouchableViewport();
+  window.addEventListener('resize', syncTouchableViewport, { passive: true });
+  window.addEventListener('orientationchange', syncTouchableViewport, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncTouchableViewport, { passive: true });
+    window.visualViewport.addEventListener('scroll', syncTouchableViewport, { passive: true });
+  }
+}
+
 
 // --- Room Switching ---
 async function acknowledgeConversation(type, id, lastReadMessageId) {
@@ -260,6 +277,7 @@ async function loadOlderMessages() {
 
 // --- App Bootstrap ---
 function initApp() {
+  initTouchableViewport();
   const sidebarToggle = document.getElementById('sidebar-toggle');
 
   const sidebar = document.getElementById('sidebar');

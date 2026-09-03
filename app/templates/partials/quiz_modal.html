@@ -3,10 +3,6 @@
     <!-- Window Titlebar -->
     <div class="cbt-top-header">
       <div class="cbt-header-left">
-        <button id="quiz-modal-close" class="cbt-back-btn" type="button" aria-label="닫기">
-          <span class="cbt-back-icon">←</span>
-          <span>대화방으로</span>
-        </button>
         <div class="cbt-header-title-wrap">
           <h2 id="quiz-modal-title" class="cbt-header-title">퀴즈 & 랭킹 센터</h2>
           <span class="cbt-header-badge">학습 포털</span>
@@ -17,6 +13,7 @@
           <span class="cbt-streak-flame">🔥</span>
           <span id="quiz-stat-streak">0일 연속 🔥</span>
         </div>
+        <button id="quiz-modal-close" class="cbt-modal-close-btn" type="button" aria-label="퀴즈 창 닫기" title="닫기">×</button>
       </div>
     </div>
 
@@ -50,9 +47,7 @@
         <div class="cbt-sidebar-section quiz-question-sidebar-section hidden">
           <div class="quiz-question-panel-heading">
             <button id="quiz-sidebar-back-btn" class="quiz-sidebar-back-btn hidden" type="button" aria-label="주제 목록으로 돌아가기">←</button>
-            <button id="quiz-question-panel-toggle" class="quiz-question-panel-toggle" type="button" aria-expanded="true">
-              <span id="quiz-question-panel-title">📋 문제 목록</span><span class="quiz-panel-chevron">⌃</span>
-            </button>
+            <div id="quiz-question-panel-title" class="quiz-question-panel-title">📋 문제 목록</div>
           </div>
           <div id="quiz-question-panel" class="quiz-question-panel">
             <div id="quiz-sidebar-question-list" class="quiz-sidebar-question-list"></div>
@@ -236,12 +231,27 @@
             <section class="cbt-admin-card">
               <h3 class="cbt-admin-title">🧠 NotebookLM으로 문제집 만들기</h3>
               <p class="cbt-admin-desc">분야를 고른 뒤 아래 프롬프트를 NotebookLM에 붙여넣으세요. 이미지는 제외하고, 회로나 도면은 문제 본문의 Markdown 코드 블록에 ASCII로 표현합니다.</p>
-              <label for="quiz-set-expertise">전문 분야</label>
+              <p class="quiz-integrity-note">AI 결과는 초안입니다. 정답·보기·해설·출처를 직접 검증한 문항만 제출하세요.</p>
+              <label for="quiz-set-expertise-choice">주제</label>
               <div class="quiz-expertise-picker-row">
                 <span id="quiz-set-expertise-emoji" class="quiz-expertise-emoji" aria-hidden="true">📚</span>
-                <select id="quiz-set-expertise" class="form-select" aria-label="전문 분야"></select>
+                <select id="quiz-set-expertise-choice" class="form-select" aria-label="문제집 주제 선택">
+                  <option value="__custom__">＋ 새 주제 직접 입력</option>
+                  <option value="PLC" selected>PLC</option>
+                  <option value="전기">전기</option>
+                  <option value="전자">전자</option>
+                  <option value="자동화설비">자동화설비</option>
+                  <option value="전기기능사">전기기능사</option>
+                  <option value="전기기사">전기기사</option>
+                  <option value="디지털공학">디지털공학</option>
+                  <option value="공압/유압">공압/유압</option>
+                  <option value="로봇 Python">로봇 Python</option>
+                </select>
               </div>
-              <p class="field-hint">분야에 맞는 아이콘은 자동으로 선택됩니다.</p>
+              <input id="quiz-set-expertise" class="form-input hidden" type="text"
+                     minlength="2" maxlength="40" value="PLC"
+                     placeholder="새로운 주제명 (2~40자)" aria-label="새 문제집 주제 직접 입력" />
+              <p class="field-hint">목록의 ‘새 주제 직접 입력’을 선택하면 새 분야를 만들 수 있습니다.</p>
               <label for="quiz-notebook-prompt">NotebookLM 프롬프트</label>
               <textarea id="quiz-notebook-prompt" class="quiz-prompt-box" rows="9" readonly></textarea>
               <button id="quiz-copy-prompt-btn" type="button" class="secondary-btn">프롬프트 복사</button>
@@ -253,6 +263,7 @@
               <label for="quiz-set-json">JSON 배열</label>
               <textarea id="quiz-set-json" rows="12" placeholder='[{"difficulty":"medium","question_type":"multiple_choice","question":"...","options":["1. ...","2. ...","3. ...","4. ..."],"correct_answers":["1"],"hint":"...","explanation":"...","source_ref":"..."}]'></textarea>
               <p id="quiz-set-status" class="admin-status-msg"></p>
+              <button id="quiz-set-validate-btn" type="button" class="secondary-btn">DB 유사도·정답 편향 검사</button>
               <button id="quiz-set-save-btn" type="button" class="cbt-action-btn">초안 저장</button>
             </section>
             <section class="cbt-admin-card full-width">
@@ -291,6 +302,10 @@
 
         <!-- Tab 2: 리더보드 -->
         <div id="quiz-tab-leaderboard-content" class="quiz-tab-content cbt-content-pane hidden">
+          <div class="quiz-scoring-note" role="note">
+            <strong>랭킹 점수 안내</strong>
+            <span>첫 제출의 정답만 난이도별 점수에 반영됩니다. 정답과 해설을 확인한 뒤의 재풀이는 숙달 연습이며 점수를 추가하지 않습니다.</span>
+          </div>
           <div class="cbt-lb-header">
             <div class="cbt-period-pills">
               <button class="lb-period-btn active" data-period="weekly" type="button">이번 주 랭킹 👑</button>

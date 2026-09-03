@@ -301,11 +301,13 @@
 .admin-user > button { width: auto !important; padding: 7px 12px !important; font-size: .82rem !important; }
 
 @media (max-width: 620px) {
+  .modal-backdrop { padding: 8px; align-items: flex-end; }
   .modal-box { padding: 22px 18px 18px; }
   .admin-panel { max-height: 92vh; }
   .admin-user { grid-template-columns: 1fr; }
   .admin-user-controls { justify-content: flex-start; }
   .admin-user-controls input[type="password"] { flex: 1 1 130px; width: auto !important; }
+  .admin-user-identity small { display: none; }
 }
 
 .admin-user-row {
@@ -396,6 +398,38 @@
   color: var(--text-dim);
   margin-top: -4px;
 }
+
+#nickname-form label {
+  color: var(--text-muted);
+  font-size: .82rem;
+  font-weight: 650;
+}
+
+#nickname-title-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 38px 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+#nickname-title-select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.help-panel { width: min(680px, 100%); max-height: min(88dvh, 760px); padding: 22px; }
+.help-list { display: grid; gap: 8px; overflow-y: auto; padding-right: 3px; }
+.help-list details { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.help-list summary { cursor: pointer; padding: 10px 12px; color: var(--text); font-weight: 700; }
+.help-list details[open] summary { border-bottom: 1px solid var(--border); }
+.help-list p { padding: 10px 12px; color: var(--text-muted); line-height: 1.55; }
+.help-list p + p { padding-top: 0; }
+.help-list code { color: var(--accent); }
+.help-warning { color: #fbbf24 !important; }
 
 .channel-edit-actions {
   display: flex;

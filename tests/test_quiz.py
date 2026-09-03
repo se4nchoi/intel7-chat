@@ -113,6 +113,8 @@ def test_quiz_leaderboard_and_badges(temp_db):
     u1 = database.create_user("student1", auth.hash_secret("pass123"))
     u2 = database.create_user("student2", auth.hash_secret("pass123"))
 
+    assert database.get_user_quiz_badge(u1["id"]) is None
+
     quizzes = database.get_daily_quizzes(u1["id"], count=5)
     q1 = quizzes[0]
     q2 = quizzes[1]
@@ -136,10 +138,17 @@ def test_quiz_leaderboard_and_badges(temp_db):
     assert len(weekly_lb) >= 1
     assert weekly_lb[0]["user_id"] == u1["id"]
 
-    # Badge for u1 should be 1st rank
+    # Until the user explicitly chooses a title, the nickname badge shows score.
     badge1 = database.get_user_quiz_badge(u1["id"])
     assert badge1 is not None
-    assert badge1["type"] == "rank"
+    assert badge1["type"] == "score"
+
+    with database.get_connection() as conn:
+        conn.execute("UPDATE user_quiz_stats SET current_streak=3 WHERE user_id=?", (u1["id"],))
+        conn.commit()
+    assert "streak" in {item["selection"] for item in database.get_user_quiz_title_options(u1["id"])}
+    database.update_quiz_badge_selection(u1["id"], "streak")
+    assert database.get_user_quiz_badge(u1["id"])["type"] == "streak"
 
     # User stats
     stats1 = database.get_user_quiz_stats(u1["id"])
@@ -167,7 +176,9 @@ def test_quiz_leaderboard_equal_scores_rank_earliest_first(temp_db):
         leaderboard = database.get_quiz_leaderboard(period=period)
         assert leaderboard[0]["user_id"] == earlier_user["id"]
         assert leaderboard[0]["score"] == leaderboard[1]["score"]
-    assert database.get_user_quiz_badge(earlier_user["id"])["type"] == "rank"
+    assert database.get_user_quiz_badge(earlier_user["id"])["type"] == "score"
+    assert database.get_user_quiz_title_options(earlier_user["id"])[0]["rank"] == 1
+    assert database.get_user_quiz_title_options(later_user["id"])[0]["rank"] == 2
 
 
 def test_batch_creation_and_admin_view(temp_db):

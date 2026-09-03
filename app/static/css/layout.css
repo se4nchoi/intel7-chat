@@ -6,8 +6,10 @@
 #chat-app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
+  height: var(--app-height, 100dvh);
+  width: 100%;
+  position: fixed;
+  inset: 0;
 }
 
 /* ── 헤더 ── */
@@ -554,6 +556,17 @@
 
 @media (max-width: 768px) {
   .sidebar-toggle-btn { display: inline-flex; }
+  .app-header { gap: 6px; padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+  .header-right { gap: 6px; }
+  .service-name,
+  .my-nick-badge-container,
+  .quiz-btn-text,
+  .conn-status { display: none; }
+  .header-logo-container { flex: 1; min-width: 0; }
+  .admin-btn,
+  .logout-btn { width: 32px; min-width: 32px; padding: 0; font-size: 0; }
+  .admin-btn::before { content: "⚙"; font-size: 16px; }
+  .logout-btn::before { content: "↪"; font-size: 18px; }
   .sidebar {
     position: fixed;
     top: var(--header-h);
@@ -569,4 +582,9 @@
   .sidebar-backdrop.visible {
     display: block;
   }
+}
+
+@media (max-width: 480px) {
+  .header-logo { height: 24px; }
+  .nickname-hint-popover { display: none; }
 }

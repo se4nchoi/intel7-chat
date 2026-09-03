@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import uuid as _uuid
+from difflib import SequenceMatcher
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -396,6 +397,20 @@ def _migrate_v15(conn: sqlite3.Connection) -> None:
             quiz["hint"], quiz["explanation"], quiz["source_ref"], utc_now(),
         ))
 
+def _migrate_v16(conn: sqlite3.Connection) -> None:
+    """Keep approved pool questions traceable to their community submission."""
+    _add_column_if_missing(conn, "quizzes", "source_submission_set_id",
+                           "INTEGER REFERENCES user_quiz_sets(id) ON DELETE SET NULL")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quizzes_submission_source ON quizzes(source_submission_set_id)")
+
+def _migrate_v17(conn: sqlite3.Connection) -> None:
+    """Allow users to choose which earned quiz title appears by their nickname."""
+    _add_column_if_missing(conn, "users", "quiz_badge_selection", "TEXT NOT NULL DEFAULT 'score'")
+
+def _migrate_v18(conn: sqlite3.Connection) -> None:
+    """Use accumulated score until a user explicitly selects an earned title."""
+    conn.execute("UPDATE users SET quiz_badge_selection='score' WHERE quiz_badge_selection='auto'")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -412,6 +427,9 @@ _MIGRATIONS = [
     _migrate_v13,
     _migrate_v14,
     _migrate_v15,
+    _migrate_v16,
+    _migrate_v17,
+    _migrate_v18,
 ]
 
 
@@ -465,6 +483,20 @@ def update_display_name(user_id: int, display_name: str) -> Optional[Dict[str, A
         conn.execute("UPDATE users SET display_name=? WHERE id=?", (display_name, user_id))
         conn.commit()
     return get_user_by_id(user_id)
+
+def update_quiz_badge_selection(user_id: int, selection: str) -> Optional[Dict[str, Any]]:
+    """Persist score/none or an earned subject title selection."""
+    clean = selection.strip()
+    if clean not in {"score", "none"}:
+        earned = {item["selection"] for item in get_user_quiz_title_options(user_id)}
+        if clean not in earned:
+            raise ValueError("현재 획득한 칭호만 선택할 수 있습니다.")
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE users SET quiz_badge_selection=? WHERE id=?", (clean, user_id)
+        )
+        conn.commit()
+    return get_user_by_id(user_id) if cur.rowcount else None
 
 def list_users() -> List[Dict[str, Any]]:
     with get_connection() as conn:
@@ -1602,15 +1634,60 @@ POSITION_MODULE_SAMPLE_QUIZZES = [
 
 QUIZ_EXPERTISES = (
     "PLC", "전기", "전자", "자동화설비",
-    "전기기능사", "전기기사", "디지털공학", "공압/유압",
+    "전기기능사", "전기기사", "디지털공학", "공압/유압", "로봇 Python",
 )
 
+def normalize_quiz_expertise(value: Any) -> str:
+    """Validate a suggested or user-defined quiz subject name."""
+    expertise = " ".join(str(value or "").split())
+    if not 2 <= len(expertise) <= 40:
+        raise ValueError("주제는 2~40자로 입력해 주세요.")
+    if any(ord(char) < 32 or ord(char) == 127 for char in expertise):
+        raise ValueError("주제에는 제어문자를 사용할 수 없습니다.")
+    return expertise
+
+# Subject ranks use score, then the time that score was reached. Practice retries
+# award no score, so they do not inflate rankings.
+QUIZ_SUBJECT_TITLES = {
+    "PLC": ("⚡", "접점 찍먹", "래더 좀 함", "PLC 고인물"),
+    "전기": ("🔌", "회로 찍먹", "전류 좀 봄", "전기 고인물"),
+    "전자": ("🔧", "저항 찍먹", "회로 좀 봄", "전자 고인물"),
+    "자동화설비": ("🏭", "버튼 찍먹", "설비 좀 함", "공장 고인물"),
+    "전기기능사": ("🧰", "공구 찍먹", "배선 좀 함", "기능사 고인물"),
+    "전기기사": ("📐", "공식 찍먹", "설계 좀 함", "전기기사 고인물"),
+    "디지털공학": ("⚙️", "비트 찍먹", "논리 좀 함", "디지털 고인물"),
+    "공압/유압": ("💨", "압력 찍먹", "밸브 좀 함", "유공압 고인물"),
+    "로봇 Python": ("🤖", "로봇 찍먹", "코드 좀 함", "로봇 고인물"),
+}
+
+
+def _subject_quiz_badge(category: Optional[str], subject_rank: int,
+                        subject_score: int) -> Optional[Dict[str, Any]]:
+    if not category or subject_rank not in {1, 2, 3}:
+        return None
+    subject = QUIZ_SUBJECT_TITLES.get(
+        category, ("📚", "주제 찍먹", "주제 좀 함", "주제 고인물")
+    )
+    icon, beginner_label, skilled_label, master_label = subject
+    if subject_rank == 1:
+        label = master_label
+    elif subject_rank == 2:
+        label = skilled_label
+    else:
+        label = beginner_label
+    return {
+        "type": "subject",
+        "icon": icon,
+        "label": label,
+        "title": f"{category} {subject_rank}위 · {subject_score}점",
+    }
+
 def normalize_quiz_import(items: Any, expertise: str) -> List[Dict[str, Any]]:
-    if expertise not in QUIZ_EXPERTISES:
-        raise ValueError("허용되지 않은 전문 분야입니다.")
+    expertise = normalize_quiz_expertise(expertise)
     if not isinstance(items, list) or not 1 <= len(items) <= 50:
         raise ValueError("퀴즈는 1~50문항의 JSON 배열이어야 합니다.")
     normalized = []
+    seen_questions = set()
     for index, raw in enumerate(items, start=1):
         if not isinstance(raw, dict):
             raise ValueError(f"{index}번 문항은 JSON 객체여야 합니다.")
@@ -1621,6 +1698,10 @@ def normalize_quiz_import(items: Any, expertise: str) -> List[Dict[str, Any]]:
         options = raw.get("options")
         if not question or len(question) > 4000:
             raise ValueError(f"{index}번 문항의 문제 본문이 비어 있거나 너무 깁니다.")
+        question_key = " ".join(question.casefold().split())
+        if question_key in seen_questions:
+            raise ValueError(f"{index}번 문항은 문제집 안의 다른 문항과 중복됩니다.")
+        seen_questions.add(question_key)
         if raw.get("image_filename") or raw.get("image_url") or "![" in question:
             raise ValueError(f"{index}번 문항은 이미지를 사용할 수 없습니다. ASCII 도면을 코드 블록으로 넣어 주세요.")
         if difficulty not in {"easy", "medium", "hard"}:
@@ -1629,26 +1710,121 @@ def normalize_quiz_import(items: Any, expertise: str) -> List[Dict[str, Any]]:
             raise ValueError(f"{index}번 문항의 유형이 올바르지 않습니다.")
         if not isinstance(answers, list) or not answers or any(not str(answer).strip() for answer in answers):
             raise ValueError(f"{index}번 문항에는 correct_answers 배열이 필요합니다.")
-        if question_type == "multiple_choice" and (not isinstance(options, list) or len(options) != 4):
-            raise ValueError(f"{index}번 객관식 문항은 정확히 보기 4개가 필요합니다.")
+        clean_answers = [str(answer).strip() for answer in answers]
+        clean_options = [str(option).strip() for option in options] if isinstance(options, list) else None
+        if question_type == "multiple_choice":
+            if not clean_options or len(clean_options) != 4:
+                raise ValueError(f"{index}번 객관식 문항은 정확히 보기 4개가 필요합니다.")
+            if any(not option for option in clean_options):
+                raise ValueError(f"{index}번 객관식 문항에는 빈 보기가 없어야 합니다.")
+            if len({option.casefold() for option in clean_options}) != 4:
+                raise ValueError(f"{index}번 객관식 문항의 보기는 서로 달라야 합니다.")
+            valid_answers = {str(number) for number in range(1, 5)} | {option.casefold() for option in clean_options}
+            if not any(answer.casefold() in valid_answers for answer in clean_answers):
+                raise ValueError(f"{index}번 객관식 문항의 정답이 보기 1~4 또는 보기 본문과 일치해야 합니다.")
         normalized.append({
             "category": expertise,
             "difficulty": difficulty,
             "question_type": question_type,
             "question": question,
-            "options": [str(option).strip() for option in options] if isinstance(options, list) else None,
-            "correct_answers": [str(answer).strip() for answer in answers],
+            "options": clean_options,
+            "correct_answers": clean_answers,
             "hint": str(raw.get("hint", "")).strip()[:1000],
             "explanation": str(raw.get("explanation", "")).strip()[:4000],
             "source_ref": str(raw.get("source_ref", "")).strip()[:500],
         })
     return normalized
 
+def analyze_quiz_set(items: Any, expertise: str) -> Dict[str, Any]:
+    """Run advisory duplicate-similarity and multiple-choice answer-bias checks."""
+    quizzes = normalize_quiz_import(items, expertise)
+
+    def similarity_text(value: str) -> str:
+        value = re.sub(r"```[\s\S]*?```", " ", value.casefold())
+        return re.sub(r"[^0-9a-z가-힣]+", "", value)
+
+    with get_connection() as conn:
+        existing_rows = conn.execute(
+            "SELECT id, category, question FROM quizzes WHERE is_active=1"
+        ).fetchall()
+    existing = [
+        (row["id"], row["category"], row["question"], similarity_text(row["question"]))
+        for row in existing_rows
+    ]
+    similarities = []
+    for index, quiz in enumerate(quizzes, start=1):
+        candidate = similarity_text(quiz["question"])
+        if not candidate:
+            continue
+        best = None
+        for quiz_id, category, question, normalized in existing:
+            if not normalized:
+                continue
+            ratio = SequenceMatcher(None, candidate, normalized).ratio()
+            if best is None or ratio > best["similarity"]:
+                best = {
+                    "candidate_index": index,
+                    "existing_quiz_id": quiz_id,
+                    "existing_category": category,
+                    "existing_question": question[:160],
+                    "similarity": ratio,
+                }
+        if best and best["similarity"] >= 0.65:
+            best["similarity"] = round(best["similarity"] * 100, 1)
+            similarities.append(best)
+
+    answer_counts = {str(number): 0 for number in range(1, 5)}
+    multiple_choice_count = 0
+    for quiz in quizzes:
+        if quiz["question_type"] != "multiple_choice":
+            continue
+        multiple_choice_count += 1
+        answer_number = None
+        for answer in quiz["correct_answers"]:
+            match = re.match(r"^([1-4])(?:번|[.)\s]|$)", answer)
+            if match:
+                answer_number = match.group(1)
+                break
+            for option_index, option in enumerate(quiz["options"] or [], start=1):
+                if answer.casefold() == option.casefold():
+                    answer_number = str(option_index)
+                    break
+            if answer_number:
+                break
+        if answer_number:
+            answer_counts[answer_number] += 1
+
+    dominant_option = max(answer_counts, key=answer_counts.get) if multiple_choice_count else None
+    dominant_count = answer_counts.get(dominant_option, 0) if dominant_option else 0
+    dominant_ratio = dominant_count / multiple_choice_count if multiple_choice_count else 0
+    bias_warning = multiple_choice_count >= 4 and dominant_ratio >= 0.6
+    warnings = []
+    if similarities:
+        warnings.append(f"기존 DB와 65% 이상 유사한 문항이 {len(similarities)}개 있습니다.")
+    if bias_warning:
+        warnings.append(
+            f"객관식 정답의 {round(dominant_ratio * 100)}%가 {dominant_option}번에 몰려 있습니다."
+        )
+    return {
+        "valid": True,
+        "question_count": len(quizzes),
+        "similarities": similarities,
+        "answer_bias": {
+            "multiple_choice_count": multiple_choice_count,
+            "counts": answer_counts,
+            "dominant_option": dominant_option,
+            "dominant_ratio": round(dominant_ratio * 100, 1),
+            "warning": bias_warning,
+        },
+        "warnings": warnings,
+    }
+
 def create_user_quiz_set(owner_user_id: int, expertise: str, title: str, items: Any) -> Dict[str, Any]:
     title = title.strip()
     if not 2 <= len(title) <= 80:
         raise ValueError("문제집 제목은 2~80자여야 합니다.")
     quizzes = normalize_quiz_import(items, expertise)
+    expertise = quizzes[0]["category"]
     now = utc_now()
     with get_connection() as conn:
         cur = conn.execute("""INSERT INTO user_quiz_sets
@@ -1663,6 +1839,7 @@ def update_user_quiz_set(set_id: int, owner_user_id: int, expertise: str, title:
     if not 2 <= len(title) <= 80:
         raise ValueError("문제집 제목은 2~80자여야 합니다.")
     quizzes = normalize_quiz_import(items, expertise)
+    expertise = quizzes[0]["category"]
     now = utc_now()
     with get_connection() as conn:
         cur = conn.execute("""UPDATE user_quiz_sets
@@ -1703,23 +1880,41 @@ def submit_user_quiz_set(set_id: int, owner_user_id: int) -> bool:
         cur=conn.execute("UPDATE user_quiz_sets SET status='pending_review', submitted_at=?, updated_at=? WHERE id=? AND owner_user_id=? AND status IN ('draft','rejected')",
                          (now, now, set_id, owner_user_id)); conn.commit(); return cur.rowcount > 0
 
-def review_user_quiz_set(set_id: int, admin_user_id: int, approve: bool, note: str = "") -> List[int]:
+def review_user_quiz_set(set_id: int, admin_user_id: int, approve: bool, note: str = "",
+                         items: Any = None, expertise: Optional[str] = None,
+                         title: Optional[str] = None) -> List[int]:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM user_quiz_sets WHERE id=?", (set_id,)).fetchone()
         if not row or row["status"] != "pending_review":
             raise ValueError("검토 대기 중인 문제집이 아닙니다.")
+        quizzes = json.loads(row["quizzes_json"])
+        if approve and items is not None:
+            clean_title = str(title if title is not None else row["title"]).strip()
+            if not 2 <= len(clean_title) <= 80:
+                raise ValueError("문제집 제목은 2~80자여야 합니다.")
+            clean_expertise = str(expertise if expertise is not None else row["expertise"])
+            quizzes = normalize_quiz_import(items, clean_expertise)
+            clean_expertise = quizzes[0]["category"]
+            conn.execute("UPDATE user_quiz_sets SET expertise=?, title=?, quizzes_json=?, updated_at=? WHERE id=?",
+                         (clean_expertise, clean_title, json.dumps(quizzes, ensure_ascii=False), utc_now(), set_id))
         created_ids: List[int] = []
         now=utc_now(); status="approved" if approve else "rejected"
         if approve:
-            for quiz in json.loads(row["quizzes_json"]):
+            for quiz in quizzes:
+                duplicate = conn.execute(
+                    "SELECT 1 FROM quizzes WHERE category=? AND lower(trim(question))=lower(trim(?)) LIMIT 1",
+                    (quiz["category"], quiz["question"]),
+                ).fetchone()
+                if duplicate:
+                    raise ValueError(f"공용 풀에 이미 존재하는 문항입니다: {quiz['question'][:80]}")
                 cur = conn.execute("""INSERT INTO quizzes
                     (category,difficulty,question_type,question,image_filename,options_json,
-                     correct_answers_json,hint,explanation,source_ref,is_active,created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,1,?)""", (
+                     correct_answers_json,hint,explanation,source_ref,is_active,created_at,source_submission_set_id)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)""", (
                     quiz["category"], quiz["difficulty"], quiz["question_type"], quiz["question"], "",
                     json.dumps(quiz.get("options"), ensure_ascii=False) if quiz.get("options") else None,
                     json.dumps(quiz["correct_answers"], ensure_ascii=False), quiz.get("hint", ""),
-                    quiz.get("explanation", ""), quiz.get("source_ref", ""), now,
+                    quiz.get("explanation", ""), quiz.get("source_ref", ""), now, set_id,
                 ))
                 created_ids.append(int(cur.lastrowid))
         conn.execute("UPDATE user_quiz_sets SET status=?, review_note=?, approved_by_user_id=?, approved_at=?, updated_at=? WHERE id=?",
@@ -1733,6 +1928,7 @@ def update_pending_user_quiz_set(set_id: int, expertise: str, title: str, items:
     if not 2 <= len(title) <= 80:
         raise ValueError("문제집 제목은 2~80자여야 합니다.")
     quizzes = normalize_quiz_import(items, expertise)
+    expertise = quizzes[0]["category"]
     with get_connection() as conn:
         cur = conn.execute("""UPDATE user_quiz_sets
             SET expertise=?, title=?, quizzes_json=?, updated_at=?
@@ -2434,41 +2630,103 @@ def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[s
         return results
 
 
+def get_user_quiz_title_options(user_id: int) -> List[Dict[str, Any]]:
+    """Return every subject title the user currently holds (top three by score)."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            WITH subject_scores AS (
+                SELECT qs.user_id, q.category,
+                       SUM(qs.score_earned) AS subject_score,
+                       MAX(qs.submitted_at) AS score_reached_at
+                FROM quiz_submissions qs
+                JOIN quizzes q ON q.id = qs.quiz_id
+                WHERE qs.score_earned > 0
+                GROUP BY qs.user_id, q.category
+            ), ranked AS (
+                SELECT user_id, category, subject_score, score_reached_at,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY category
+                           ORDER BY subject_score DESC, score_reached_at ASC, user_id ASC
+                       ) AS subject_rank
+                FROM subject_scores
+            )
+            SELECT category, subject_score, subject_rank
+            FROM ranked
+            WHERE user_id = ? AND subject_rank <= 3
+            ORDER BY subject_rank ASC, subject_score DESC, category ASC
+        """, (user_id,)).fetchall()
+    options = []
+    for row in rows:
+        badge = _subject_quiz_badge(
+            row["category"], int(row["subject_rank"]), int(row["subject_score"])
+        )
+        if badge:
+            options.append({
+                **badge,
+                "category": row["category"],
+                "selection": f"subject:{row['category']}",
+                "rank": int(row["subject_rank"]),
+                "score": int(row["subject_score"]),
+            })
+    with get_connection() as conn:
+        stats = conn.execute(
+            "SELECT current_streak FROM user_quiz_stats WHERE user_id=?", (user_id,)
+        ).fetchone()
+    streak = int(stats["current_streak"]) if stats else 0
+    if streak >= 3:
+        options.append({
+            "type": "streak",
+            "icon": "🔥",
+            "label": "꾸준러",
+            "title": f"오늘의 퀴즈 {streak}일 연속",
+            "category": "연속 학습",
+            "selection": "streak",
+            "rank": None,
+            "score": None,
+        })
+    return options
+
+
 def get_user_quiz_badge(user_id: int) -> Optional[Dict[str, Any]]:
     """Calculates user badge to display beside nickname in chat."""
-    weekly = get_quiz_leaderboard("weekly", limit=1)
-    top_uid = weekly[0]["user_id"] if weekly else None
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM user_quiz_stats WHERE user_id = ?", (user_id,)
+            """SELECT u.id AS user_id,
+                      COALESCE(st.total_score, 0) AS total_score,
+                      COALESCE(st.current_streak, 0) AS current_streak,
+                      COALESCE(u.quiz_badge_selection, 'score') AS badge_selection
+               FROM users u LEFT JOIN user_quiz_stats st ON st.user_id=u.id
+               WHERE u.id = ?""", (user_id,)
         ).fetchone()
         if not row:
             return None
 
-        # Check weekly 1st place
-        if top_uid == user_id:
-            return {
-                "type": "rank",
-                "icon": "👑",
-                "label": "주간 1위",
-                "title": "이번 주 퀴즈 1위"
-            }
-
-        streak = row["current_streak"]
-        if streak >= 3:
-            return {
-                "type": "streak",
-                "icon": "🔥",
-                "label": "꾸준러",
-                "title": f"오늘의 퀴즈 {streak}일 연속"
-            }
-
-        if row["total_score"] >= 50:
+        selection = row["badge_selection"]
+        if selection == "none":
+            return None
+        if selection == "score":
+            if row["total_score"] <= 0:
+                return None
             return {
                 "type": "score",
                 "icon": "⚡",
                 "label": f"{row['total_score']}점",
-                "title": f"퀴즈 누적 {row['total_score']}점"
+                "title": f"퀴즈 누적 {row['total_score']}점",
+            }
+        title_options = get_user_quiz_title_options(user_id)
+        selected_badge = next(
+            (item for item in title_options if item["selection"] == selection), None
+        )
+        if selected_badge:
+            return {key: selected_badge[key] for key in ("type", "icon", "label", "title")}
+        if selection not in {"score", "none"}:
+            if row["total_score"] <= 0:
+                return None
+            return {
+                "type": "score",
+                "icon": "⚡",
+                "label": f"{row['total_score']}점",
+                "title": f"퀴즈 누적 {row['total_score']}점",
             }
 
         return None
@@ -2479,27 +2737,75 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
     if not user_ids:
         return {}
     badges: Dict[int, Optional[Dict[str, Any]]] = {}
-    weekly = get_quiz_leaderboard("weekly", limit=1)
-    top_uid = weekly[0]["user_id"] if weekly else None
     with get_connection() as conn:
         placeholders = ",".join("?" for _ in user_ids)
         rows = conn.execute(
-            f"SELECT * FROM user_quiz_stats WHERE user_id IN ({placeholders})", user_ids
+            f"""SELECT u.id AS user_id,
+                       COALESCE(st.total_score, 0) AS total_score,
+                       COALESCE(st.current_streak, 0) AS current_streak,
+                       COALESCE(u.quiz_badge_selection, 'score') AS badge_selection
+                FROM users u LEFT JOIN user_quiz_stats st ON st.user_id=u.id
+                WHERE u.id IN ({placeholders})""", user_ids
         ).fetchall()
         stats_map = {r["user_id"]: dict(r) for r in rows}
+        subject_rows = conn.execute(f"""
+            WITH subject_scores AS (
+                SELECT qs.user_id, q.category,
+                       SUM(qs.score_earned) AS subject_score,
+                       MAX(qs.submitted_at) AS score_reached_at
+                FROM quiz_submissions qs
+                JOIN quizzes q ON q.id = qs.quiz_id
+                WHERE qs.score_earned > 0
+                GROUP BY qs.user_id, q.category
+            ), ranked AS (
+                SELECT user_id, category, subject_score, score_reached_at,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY category
+                           ORDER BY subject_score DESC, score_reached_at ASC, user_id ASC
+                       ) AS subject_rank
+                FROM subject_scores
+            )
+            SELECT user_id, category, subject_score, subject_rank
+            FROM ranked
+            WHERE user_id IN ({placeholders}) AND subject_rank <= 3
+            ORDER BY user_id, subject_rank ASC, subject_score DESC, category ASC
+        """, user_ids).fetchall()
+        subject_map: Dict[int, Dict[str, Dict[str, Any]]] = {}
+        for subject_row in subject_rows:
+            subject_map.setdefault(subject_row["user_id"], {})[subject_row["category"]] = dict(subject_row)
 
         for uid in user_ids:
             st = stats_map.get(uid)
             if not st:
                 badges[uid] = None
                 continue
-            if top_uid == uid:
-                badges[uid] = {"type": "rank", "icon": "👑", "label": "주간 1위", "title": "이번 주 퀴즈 1위"}
-            elif st.get("current_streak", 0) >= 3:
-                badges[uid] = {"type": "streak", "icon": "🔥", "label": "꾸준러", "title": f"오늘의 퀴즈 {st['current_streak']}일 연속"}
-            elif st.get("total_score", 0) >= 50:
-                badges[uid] = {"type": "score", "icon": "⚡", "label": f"{st['total_score']}점", "title": f"퀴즈 누적 {st['total_score']}점"}
-            else:
+            selection = st.get("badge_selection", "score")
+            subjects = subject_map.get(uid, {})
+            subject = None
+            if selection.startswith("subject:"):
+                subject = subjects.get(selection.removeprefix("subject:"))
+            if selection == "none":
                 badges[uid] = None
+            elif selection == "streak" and st.get("current_streak", 0) >= 3:
+                badges[uid] = {
+                    "type": "streak", "icon": "🔥", "label": "꾸준러",
+                    "title": f"오늘의 퀴즈 {st['current_streak']}일 연속",
+                }
+            elif selection == "score" or not subject:
+                badges[uid] = None if st["total_score"] <= 0 else {
+                    "type": "score", "icon": "⚡",
+                    "label": f"{st['total_score']}점",
+                    "title": f"퀴즈 누적 {st['total_score']}점",
+                }
+            elif subject:
+                badges[uid] = _subject_quiz_badge(
+                    subject["category"], int(subject["subject_rank"]),
+                    int(subject["subject_score"]),
+                )
+            else:
+                badges[uid] = None if st["total_score"] <= 0 else {
+                    "type": "score", "icon": "⚡", "label": f"{st['total_score']}점",
+                    "title": f"퀴즈 누적 {st['total_score']}점",
+                }
 
     return badges

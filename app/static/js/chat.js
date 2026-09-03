@@ -273,7 +273,9 @@ export function createMessageActions(msg) {
 
   const replyBtn = document.createElement('button');
   replyBtn.type = 'button';
+  replyBtn.className = 'msg-action-reply-btn';
   replyBtn.textContent = '답장 ↩️';
+  replyBtn.setAttribute('aria-label', '답장');
   replyBtn.addEventListener('click', () => {
     const currentKey = `${state.activeRoom.type}:${state.activeRoom.id}`;
     const authorNick = isChat ? msg.nickname : msg.from_nick;
@@ -302,13 +304,16 @@ export function createMessageActions(msg) {
   pinBtn.type = 'button';
   pinBtn.className = 'msg-action-pin-btn';
   pinBtn.textContent = msg.is_pinned ? '고정 해제 📌' : '고정 📌';
+  pinBtn.setAttribute('aria-label', msg.is_pinned ? '메시지 고정 해제' : '메시지 고정');
   pinBtn.addEventListener('click', () => toggleMessagePin(msg));
   actions.appendChild(pinBtn);
 
   if (isOwn) {
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
+    editBtn.className = 'msg-action-edit-btn';
     editBtn.textContent = '수정';
+    editBtn.setAttribute('aria-label', '메시지 수정');
     editBtn.addEventListener('click', () => startInlineMessageEdit(msg));
     actions.appendChild(editBtn);
 
@@ -317,13 +322,17 @@ export function createMessageActions(msg) {
   if (isAdmin && isChat) {
     const hideBtn = document.createElement('button');
     hideBtn.type = 'button';
+    hideBtn.className = 'msg-action-hide-btn';
     hideBtn.textContent = msg.is_hidden ? '숨김 해제 👁️' : '숨김 🙈';
+    hideBtn.setAttribute('aria-label', msg.is_hidden ? '메시지 숨김 해제' : '메시지 숨기기');
     hideBtn.addEventListener('click', () => toggleMessageHidden(msg));
     actions.appendChild(hideBtn);
 
     const moveBtn = document.createElement('button');
     moveBtn.type = 'button';
+    moveBtn.className = 'msg-action-move-btn';
     moveBtn.textContent = '이동 ➡️';
+    moveBtn.setAttribute('aria-label', '메시지 이동');
     moveBtn.addEventListener('click', () => openMoveMessageModal(msg));
     actions.appendChild(moveBtn);
   }
@@ -500,8 +509,39 @@ export function appendMessageNode(msg, previousMsg) {
     ? (msg.nickname === myNick || (state.currentUser && Number(msg.author_id) === Number(state.currentUser.id)))
     : (msg.from_nick === myNick || (state.currentUser && Number(msg.from_user_id) === Number(state.currentUser.id)));
 
+  const senderKey = isChat
+    ? String(msg.author_id || msg.nickname || '')
+    : String(msg.from_user_id || msg.from_nick || '');
+  const createdDate = new Date(msg.created_at || '');
+  const minuteKey = Number.isNaN(createdDate.getTime()) ? '' : String(Math.floor(createdDate.getTime() / 60000));
+  let isGrouped = false;
+  if (!msg.reply && senderKey && minuteKey) {
+    if (previousMsg) {
+      const previousIsChat = previousMsg.msgType === 'chat' || Boolean(previousMsg.channel_id)
+        || Boolean(previousMsg.nickname && !previousMsg.from_nick);
+      const previousSender = previousIsChat
+        ? String(previousMsg.author_id || previousMsg.nickname || '')
+        : String(previousMsg.from_user_id || previousMsg.from_nick || '');
+      const previousDate = new Date(previousMsg.created_at || '');
+      const previousMinute = Number.isNaN(previousDate.getTime()) ? '' : String(Math.floor(previousDate.getTime() / 60000));
+      isGrouped = previousIsChat === isChat && previousSender === senderKey
+        && previousMinute === minuteKey && !previousMsg.reply;
+    } else {
+      const previousRow = messageListEl.querySelector('.msg-row:last-of-type');
+      isGrouped = Boolean(previousRow && previousRow.dataset.messageType === (isChat ? 'chat' : 'dm')
+        && previousRow.dataset.senderKey === senderKey
+        && previousRow.dataset.minuteKey === minuteKey
+        && previousRow.dataset.hasReply !== 'true');
+    }
+  }
+
   const row = document.createElement('article');
   row.className = `msg-row ${isChat ? (isOwn ? 'own' : 'other') : (isOwn ? 'dm-own' : 'dm-recv')}`;
+  row.classList.toggle('grouped', isGrouped);
+  row.dataset.messageType = isChat ? 'chat' : 'dm';
+  row.dataset.senderKey = senderKey;
+  row.dataset.minuteKey = minuteKey;
+  row.dataset.hasReply = msg.reply ? 'true' : 'false';
   if (msg.is_hidden) row.classList.add('hidden-msg');
   if (msg.is_pinned) row.classList.add('pinned');
   if (msg.message_id) row.dataset.messageId = msg.message_id;

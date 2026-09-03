@@ -6,6 +6,9 @@ __pycache__/
 .venv/
 venv/
 env/
+.env
+.env.*
+!.env.example
 
 # SQLite DB (서버가 자동 생성)
 data/
@@ -20,3 +23,7 @@ bamboochat_dev.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Local reverse-proxy runtime and bundled executables
+traefik/
+*.exe

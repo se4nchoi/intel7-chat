@@ -93,6 +93,52 @@ def test_community_quiz_review_and_daily_publish_flow():
     assert duplicate.status_code == 400
 
 
+def test_admin_approval_uses_current_editor_payload_and_tracks_source():
+    student, _ = session_client("atomic_author", role="student")
+    admin, _ = session_client("atomic_reviewer", role="admin")
+    payload = {
+        "title": "검토 전 문제집", "expertise": "PLC", "quizzes": [{
+            "difficulty": "easy", "question_type": "short_answer",
+            "question": "수정 전 질문", "options": None, "correct_answers": ["전"],
+            "hint": "", "explanation": "", "source_ref": "",
+        }],
+    }
+    created = student.post("/api/quiz/my-sets", json=payload, headers=ORIGIN)
+    set_id = created.json()["id"]
+    student.post(f"/api/quiz/my-sets/{set_id}/submit", headers=ORIGIN)
+
+    edited_quizzes = [{**payload["quizzes"][0], "question": "관리자가 수정한 질문", "correct_answers": ["후"]}]
+    reviewed = admin.post(
+        f"/api/admin/quiz/submissions/{set_id}/review", headers=ORIGIN,
+        json={"approve": True, "note": "수정 후 승인", "title": payload["title"],
+              "expertise": payload["expertise"], "quizzes": edited_quizzes},
+    )
+    assert reviewed.status_code == 200
+    quiz_id = reviewed.json()["created_ids"][0]
+    with database.get_connection() as conn:
+        row = conn.execute(
+            "SELECT question, source_submission_set_id FROM quizzes WHERE id=?", (quiz_id,)
+        ).fetchone()
+    assert row["question"] == "관리자가 수정한 질문"
+    assert row["source_submission_set_id"] == set_id
+
+
+@pytest.mark.parametrize("options,answers", [
+    (["A", "A", "C", "D"], ["1"]),
+    (["A", "", "C", "D"], ["1"]),
+    (["A", "B", "C", "D"], ["outside option"]),
+])
+def test_community_multiple_choice_validation(options, answers):
+    student, _ = session_client(f"invalid_mc_{abs(hash(str(options) + str(answers)))}", role="student")
+    response = student.post("/api/quiz/my-sets", headers=ORIGIN, json={
+        "title": "검증할 문제집", "expertise": "PLC", "quizzes": [{
+            "difficulty": "easy", "question_type": "multiple_choice", "question": "검증 질문",
+            "options": options, "correct_answers": answers, "hint": "", "explanation": "", "source_ref": "",
+        }],
+    })
+    assert response.status_code == 400
+
+
 def test_community_quiz_import_rejects_uncontrolled_fields():
     student, _ = session_client("invalid_author", role="student")
     bad = student.post("/api/quiz/my-sets", json={
@@ -114,7 +160,46 @@ def test_owner_can_correct_draft_expertise_but_not_approved_set():
     assert edited.status_code == 200
     assert edited.json()["expertise"] == "전자"
     assert edited.json()["status"] == "draft"
-    assert student.patch(f"/api/quiz/my-sets/{set_id}", json={**payload, "expertise": "임의 분야"}, headers=ORIGIN).status_code == 400
+    custom = student.patch(
+        f"/api/quiz/my-sets/{set_id}",
+        json={**payload, "expertise": "  협동로봇   비전  "}, headers=ORIGIN,
+    )
+    assert custom.status_code == 200
+    assert custom.json()["expertise"] == "협동로봇 비전"
+
+
+@pytest.mark.parametrize("expertise", ["", "A", "x" * 41, "로봇\x00제어"])
+def test_custom_quiz_expertise_validation(expertise):
+    student, _ = session_client(f"custom_topic_{abs(hash(expertise))}", role="student")
+    response = student.post("/api/quiz/my-sets", headers=ORIGIN, json={
+        "title": "새 주제 문제집", "expertise": expertise, "quizzes": [{
+            "difficulty": "easy", "question_type": "short_answer", "question": "테스트 질문",
+            "options": None, "correct_answers": ["정답"], "hint": "", "explanation": "", "source_ref": "",
+        }],
+    })
+    assert response.status_code == 400
+
+
+def test_quiz_set_validation_reports_db_similarity_and_answer_bias():
+    student, _ = session_client("quiz_validator", role="student")
+    with database.get_connection() as conn:
+        existing = conn.execute("SELECT question FROM quizzes WHERE is_active=1 LIMIT 1").fetchone()["question"]
+    quizzes = []
+    for index in range(4):
+        quizzes.append({
+            "difficulty": "easy", "question_type": "multiple_choice",
+            "question": existing if index == 0 else f"편향 검사 문항 {index}",
+            "options": ["A", "B", "C", "D"], "correct_answers": ["1", "A"],
+            "hint": "", "explanation": "", "source_ref": "테스트",
+        })
+    response = student.post("/api/quiz/my-sets/validate", headers=ORIGIN, json={
+        "expertise": "새로운 로봇 분야", "quizzes": quizzes,
+    })
+    assert response.status_code == 200
+    result = response.json()
+    assert result["similarities"][0]["similarity"] == 100.0
+    assert result["answer_bias"]["warning"] is True
+    assert result["answer_bias"]["counts"]["1"] == 4
 
 
 def test_quiz_today_and_submit_flow(monkeypatch):

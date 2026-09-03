@@ -128,6 +128,32 @@ export function updateNickBadge() {
   myNickBadge.title = `${name} (@${state.currentUser.username}) — 닉네임 변경`;
 }
 
+async function loadNicknameTitles() {
+  const select = document.getElementById('nickname-title-select');
+  const help = document.getElementById('nickname-title-help');
+  if (!select) return;
+  select.disabled = true;
+  try {
+    const response = await fetch('/api/auth/quiz-titles', { cache: 'no-store' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || '칭호를 불러오지 못했습니다.');
+    select.replaceChildren(new Option('누적 점수 표시', 'score'), new Option('표시 안 함', 'none'));
+    (data.titles || []).forEach(title => {
+      const detail = title.rank ? `${title.category} ${title.rank}위` : title.title;
+      select.add(new Option(`${title.icon} ${title.label} · ${detail}`, title.selection));
+    });
+    select.value = data.selected || 'score';
+    if (!select.value) select.value = 'score';
+    if (help) help.textContent = data.titles?.length
+      ? '획득한 순위 또는 연속 학습 칭호 중 하나를 선택할 수 있습니다.'
+      : '과목별 점수 3위 또는 3일 연속 학습을 달성하면 칭호가 열립니다.';
+  } catch (error) {
+    if (help) help.textContent = error.message;
+  } finally {
+    select.disabled = false;
+  }
+}
+
 export function openNicknameModal() {
   hideNicknameHint();
   const nicknameCurrentName = document.getElementById('nickname-current-name');
@@ -138,9 +164,10 @@ export function openNicknameModal() {
 
   if (nicknameCurrentName) nicknameCurrentName.textContent = state.currentUser?.display_name || state.currentUser?.username;
   if (nicknameUsernameLabel) nicknameUsernameLabel.textContent = `@${state.currentUser?.username}`;
-  if (nicknameInput) nicknameInput.value = '';
+  if (nicknameInput) nicknameInput.value = state.currentUser?.display_name || state.currentUser?.username || '';
   if (nicknameError) nicknameError.textContent = '';
   if (nicknameModal) nicknameModal.classList.remove('hidden');
+  loadNicknameTitles();
   setTimeout(() => nicknameInput?.focus(), 50);
 }
 
@@ -158,6 +185,7 @@ export async function submitNickname(event) {
   const nicknameInput = document.getElementById('nickname-input');
   const nicknameError = document.getElementById('nickname-error');
   const nicknameSubmit = document.getElementById('nickname-submit');
+  const titleSelect = document.getElementById('nickname-title-select');
 
   const name = nicknameInput?.value.trim();
   if (!name) {
@@ -174,10 +202,21 @@ export async function submitNickname(event) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || '닉네임을 변경하지 못했습니다.');
+    const titleResponse = await fetch('/api/auth/quiz-title', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selection: titleSelect?.value || 'score' }),
+    });
+    const titleData = await titleResponse.json().catch(() => ({}));
+    if (!titleResponse.ok) throw new Error(titleData.detail || '칭호를 변경하지 못했습니다.');
     if (state.currentUser) state.currentUser.display_name = data.display_name || name;
+    if (state.currentUser) {
+      state.currentUser.quiz_badge = titleData.quiz_badge || null;
+      state.currentUser.quiz_badge_selection = titleData.selected || 'score';
+    }
     updateNickBadge();
     closeNicknameModal();
-    showToast('닉네임을 변경했습니다.', 'success');
+    showToast('닉네임과 칭호를 저장했습니다.', 'success');
   } catch (error) {
     if (nicknameError) nicknameError.textContent = error.message || '닉네임을 변경하지 못했습니다.';
   } finally {

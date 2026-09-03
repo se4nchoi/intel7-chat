@@ -43,11 +43,12 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     update_direct_message_content,
     normalize_dm_conversation_id, pin_message, unpin_message, get_pinned_messages, get_pinned_message_ids,
     get_daily_quizzes, submit_quiz_answer, get_user_quiz_stats, get_quiz_leaderboard,
-    get_user_quiz_badge, get_user_quiz_badges_map, create_quiz, create_quiz_batch,
+    get_user_quiz_badge, get_user_quiz_badges_map, get_user_quiz_title_options,
+    update_quiz_badge_selection, create_quiz, create_quiz_batch,
     get_all_quizzes_admin, delete_quiz, update_quiz, save_quiz_source_document, get_quiz_source_documents,
     toggle_quiz_bookmark, get_quiz_review_list, retry_quiz_answer,
     get_quiz_categories_summary, get_quiz_sidebar_counts, search_conversation_history,
-    QUIZ_EXPERTISES, normalize_quiz_import, create_user_quiz_set, update_user_quiz_set, list_user_quiz_sets, submit_user_quiz_set,
+    QUIZ_EXPERTISES, normalize_quiz_import, analyze_quiz_set, create_user_quiz_set, update_user_quiz_set, list_user_quiz_sets, submit_user_quiz_set,
     review_user_quiz_set, update_pending_user_quiz_set, assign_daily_quizzes)
 from app.quiz_ai import generate_quizzes_with_gemini, check_quiz_answer, normalize_quiz_answer
 
@@ -458,6 +459,36 @@ async def change_display_name(request: Request):
         raise HTTPException(404, "사용자를 찾을 수 없습니다.")
     await broadcast_users()
     return public_user(updated)
+
+@app.get("/api/auth/quiz-titles")
+async def get_my_quiz_titles(request: Request):
+    user = request_user(request)
+    titles = get_user_quiz_title_options(user["id"])
+    selected = user.get("quiz_badge_selection") or "score"
+    if selected not in {"score", "none"} and selected not in {item["selection"] for item in titles}:
+        selected = "score"
+    return {
+        "selected": selected,
+        "titles": titles,
+    }
+
+@app.post("/api/auth/quiz-title")
+async def change_quiz_title(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    user = request_user(request)
+    data = await read_json_body(request)
+    try:
+        updated = update_quiz_badge_selection(user["id"], str(data.get("selection", "score")))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not updated:
+        raise HTTPException(404, "사용자를 찾을 수 없습니다.")
+    await broadcast_users()
+    return {
+        "selected": updated.get("quiz_badge_selection") or "score",
+        "quiz_badge": get_user_quiz_badge(user["id"]),
+    }
 
 @app.get("/api/channels")
 async def api_channels_list(request: Request, include_archived: bool = False):
@@ -1373,6 +1404,17 @@ async def api_my_quiz_sets(request: Request):
     user=request_user(request)
     return {"sets": list_user_quiz_sets(owner_user_id=user["id"])}
 
+@app.post("/api/quiz/my-sets/validate")
+async def api_validate_my_quiz_set(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    request_user(request)
+    data = await read_json_body(request)
+    try:
+        return analyze_quiz_set(data.get("quizzes"), str(data.get("expertise", "")))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
 @app.post("/api/quiz/my-sets", status_code=201)
 async def api_create_my_quiz_set(request: Request):
     if not request_origin_is_allowed(request): raise HTTPException(403, "허용되지 않은 요청입니다.")
@@ -1410,7 +1452,11 @@ async def api_admin_review_quiz_submission(set_id: int, request: Request):
     admin=require_admin(request); data=await read_json_body(request); approve=data.get("approve"); note=str(data.get("note", ""))
     if not isinstance(approve, bool):
         raise HTTPException(400, "approve는 true 또는 false여야 합니다.")
-    try: created_ids=review_user_quiz_set(set_id, admin["id"], approve, note)
+    try:
+        created_ids=review_user_quiz_set(
+            set_id, admin["id"], approve, note,
+            items=data.get("quizzes"), expertise=data.get("expertise"), title=data.get("title"),
+        )
     except ValueError as exc: raise HTTPException(409, str(exc)) from exc
     return {"status":"approved" if approve else "rejected", "created_ids":created_ids}
 
@@ -1705,6 +1751,10 @@ async def websocket_endpoint(ws: WebSocket):
                 for target_ws in set(targets+sender_targets):
                     try: await target_ws.send_text(encoded)
                     except Exception: pass
+                await send_to_user_id(target_user["id"], {
+                    "type": "read_state_updated",
+                    "unread_counts": get_user_unread_counts(target_user["id"]),
+                })
     except WebSocketDisconnect:
         pass
     finally:

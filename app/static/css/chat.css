@@ -154,7 +154,13 @@
   color: var(--dm-accent);
   margin-bottom: 2px;
   padding: 1px 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
 }
+.dm-label .message-author-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-time { flex-shrink: 0; white-space: nowrap; font-weight: 500; color: var(--text-muted); }
 
 .msg-row.dm-own  .msg-bubble {
   background: var(--dm-sent);
@@ -190,6 +196,8 @@
 
 /* Exact-minute message grouping */
 .msg-row.grouped { margin-top: -4px; }
+.msg-row.grouped > .msg-meta,
+.msg-row.grouped > .dm-label { display: none; }
 .msg-row.grouped.own .msg-bubble,
 .msg-row.grouped.dm-own .msg-bubble { border-top-right-radius: 4px; }
 .msg-row.grouped.other .msg-bubble,
@@ -534,6 +542,9 @@
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   padding: 9px max(16px, env(safe-area-inset-right)) max(9px, var(--safe-bottom)) max(16px, env(safe-area-inset-left));
+  position: relative;
+  z-index: 35;
+  pointer-events: auto;
 }
 .markdown-toolbar {
   display: flex;
@@ -628,6 +639,7 @@
   -webkit-tap-highlight-color: transparent;
   flex: 1;
   font-family: inherit;
+  font-size: 16px;
   line-height: 1.45;
   max-height: 156px;
   min-height: 38px;
@@ -635,6 +647,7 @@
   overflow-y: auto;
   padding: 8px 5px;
   resize: none;
+  touch-action: auto;
 }
 #msg-input::placeholder { color: #8991aa; opacity: 1; }
 #msg-input::selection { color: #fff; background: rgba(79, 142, 247, .48); }
@@ -1071,6 +1084,20 @@ kbd {
 .message-search-file:hover { color: var(--text); border-color: #59627a; background: #2a3044; }
 
 @media (max-width: 640px) {
+  .chat-area-header { padding: 0 10px; }
+  .chat-area-desc,
+  .retention-note,
+  .dm-time,
+  .msg-meta .quiz-user-badge,
+  .attachment-info small { display: none; }
+  .message-list { padding: 12px 10px; }
+  .composer { padding-left: 8px; padding-right: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .composer-hint,
+  .char-count { display: none; }
+  .composer-footer { display: none; }
+  .msg-row,
+  .msg-row.dm-own,
+  .msg-row.dm-recv { max-width: 88%; }
   .message-search-form { grid-template-columns: 1fr auto; }
   .message-search-form input { grid-column: 1 / -1; }
 }

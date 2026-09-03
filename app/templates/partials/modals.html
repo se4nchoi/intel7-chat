@@ -9,11 +9,15 @@
       <button id="help-close" class="admin-close" type="button" aria-label="도움말 닫기">×</button>
     </div>
     <div class="help-list">
-      <section><h3>@멘션</h3><p>전체 채팅에서 <code>@</code>를 입력하고 사용자 목록을 방향키와 Enter로 선택하세요. 해당 사용자에게 메시지 강조와 토스트 알림이 표시됩니다.</p></section>
-      <section><h3>DM</h3><p>접속자 목록의 DM 버튼을 누르면 해당 사용자와 비공개 대화를 시작합니다.</p><p class="help-warning">⚠️ DM 메시지는 서버에 영구 저장되며 발신자와 수신자만 볼 수 있습니다. 저장 데이터는 암호화되지 않으므로 민감정보는 공유하지 마세요.</p></section>
-      <section><h3>답장과 Markdown</h3><p>입력창 위 툴바로 굵게, 기울임, 취소선, 코드, 링크, 인용문과 목록을 적용할 수 있습니다. <code>Ctrl+B</code>, <code>Ctrl+I</code>, <code>Ctrl+Shift+X</code>, <code>Ctrl+K</code> 단축키도 지원합니다. 줄 시작에서 <code>-</code>와 Space를 누르면 bullet로 바뀌고, <code>Shift+Enter</code>로 다음 항목을 이어갑니다.</p></section>
-      <section><h3>파일</h3><p>입력창 왼쪽의 ＋ 버튼이나 드래그 앤 드롭으로 파일을 첨부할 수 있습니다.</p></section>
-      <section><h3>명령어</h3><p><code>!도움</code>을 입력하면 이 도움말을 다시 열 수 있습니다.</p></section>
+      <details open><summary>💬 채널, DM과 읽지 않은 메시지</summary><p>사이드바에서 채널을 선택하거나 사용자 이름을 눌러 1:1 DM을 시작합니다. 숫자 배지는 아직 읽지 않은 메시지 수이며, 대화를 열면 읽음 처리됩니다.</p><p class="help-warning">DM은 당사자만 볼 수 있지만 서버에 영구 저장되고 저장 데이터는 암호화되지 않습니다. 민감정보는 공유하지 마세요.</p></details>
+      <details><summary>↩️ 답장, 반응, 고정과 수정</summary><p>메시지 옆 동작 버튼으로 답장, 이모지 반응, 고정을 사용할 수 있습니다. 내 메시지는 수정할 수 있습니다. 관리자는 공개 채널 메시지를 숨기거나 다른 채널로 이동할 수 있습니다.</p></details>
+      <details><summary>🔔 알림과 음소거</summary><p>상단 🔔는 전체 소리·데스크톱 알림·방해 금지를 설정합니다. 대화 제목 옆 🔔는 현재 채널 또는 DM만 음소거합니다. 음소거해도 읽지 않은 메시지 배지는 유지됩니다.</p></details>
+      <details><summary>🔎 검색과 이전 기록</summary><p>대화 제목 옆 🔎에서 현재 대화 또는 접근 가능한 전체 기록을 검색합니다. 상단의 “이전 메시지 더 불러오기”로 오래된 기록을 추가로 불러옵니다.</p></details>
+      <details><summary>@ 멘션과 메시지 작성</summary><p><code>@</code> 뒤에 사용자를 선택하면 해당 사용자에게 중요 알림이 전달됩니다. <code>Enter</code>로 전송하고 <code>Shift+Enter</code>로 줄을 바꿉니다. 입력창 위 도구로 Markdown 서식을 적용할 수 있습니다.</p></details>
+      <details><summary>📎 파일</summary><p>＋ 버튼으로 파일을 첨부합니다. 데스크톱에서는 파일을 대화 영역에 끌어 놓을 수도 있습니다. 메시지를 보내기 전에 업로드가 끝나야 합니다.</p></details>
+      <details><summary>🧠 퀴즈, 점수와 복습</summary><p>첫 제출만 난이도별 점수와 랭킹에 반영됩니다. 제출 후 정답과 해설이 공개되므로 재풀이는 점수를 주지 않고 숙달 상태만 기록합니다. STREAK은 그날 배정된 오늘의 퀴즈를 풀 때 유지됩니다.</p><p class="help-warning">공정한 랭킹을 위해 첫 제출 전에는 AI나 외부 정답을 붙여넣지 마세요. 문제 오류는 관리자에게 알려 주세요.</p></details>
+      <details><summary>🧩 문제집 만들기</summary><p>생성된 JSON을 저장하면 초안이 됩니다. 검토 요청 후 관리자가 수정·승인하면 공용 문제 풀에 추가됩니다. AI가 만든 문항도 정답, 보기, 해설과 출처를 직접 확인한 뒤 제출해야 합니다.</p></details>
+      <details><summary>⌨️ 다시 도움받기</summary><p>상단의 <strong>?</strong> 또는 채팅에 <code>!도움</code>을 입력해 이 안내를 다시 열 수 있습니다.</p></details>
     </div>
   </div>
 </div>
@@ -81,10 +85,16 @@
         <small id="nickname-username-label" class="nickname-username"></small>
       </div>
       <form id="nickname-form">
-        <label class="sr-only" for="nickname-input">새 닉네임</label>
+        <label for="nickname-input">닉네임</label>
         <input id="nickname-input" type="text" maxlength="30" placeholder="새 닉네임 (1~30자)" autocomplete="off" required />
+        <label for="nickname-title-select">닉네임 옆 칭호</label>
+        <select id="nickname-title-select">
+          <option value="score">누적 점수 표시</option>
+          <option value="none">표시 안 함</option>
+        </select>
+        <small id="nickname-title-help" class="nickname-username">과목별 점수 3위 안에 들면 선택할 수 있습니다.</small>
         <p id="nickname-error" class="error-msg" aria-live="polite"></p>
-        <button id="nickname-submit" type="submit">변경</button>
+        <button id="nickname-submit" type="submit">저장</button>
       </form>
     </div>
   </div>

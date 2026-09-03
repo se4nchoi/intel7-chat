@@ -33,9 +33,9 @@ body {
   color: var(--text);
   font-size: 14px;
   line-height: 1.5;
-  height: 100vh;
-  height: 100dvh;
+  height: var(--app-height, 100dvh);
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .hidden { display: none !important; }
@@ -163,6 +163,27 @@ button[type="submit"]:disabled {
 .toast.success { border-left: 4px solid var(--success); }
 .toast.error { border-left: 4px solid var(--error); }
 .toast.warning { border-left: 4px solid var(--danger); }
+
+/* Rich message notifications use structured children instead of plain text. */
+.message-toast {
+  width: min(360px, calc(100vw - 32px));
+  padding: 12px 14px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.message-toast.dm { border-left: 4px solid var(--dm-accent); }
+.message-toast.mention { border-left: 4px solid #f59e0b; }
+.toast-header-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.toast-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.toast-badge { flex-shrink: 0; padding: 2px 6px; border-radius: 999px; background: var(--surface3); color: var(--text-muted); font-size: .67rem; }
+.toast-body { margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
+.toast-hint { margin-top: 6px; color: var(--text-dim); font-size: .7rem; font-weight: 400; }
+
+@media (max-width: 560px) {
+  .toast-region { right: 16px; bottom: 16px; left: 16px; }
+  .message-toast { width: 100%; }
+  .toast-hint { display: none; }
+}
 
 @keyframes slideUp {
   from { transform: translateY(12px); }
