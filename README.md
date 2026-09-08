@@ -1,5 +1,31 @@
 # BambooChat
 
+A classroom LAN chat and learning application with persistent conversations, file sharing, daily quizzes, and multiplayer chess.
+
+BambooChat brings classroom communication and practice activities into one browser interface. Students can use channels and direct messages, share course files, and revisit conversation history. Administrators manage accounts, registration, moderation, and quiz content.
+
+**Stack:** Python · FastAPI · WebSockets · SQLite · Jinja2 · JavaScript · uv
+
+[Architecture](#architecture) · [한국어 사용 및 운영 안내](#한국어-사용-및-운영-안내) · [Tests](#테스트와-의존성-감사)
+
+## Architecture
+
+The repository includes the browser interface, Python backend, persistent storage, and setup and administration tools.
+
+| Component | Implementation |
+| --- | --- |
+| Browser client | [Jinja2 templates](app/templates/index.html) and [JavaScript modules](app/static/js/) for chat, channels, DMs, notifications, quizzes, and chess. |
+| API and live updates | [FastAPI application](app/main.py) serving HTTP endpoints and WebSocket connections at `/ws` and `/ws/chess`. |
+| Accounts and storage | [Authentication helpers](app/auth.py), [SQLite queries and migrations](app/database.py), and uploaded files stored in the configured data directory. |
+| Learning and games | [Gemini quiz generation and answer normalization](app/quiz_ai.py), plus a [server-side chess manager](app/chess_manager.py) using `python-chess`. |
+| Setup and checks | [First-run configuration and server launcher](run.py), a [development launcher](dev_run.py), and [pytest tests](tests/). |
+
+Implementation highlights include persisted read state across sessions, account-based attachment permissions, administrator controls, schema migrations, and server-validated chess moves and clocks. These are useful entry points for reviewing the full-stack work in this repository.
+
+**Deployment scope:** The app is designed for a trusted classroom LAN and uses HTTP. It does not encrypt browser-to-server traffic and should not be exposed through public internet port forwarding. Gemini quiz generation requires an API key and internet access; it sends the selected source PDF or text to the Gemini API.
+
+## 한국어 사용 및 운영 안내
+
 교실 내부 LAN에서 사용하는 실시간 채팅 및 학습 플랫폼입니다. 계정 로그인, 영구 채팅 기록, 멘션과 답장 알림, Markdown, 1:1 DM, 파일 업로드, AI 기반 데일리 퀴즈(CBT), 실시간 멀티플레이 체스 대국 및 관리자 계정 관리를 지원합니다.
 
 > 이 서비스는 HTTP로 동작합니다. 같은 LAN의 트래픽은 암호화되지 않으므로 다른 곳에서 쓰는 비밀번호, 개인정보, 민감한 자료를 입력하거나 공유하지 마세요. 공개 인터넷 포트 포워딩에는 사용하지 않습니다.
@@ -306,7 +332,7 @@ WSL2보다 Windows PowerShell에서 직접 실행하는 편이 LAN 접근 설정
 
 ## 테스트와 의존성 감사
 
-총 214개의 단위/통합 테스트가 포함되어 있으며, 채널, DM, 권한, 보안 헤더, CBT 퀴즈 API, 실시간 체스 엔진 및 읽음 상태 동기화를 검증합니다.
+단위/통합 테스트가 포함되어 있으며, 채널, DM, 권한, 보안 헤더, CBT 퀴즈 API, 실시간 체스 엔진 및 읽음 상태 동기화를 검증합니다.
 
 ```powershell
 uv run --locked python -m pytest -q
@@ -336,5 +362,5 @@ dev_run.py              # 개발용 자동 리로드 서버 실행기
 run.py                  # 최초 설정 마법사 및 상용 서버 엔트리포인트
 pyproject.toml          # 패키지 의존성 정의 (FastAPI, python-chess 등)
 uv.lock                 # 패키지 버전 고정 락파일
-tests/                  # 214개 테스트 모듈 (channels, chess, quiz, security 등)
+tests/                  # 테스트 모듈 (channels, chess, quiz, security 등)
 ```
