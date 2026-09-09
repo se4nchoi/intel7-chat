@@ -2664,21 +2664,19 @@ def get_user_quiz_stats(user_id: int) -> Dict[str, Any]:
 
 def record_chess_result(white_id: int, black_id: int, winner: Optional[str]) -> None:
     """Persist one completed chess result for both players."""
-    columns = {"w": ("wins", "losses"), "b": ("losses", "wins")}
     now = utc_now()
     with get_connection() as conn:
         for user_id in (white_id, black_id):
             conn.execute("INSERT OR IGNORE INTO chess_player_stats (user_id) VALUES (?)", (user_id,))
-        if winner in columns:
-            white_column, black_column = columns[winner]
+        if winner in ("w", "b"):
             winner_id = white_id if winner == "w" else black_id
             loser_id = black_id if winner == "w" else white_id
             conn.execute(
-                f"UPDATE chess_player_stats SET {white_column} = {white_column} + 1, last_win_at = ? WHERE user_id = ?",
+                "UPDATE chess_player_stats SET wins = wins + 1, last_win_at = ? WHERE user_id = ?",
                 (now, winner_id),
             )
             conn.execute(
-                f"UPDATE chess_player_stats SET {black_column} = {black_column} + 1 WHERE user_id = ?",
+                "UPDATE chess_player_stats SET losses = losses + 1 WHERE user_id = ?",
                 (loser_id,),
             )
         else:

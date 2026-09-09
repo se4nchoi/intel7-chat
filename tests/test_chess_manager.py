@@ -213,3 +213,34 @@ def test_send_room_chat():
     assert chats[2]["message"]["name"] == "Spectator"
     assert chats[2]["message"]["role"] == "관전자"
     assert chats[2]["message"]["text"] == "Hello from Spectator"
+
+
+def test_resign_records_winner_and_loser_correctly():
+    manager = ChessManager()
+    white_ws = FakeWebSocket()
+    black_ws = FakeWebSocket()
+
+    white = {"id": 8801, "username": "w_user", "display_name": "WhitePlayer"}
+    black = {"id": 8802, "username": "b_user", "display_name": "BlackPlayer"}
+
+    async def run_resignation():
+        manager.register_client(white_ws, white)
+        room = await manager.create_room(white_ws, white, "ResignRoom", 10)
+        room_id = room["id"]
+        manager.register_client(black_ws, black)
+        await manager.join_room(black_ws, black, room_id, "black")
+        await manager.start_game(white, room_id)
+
+        # White resigns -> Black should WIN, White should LOSE!
+        await manager.resign(white, room_id)
+        return room
+
+    room = asyncio.run(run_resignation())
+    assert room["result"]["winner"] == "b"
+    assert room["result"]["type"] == "resign"
+
+    # Check room in-memory stats
+    assert room["stats"]["8801"]["losses"] == 1
+    assert room["stats"]["8801"]["wins"] == 0
+    assert room["stats"]["8802"]["wins"] == 1
+    assert room["stats"]["8802"]["losses"] == 0

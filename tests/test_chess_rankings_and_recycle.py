@@ -101,6 +101,38 @@ def test_chess_rankings_and_tie_breaking(temp_db):
     assert u1_fresh["quiz_badge_selection"] == "score"
 
 
+def test_record_chess_result_black_wins_and_white_wins(temp_db):
+    white_player = database.create_user("white_user", "hash")
+    black_player = database.create_user("black_user", "hash")
+
+    # Black wins (e.g. White resigned or Black checkmated)
+    database.record_chess_result(white_player["id"], black_player["id"], "b")
+
+    rankings = database.get_chess_rankings()
+    assert len(rankings) == 1
+    assert rankings[0]["user_id"] == black_player["id"]
+    assert rankings[0]["wins"] == 1
+    assert rankings[0]["losses"] == 0
+
+    with database.get_connection() as conn:
+        white_stats = conn.execute("SELECT wins, losses FROM chess_player_stats WHERE user_id = ?", (white_player["id"],)).fetchone()
+        black_stats = conn.execute("SELECT wins, losses FROM chess_player_stats WHERE user_id = ?", (black_player["id"],)).fetchone()
+        assert white_stats["wins"] == 0
+        assert white_stats["losses"] == 1
+        assert black_stats["wins"] == 1
+        assert black_stats["losses"] == 0
+
+    # White wins next game
+    database.record_chess_result(white_player["id"], black_player["id"], "w")
+    with database.get_connection() as conn:
+        white_stats = conn.execute("SELECT wins, losses FROM chess_player_stats WHERE user_id = ?", (white_player["id"],)).fetchone()
+        black_stats = conn.execute("SELECT wins, losses FROM chess_player_stats WHERE user_id = ?", (black_player["id"],)).fetchone()
+        assert white_stats["wins"] == 1
+        assert white_stats["losses"] == 1
+        assert black_stats["wins"] == 1
+        assert black_stats["losses"] == 1
+
+
 def test_ensure_daily_quiz_set_recycling(temp_db):
     # Only 3 sample quizzes created
     database.create_quiz_batch([

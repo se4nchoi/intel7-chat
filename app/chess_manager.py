@@ -249,17 +249,18 @@ class ChessManager:
 
         player = self._player_for(user)
 
-        if room["white"] and room["white"]["id"] == user["id"]:
+        user_id = str(user["id"])
+        if room.get("white") and str(room["white"]["id"]) == user_id:
             if role_pref == "spectator" and not room["game_started"]:
                 room["white"] = None
-                room["spectators"] = [s for s in room["spectators"] if s["id"] != user["id"]]
+                room["spectators"] = [s for s in room["spectators"] if str(s["id"]) != user_id]
                 room["spectators"].append(player)
             else:
                 room["white"] = player
-        elif room["black"] and room["black"]["id"] == user["id"]:
+        elif room.get("black") and str(room["black"]["id"]) == user_id:
             if role_pref == "spectator" and not room["game_started"]:
                 room["black"] = None
-                room["spectators"] = [s for s in room["spectators"] if s["id"] != user["id"]]
+                room["spectators"] = [s for s in room["spectators"] if str(s["id"]) != user_id]
                 room["spectators"].append(player)
             else:
                 room["black"] = player
@@ -532,10 +533,10 @@ class ChessManager:
         if not room or not room["game_started"] or room["result"]:
             return
 
-        user_id = user["id"]
+        user_id = str(user["id"])
         expected_color = room["active_turn"]
-        is_player = ((expected_color == "w" and room["white"] and room["white"]["id"] == user_id) or
-                     (expected_color == "b" and room["black"] and room["black"]["id"] == user_id))
+        is_player = ((expected_color == "w" and room.get("white") and str(room["white"]["id"]) == user_id) or
+                     (expected_color == "b" and room.get("black") and str(room["black"]["id"]) == user_id))
         if not is_player:
             return
 
@@ -585,10 +586,10 @@ class ChessManager:
         if not room or not room["game_started"] or room["result"]:
             return
 
-        user_id = user["id"]
-        if room["white"] and room["white"]["id"] == user_id:
+        user_id = str(user["id"])
+        if room.get("white") and str(room["white"]["id"]) == user_id:
             room["draw_offer"] = "w"
-        elif room["black"] and room["black"]["id"] == user_id:
+        elif room.get("black") and str(room["black"]["id"]) == user_id:
             room["draw_offer"] = "b"
         else:
             return
@@ -600,9 +601,9 @@ class ChessManager:
         if not room or not room["draw_offer"]:
             return
 
-        user_id = user["id"]
-        is_white = room["white"] and room["white"]["id"] == user_id
-        is_black = room["black"] and room["black"]["id"] == user_id
+        user_id = str(user["id"])
+        is_white = bool(room.get("white") and str(room["white"]["id"]) == user_id)
+        is_black = bool(room.get("black") and str(room["black"]["id"]) == user_id)
 
         if room["draw_offer"] == "w" and not is_black:
             return
@@ -622,10 +623,10 @@ class ChessManager:
         if not room or not room["game_started"] or room["result"]:
             return
 
-        user_id = user["id"]
-        if room["white"] and room["white"]["id"] == user_id:
+        user_id = str(user["id"])
+        if room.get("white") and str(room["white"]["id"]) == user_id:
             self._complete_game(room, {"type": "resign", "winner": "b", "desc": f"{room['white']['name']} 기권 (흑 승리)"})
-        elif room["black"] and room["black"]["id"] == user_id:
+        elif room.get("black") and str(room["black"]["id"]) == user_id:
             self._complete_game(room, {"type": "resign", "winner": "w", "desc": f"{room['black']['name']} 기권 (백 승리)"})
         else:
             return
