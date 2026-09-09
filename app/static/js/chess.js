@@ -24,6 +24,8 @@ let roomCreationPending = false;
 let pendingRoomRequest = null;
 let lastTurnNoticeKey = null;
 let serverClockOffset = 0;
+let queuedPreMove = null; // { from, to, promotion }
+let previousTurnForSound = null;
 const SAVED_CHESS_ROOM_KEY = 'bamboochat_chess_room_id';
 
 const FILES = ['a','b','c','d','e','f','g','h'];
@@ -44,6 +46,28 @@ const PIECE_GUIDES = {
 
 const $ = id => document.getElementById(id);
 const sameUser = (left, right) => left != null && right != null && String(left) === String(right);
+
+function playTurnChime() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(659.25, now); // E5
+    osc.frequency.exponentialRampToValueAtTime(880, now + 0.1); // A5
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.35);
+  } catch (e) {
+    // Autoplay policy or audio failure; ignore gracefully
+  }
+}
 
 export function initChessListeners() {
   const chessBtn = $('chess-btn');
@@ -140,6 +164,69 @@ export function initChessListeners() {
       jumpToHistory((currentRoom?.move_history?.length || 1) - 1);
     });
   }
+
+  const inspectLiveBtn = $('chInspectLiveBtn');
+  if (inspectLiveBtn) {
+    inspectLiveBtn.addEventListener('click', () => {
+      jumpToHistory((currentRoom?.move_history?.length || 1) - 1);
+    });
+  }
+
+  const histFirstBtn = $('chHistFirstBtn');
+  const histPrevBtn = $('chHistPrevBtn');
+  const histNextBtn = $('chHistNextBtn');
+  const histLastBtn = $('chHistLastBtn');
+
+  if (histFirstBtn) histFirstBtn.addEventListener('click', () => jumpToHistory(0));
+  if (histPrevBtn) histPrevBtn.addEventListener('click', () => {
+    jumpToHistory(Math.max(0, currentHistoryIndex - 1));
+  });
+  if (histNextBtn) histNextBtn.addEventListener('click', () => {
+    const maxIdx = (currentRoom?.move_history?.length || 1) - 1;
+    jumpToHistory(Math.min(maxIdx, currentHistoryIndex + 1));
+  });
+  if (histLastBtn) histLastBtn.addEventListener('click', () => {
+    jumpToHistory((currentRoom?.move_history?.length || 1) - 1);
+  });
+
+  const premoveCancelBtn = $('chPremoveCancelBtn');
+  if (premoveCancelBtn) {
+    premoveCancelBtn.addEventListener('click', () => {
+      clearPreMove();
+      showToast('선입력(Premove)이 취소되었습니다.', 'info');
+    });
+  }
+
+  const boardFrame = $('chBoardFrame');
+  if (boardFrame) {
+    boardFrame.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (queuedPreMove) {
+        clearPreMove();
+        showToast('선입력(Premove)이 취소되었습니다.', 'info');
+      } else if (selectedSquare) {
+        clearSelection();
+      }
+    });
+  }
+
+  // Keyboard navigation for moves (ArrowLeft, ArrowRight)
+  document.addEventListener('keydown', (e) => {
+    const modal = $('chess-modal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    const chatInput = $('chChatInput');
+    if (document.activeElement === chatInput) return;
+    if (!currentRoom || !currentRoom.move_history || currentRoom.move_history.length <= 1) return;
+
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      jumpToHistory(Math.max(0, currentHistoryIndex - 1));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      const maxIdx = currentRoom.move_history.length - 1;
+      jumpToHistory(Math.min(maxIdx, currentHistoryIndex + 1));
+    }
+  });
 }
 
 export function openChessModal() {
@@ -462,6 +549,8 @@ window.chessJoin = function(roomId, mode) {
 function syncRoomState(room) {
   if (!room) return;
   const isNewRoom = !currentRoom || currentRoom.id !== room.id;
+  const prevLatestIdx = (currentRoom?.move_history?.length || 1) - 1;
+  const prevHistoryLen = currentRoom?.move_history?.length || 0;
   currentRoom = room;
   sessionStorage.setItem(SAVED_CHESS_ROOM_KEY, room.id);
   showGameScreen();
@@ -478,12 +567,67 @@ function syncRoomState(room) {
   $('chGameRoomTitle').textContent = `${room.title} (${room.time_minutes}분)`;
 
   const history = room.move_history || [{ fen: room.fen, move: 'Start' }];
-  currentHistoryIndex = history.length - 1;
+  const wasAtLatest = isNewRoom || currentHistoryIndex >= prevLatestIdx;
+
+  if (wasAtLatest) {
+    currentHistoryIndex = history.length - 1;
+  } else if (history.length > prevHistoryLen && !isNewRoom) {
+    // New move arrived while inspecting history
+    showToast('대국에 새로운 수가 착수되었습니다. [실시간으로 복귀]로 이동할 수 있습니다.', 'info');
+  }
 
   if (!localGame && window.Chess) localGame = new window.Chess();
   if (localGame) localGame.load(room.fen);
   if (!viewGame && window.Chess) viewGame = new window.Chess();
-  if (viewGame) viewGame.load(room.fen);
+  if (viewGame) {
+    if (wasAtLatest) {
+      viewGame.load(room.fen);
+    } else {
+      const inspectItem = history[currentHistoryIndex];
+      if (inspectItem?.fen) viewGame.load(inspectItem.fen);
+    }
+  }
+
+  const currentTurn = localGame ? localGame.turn() : null;
+  const isMyTurn = room.game_started && !room.result && myColor && currentTurn === myColor;
+
+  if (isMyTurn && previousTurnForSound !== myColor) {
+    playTurnChime();
+    showToast('🔔 내 차례입니다! (말을 움직이세요)', 'info');
+  }
+  previousTurnForSound = currentTurn;
+
+  // Process Pre-move if it became my turn
+  if (isMyTurn && queuedPreMove) {
+    const pm = queuedPreMove;
+    queuedPreMove = null;
+    updatePremoveUI();
+
+    if (currentHistoryIndex !== history.length - 1) {
+      currentHistoryIndex = history.length - 1;
+      if (viewGame) viewGame.load(room.fen);
+    }
+
+    const testMove = localGame.move({ from: pm.from, to: pm.to, promotion: pm.promotion || 'q' });
+    if (testMove) {
+      showToast(`⚡ 선입력 착수 완료: ${testMove.san}`, 'info');
+      const nextHistory = [...(history || []), { fen: localGame.fen(), move: testMove.san, from: pm.from, to: pm.to }];
+      const result = checkGameResult(localGame, nextHistory);
+      sendWs({
+        action: 'move',
+        room_id: room.id,
+        from: pm.from,
+        to: pm.to,
+        promotion: testMove.promotion || null,
+        san: testMove.san,
+        fen: localGame.fen(),
+        flags: testMove.flags,
+        result: result
+      });
+    } else {
+      showToast(`선입력된 수(${pm.from} → ${pm.to})를 둘 수 없어 취소되었습니다.`, 'warning');
+    }
+  }
 
   if (room.game_started && !localGameStartedHandled && !room.result) {
     localGameStartedHandled = true;
@@ -625,23 +769,109 @@ function renderBoard() {
       if (isCapture) cell.classList.add('legal-capture');
       else cell.classList.add('legal');
     }
+    if (queuedPreMove) {
+      if (sq === queuedPreMove.from) cell.classList.add('premove-from');
+      if (sq === queuedPreMove.to) cell.classList.add('premove-to');
+    }
+
     if (isLatest) {
       if (sq === currentRoom.last_from) cell.classList.add('last-from');
       if (sq === currentRoom.last_to) cell.classList.add('last-to');
+    } else {
+      const histItem = currentRoom.move_history?.[activeIdx];
+      if (histItem) {
+        if (histItem.from && sq === histItem.from) cell.classList.add('last-from');
+        if (histItem.to && sq === histItem.to) cell.classList.add('last-to');
+      }
     }
+  }
+
+  const isMyTurn = currentRoom.game_started && !currentRoom.result && myColor && localGame.turn() === myColor;
+  const boardFrame = $('chBoardFrame');
+  if (boardFrame) {
+    boardFrame.classList.toggle('my-turn-active', isMyTurn);
+  }
+}
+
+function setPreMove(from, to) {
+  if (!myColor || !localGame) return;
+  const piece = localGame.get(from);
+  if (!piece || piece.color !== myColor) return;
+
+  const isPawn = piece.type === 'p';
+  const isPromotionRow = (piece.color === 'w' && to[1] === '8') || (piece.color === 'b' && to[1] === '1');
+  queuedPreMove = {
+    from,
+    to,
+    promotion: isPawn && isPromotionRow ? 'q' : null
+  };
+  updatePremoveUI();
+  renderBoard();
+  showToast(`⚡ 선입력 예약: ${from} → ${to}`, 'info');
+}
+
+function clearPreMove() {
+  if (!queuedPreMove) return;
+  queuedPreMove = null;
+  updatePremoveUI();
+  renderBoard();
+}
+
+function updatePremoveUI() {
+  const bar = $('chPremoveBar');
+  const label = $('chPremoveLabel');
+  if (!bar) return;
+  if (queuedPreMove) {
+    bar.classList.remove('hidden');
+    if (label) label.textContent = `${queuedPreMove.from} → ${queuedPreMove.to}`;
+  } else {
+    bar.classList.add('hidden');
   }
 }
 
 function onSquareClick(e) {
   if (!myColor || !currentRoom?.game_started || currentRoom?.result || !currentRoom?.white || !currentRoom?.black) return;
-  if (localGame.turn() !== myColor) return;
-
-  if (currentHistoryIndex !== (currentRoom.move_history?.length || 1) - 1) {
-    jumpToHistory((currentRoom.move_history?.length || 1) - 1);
-  }
 
   const vr = +e.currentTarget.dataset.vr, vc = +e.currentTarget.dataset.vc;
   const sq = squareAt(vr, vc);
+
+  const latestIdx = (currentRoom.move_history?.length || 1) - 1;
+  if (currentHistoryIndex !== latestIdx) {
+    jumpToHistory(latestIdx);
+    return;
+  }
+
+  // OPPONENT'S TURN: PRE-MOVE LOGIC
+  if (localGame.turn() !== myColor) {
+    if (selectedSquare) {
+      if (sq === selectedSquare) {
+        clearSelection();
+        return;
+      }
+      const p = localGame.get(sq);
+      if (p && p.color === myColor) {
+        selectSquare(sq);
+        return;
+      }
+      setPreMove(selectedSquare, sq);
+      clearSelection();
+      return;
+    } else {
+      const p = localGame.get(sq);
+      if (p && p.color === myColor) {
+        selectSquare(sq);
+      } else if (queuedPreMove) {
+        clearPreMove();
+        showToast('선입력(Premove)이 취소되었습니다.', 'info');
+      }
+      return;
+    }
+  }
+
+  // MY TURN: NORMAL MOVE
+  if (queuedPreMove) {
+    clearPreMove();
+  }
 
   if (selectedSquare) {
     if (sq === selectedSquare) { clearSelection(); return; }
@@ -769,8 +999,9 @@ function executeMove(from, to, promotionPiece) {
   if (!moveObj) return;
 
   clearSelection();
+  clearPreMove();
 
-  const nextHistory = [...(currentRoom?.move_history || []), { fen: localGame.fen(), move: moveObj.san }];
+  const nextHistory = [...(currentRoom?.move_history || []), { fen: localGame.fen(), move: moveObj.san, from, to }];
   const result = checkGameResult(localGame, nextHistory);
 
   sendWs({
@@ -857,9 +1088,15 @@ function updateStatusUI() {
     el.innerHTML = `<span class="badge over">🏁 게임 종료: ${escapeHtml(currentRoom.result.desc)}</span>`;
     $('chStartGameBtn').disabled = true;
   } else {
-    el.innerHTML = '<span class="badge turn-w">🎮 대국 진행 중</span>';
-    const turnName = localGame.turn() === 'w' ? '백' : '흑';
-    el.innerHTML += `<span class="badge turn-${localGame.turn()}">${turnName} 차례</span>`;
+    const isMyTurn = myColor && localGame.turn() === myColor;
+    if (isMyTurn) {
+      el.innerHTML = '<span class="badge my-turn-badge">⚡ 내 차례입니다! 착수해주세요</span>';
+    } else if (myColor) {
+      el.innerHTML = '<span class="badge turn-wait">⏳ 상대방 생각 중... (선입력 가능)</span>';
+    } else {
+      const turnName = localGame.turn() === 'w' ? '백' : '흑';
+      el.innerHTML = `<span class="badge turn-${localGame.turn()}">${turnName} 차례</span>`;
+    }
     if (localGame.in_check()) el.innerHTML += '<span class="badge check">체크!</span>';
     $('chStartGameBtn').disabled = true;
   }
@@ -926,10 +1163,13 @@ function renderHistoryUI() {
   const history = currentRoom?.move_history || [];
   if (history.length <= 1) {
     listEl.innerHTML = '<span class="placeholder-line">대국이 시작되면 기보가 기록됩니다.</span>';
+    updateReturnLiveBtn();
     return;
   }
 
   listEl.innerHTML = '';
+  let activeItemEl = null;
+
   for (let i = 1; i < history.length; i += 2) {
     const moveNum = Math.ceil(i / 2);
     const whiteMove = history[i];
@@ -944,33 +1184,42 @@ function renderHistoryUI() {
     unitDiv.appendChild(numSpan);
 
     const wSpan = document.createElement('span');
-    wSpan.className = 'history-item' + (i === currentHistoryIndex ? ' active' : '');
+    const isWActive = i === currentHistoryIndex;
+    wSpan.className = 'history-item' + (isWActive ? ' active' : '');
     wSpan.textContent = whiteMove.move;
     const wIdx = i;
-    wSpan.addEventListener('mouseenter', () => previewHistory(wIdx));
-    wSpan.addEventListener('mouseleave', () => clearPreviewHistory());
-    wSpan.addEventListener('click', () => {
+    wSpan.addEventListener('click', (ev) => {
+      ev.stopPropagation();
       previewHistoryIndex = null;
       jumpToHistory(wIdx);
     });
     unitDiv.appendChild(wSpan);
+    if (isWActive) activeItemEl = wSpan;
 
     if (blackMove) {
       const bSpan = document.createElement('span');
-      bSpan.className = 'history-item' + ((i + 1) === currentHistoryIndex ? ' active' : '');
+      const isBActive = (i + 1) === currentHistoryIndex;
+      bSpan.className = 'history-item' + (isBActive ? ' active' : '');
       bSpan.textContent = blackMove.move;
       const bIdx = i + 1;
-      bSpan.addEventListener('mouseenter', () => previewHistory(bIdx));
-      bSpan.addEventListener('mouseleave', () => clearPreviewHistory());
-      bSpan.addEventListener('click', () => {
+      bSpan.addEventListener('click', (ev) => {
+        ev.stopPropagation();
         previewHistoryIndex = null;
         jumpToHistory(bIdx);
       });
       unitDiv.appendChild(bSpan);
+      if (isBActive) activeItemEl = bSpan;
     }
     listEl.appendChild(unitDiv);
   }
-  listEl.scrollTop = listEl.scrollHeight;
+
+  const isLatest = currentHistoryIndex === history.length - 1;
+  if (isLatest) {
+    listEl.scrollTop = listEl.scrollHeight;
+  } else if (activeItemEl) {
+    activeItemEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
   updateReturnLiveBtn();
 }
 
@@ -993,9 +1242,10 @@ function clearPreviewHistory() {
 
 function jumpToHistory(index) {
   previewHistoryIndex = null;
+  if (!currentRoom?.move_history || index < 0 || index >= currentRoom.move_history.length) return;
   currentHistoryIndex = index;
   const targetFen = currentRoom.move_history[index].fen;
-  viewGame.load(targetFen);
+  if (viewGame && targetFen) viewGame.load(targetFen);
   renderBoard();
   renderHistoryUI();
   updateReturnLiveBtn();
@@ -1003,9 +1253,21 @@ function jumpToHistory(index) {
 
 function updateReturnLiveBtn() {
   const returnLiveBtn = $('chReturnLiveBtn');
-  if (!returnLiveBtn) return;
-  const isLatest = currentHistoryIndex === (currentRoom?.move_history?.length || 1) - 1;
-  returnLiveBtn.classList.toggle('hidden', isLatest);
+  const inspectBanner = $('chInspectBanner');
+  const inspectLabel = $('chInspectMoveLabel');
+  const latestIdx = (currentRoom?.move_history?.length || 1) - 1;
+  const isLatest = currentHistoryIndex === latestIdx;
+
+  if (returnLiveBtn) returnLiveBtn.classList.toggle('hidden', isLatest);
+  if (inspectBanner) {
+    inspectBanner.classList.toggle('hidden', isLatest);
+    if (!isLatest && inspectLabel) {
+      const curItem = currentRoom?.move_history?.[currentHistoryIndex];
+      const moveNo = Math.ceil(currentHistoryIndex / 2);
+      const colorText = currentHistoryIndex % 2 === 1 ? '백' : '흑';
+      inspectLabel.textContent = currentHistoryIndex === 0 ? '시작 위치' : `${moveNo}수 ${colorText} ${curItem?.move || ''}`;
+    }
+  }
 }
 
 function realtimeClockTick() {
@@ -1033,11 +1295,14 @@ function realtimeClockTick() {
   const whiteRemain = whiteDeadline !== null ? Math.max(0, whiteDeadline - now) : Math.max(0, Number(clk.w_remain) || 0);
   const blackRemain = blackDeadline !== null ? Math.max(0, blackDeadline - now) : Math.max(0, Number(clk.b_remain) || 0);
   const currentTurn = localGame.turn();
+  const isMyTurn = currentRoom.game_started && !currentRoom.result && myColor && currentTurn === myColor;
 
   $('chClockWhite').textContent = formatClock(whiteRemain);
   $('chClockBlack').textContent = formatClock(blackRemain);
   $('chClockChipWhite').classList.toggle('active', currentTurn === 'w');
+  $('chClockChipWhite').classList.toggle('my-turn', currentTurn === 'w' && isMyTurn);
   $('chClockChipBlack').classList.toggle('active', currentTurn === 'b');
+  $('chClockChipBlack').classList.toggle('my-turn', currentTurn === 'b' && isMyTurn);
 
   if ((whiteRemain <= 0 || blackRemain <= 0) && !currentRoom.result) {
     sendWs({

@@ -244,3 +244,32 @@ def test_resign_records_winner_and_loser_correctly():
     assert room["stats"]["8801"]["wins"] == 0
     assert room["stats"]["8802"]["wins"] == 1
     assert room["stats"]["8802"]["losses"] == 0
+
+
+def test_make_move_stores_from_and_to_in_history():
+    manager = ChessManager()
+    white_ws = FakeWebSocket()
+    black_ws = FakeWebSocket()
+
+    white = {"id": 9901, "username": "w99", "display_name": "White99"}
+    black = {"id": 9902, "username": "b99", "display_name": "Black99"}
+
+    async def run():
+        manager.register_client(white_ws, white)
+        room = await manager.create_room(white_ws, white, "HistoryRoom", 10)
+        room_id = room["id"]
+        manager.register_client(black_ws, black)
+        await manager.join_room(black_ws, black, room_id, "black")
+        await manager.start_game(white, room_id)
+
+        # White plays e2 -> e4
+        await manager.make_move(white, room_id, {"from": "e2", "to": "e4"})
+        return room
+
+    room = asyncio.run(run())
+    history = room["move_history"]
+    assert len(history) == 2
+    assert history[0]["move"] == "Start"
+    assert history[1]["move"] == "e4"
+    assert history[1]["from"] == "e2"
+    assert history[1]["to"] == "e4"

@@ -49,7 +49,10 @@ class ChessManager:
                         winner = "b" if expected_color == "w" else "w"
                         self._complete_game(room, {"type": "timeout", "winner": winner,
                                                    "desc": f"{'백' if winner == 'w' else '흑'} 시간승"})
-                    await self.broadcast_room(room_id)
+                        await self.broadcast_room(room_id)
+                    elif now - room["clock"].get("last_broadcast_at", 0) >= 5.0:
+                        room["clock"]["last_broadcast_at"] = now
+                        await self.broadcast_room(room_id)
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -519,7 +522,12 @@ class ChessManager:
         room["last_to"] = data.get("to")
         room["last_flags"] = data.get("flags")
 
-        room["move_history"].append({"fen": room["fen"], "move": san})
+        room["move_history"].append({
+            "fen": room["fen"],
+            "move": san,
+            "from": data.get("from"),
+            "to": data.get("to")
+        })
 
         result = self._get_game_result(board, room["move_history"])
         if result:

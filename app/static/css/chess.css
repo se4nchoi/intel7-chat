@@ -372,6 +372,65 @@
   color: var(--ch-gold-soft);
 }
 
+.clock-chip.my-turn {
+  border-color: #2ed573 !important;
+  background: rgba(46, 213, 115, 0.12) !important;
+  box-shadow: 0 0 12px rgba(46, 213, 115, 0.45) inset, 0 0 8px rgba(46, 213, 115, 0.3) !important;
+  animation: turn-chip-pulse 1.8s infinite ease-in-out;
+}
+
+.clock-chip.my-turn .time {
+  color: #2ed573 !important;
+}
+
+@keyframes turn-chip-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(46, 213, 115, 0.35) inset; }
+  50% { box-shadow: 0 0 16px rgba(46, 213, 115, 0.7) inset, 0 0 10px rgba(46, 213, 115, 0.4); }
+}
+
+.chess-inspect-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(204, 159, 69, 0.18);
+  border: 1px solid var(--ch-gold);
+  border-radius: 7px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--ch-gold-soft);
+}
+
+.chess-inspect-banner.hidden { display: none !important; }
+
+.chess-premove-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 210, 255, 0.15);
+  border: 1px solid #00d2ff;
+  border-radius: 7px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #70edff;
+}
+
+.chess-premove-bar.hidden { display: none !important; }
+
+.history-nav-controls {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.history-nav-controls button {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 11.5px;
+}
+
 /* Board Structure */
 .board-outer {
   background: linear-gradient(160deg, var(--ch-panel-2), var(--ch-panel));
@@ -403,6 +462,23 @@
   overflow: hidden;
   box-shadow: 0 8px 25px rgba(0,0,0,0.5);
   position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.board-frame.my-turn-active {
+  border-color: #2ed573;
+  animation: my-turn-pulse 1.8s infinite ease-in-out;
+}
+
+@keyframes my-turn-pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(46, 213, 115, 0.45), 0 8px 25px rgba(0,0,0,0.5);
+    border-color: #2ed573;
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(46, 213, 115, 0.85), 0 8px 30px rgba(46, 213, 115, 0.4);
+    border-color: #7bed9f;
+  }
 }
 
 .board-freeze-overlay {
@@ -476,6 +552,11 @@
   box-shadow: inset 0 0 0 3px rgba(204,159,69,0.55);
 }
 
+.sq.premove-from, .sq.premove-to {
+  box-shadow: inset 0 0 0 3.5px #00d2ff !important;
+  background-color: rgba(0, 210, 255, 0.22) !important;
+}
+
 .coords {
   display: flex;
   justify-content: space-between;
@@ -544,6 +625,23 @@
 .badge.turn-b { background: #241a0e; color: var(--ch-gold-soft); border: 1px solid var(--ch-gold); }
 .badge.check  { background: var(--ch-danger); color: #fff; }
 .badge.over   { background: var(--ch-good); color: #0e1a10; font-size: 13px; }
+.badge.my-turn-badge {
+  background: #2ed573;
+  color: #0c2b16;
+  font-weight: 800;
+  box-shadow: 0 0 12px rgba(46, 213, 115, 0.5);
+  animation: turn-badge-bounce 1.6s infinite ease-in-out;
+}
+.badge.turn-wait {
+  background: rgba(204, 159, 69, 0.15);
+  color: var(--ch-gold-soft);
+  border: 1px solid rgba(204, 159, 69, 0.35);
+}
+
+@keyframes turn-badge-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
 
 /* Move History */
 .history-list {
