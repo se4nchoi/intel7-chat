@@ -810,6 +810,16 @@ async def api_get_read_states(request: Request):
     unread_counts = get_user_unread_counts(user["id"])
     return {"states": states, "unread_counts": unread_counts}
 
+def resolve_dm_partner(conv_id: str) -> Optional[Dict[str, Any]]:
+    """Resolve a DM partner from either username (including purely numeric student IDs) or user ID."""
+    clean = str(conv_id).strip().removeprefix("dm:")
+    partner = get_user_by_username(clean)
+    if partner:
+        return partner
+    if clean.isdigit():
+        return get_user_by_id(int(clean))
+    return None
+
 @app.post("/api/read-states/ack")
 async def api_ack_read_state(request: Request):
     if not request_origin_is_allowed(request):
@@ -827,12 +837,10 @@ async def api_ack_read_state(request: Request):
         raise HTTPException(400, "유효한 메시지 ID가 아닙니다.")
     
     if conv_type == "dm":
-        if not conv_id.isdigit():
-            partner = get_user_by_username(conv_id)
-            if partner:
-                conv_id = str(partner["id"])
-            else:
-                raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
+        partner = resolve_dm_partner(conv_id)
+        if not partner:
+            raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
+        conv_id = str(partner["id"])
     
     updated = update_user_read_state(user["id"], conv_type, conv_id, last_read_id)
     unread_counts = get_user_unread_counts(user["id"])
@@ -857,12 +865,10 @@ async def api_set_muted(request: Request):
         raise HTTPException(400, "유효한 대화 정보가 필요합니다.")
     
     if conv_type == "dm":
-        if not conv_id.isdigit():
-            partner = get_user_by_username(conv_id)
-            if partner:
-                conv_id = str(partner["id"])
-            else:
-                raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
+        partner = resolve_dm_partner(conv_id)
+        if not partner:
+            raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
+        conv_id = str(partner["id"])
     
     updated = set_conversation_muted(user["id"], conv_type, conv_id, muted)
     payload = {
@@ -888,10 +894,7 @@ async def api_get_pins(conv_type: str, conv_id: str, request: Request):
             raise HTTPException(404, "채널을 찾을 수 없습니다.")
         pins = get_pinned_messages("channel", str(cid), current_user_id=user["id"])
     else:
-        if conv_id.isdigit():
-            partner = get_user_by_id(int(conv_id))
-        else:
-            partner = get_user_by_username(conv_id)
+        partner = resolve_dm_partner(conv_id)
         if not partner or partner["id"] == user["id"]:
             raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
         norm_id = normalize_dm_conversation_id(user["id"], partner["id"])
@@ -941,10 +944,7 @@ async def api_pin_message(conv_type: str, conv_id: str, message_id: int, request
         })
         return pin
     else:
-        if conv_id.isdigit():
-            partner = get_user_by_id(int(conv_id))
-        else:
-            partner = get_user_by_username(conv_id)
+        partner = resolve_dm_partner(conv_id)
         if not partner or partner["id"] == user["id"]:
             raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
         norm_id = normalize_dm_conversation_id(user["id"], partner["id"])
@@ -1006,10 +1006,7 @@ async def api_unpin_message(conv_type: str, conv_id: str, message_id: int, reque
         })
         return {"success": unpinned}
     else:
-        if conv_id.isdigit():
-            partner = get_user_by_id(int(conv_id))
-        else:
-            partner = get_user_by_username(conv_id)
+        partner = resolve_dm_partner(conv_id)
         if not partner or partner["id"] == user["id"]:
             raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
         norm_id = normalize_dm_conversation_id(user["id"], partner["id"])
@@ -1085,7 +1082,7 @@ async def public_message_history(request: Request, before_id: Optional[int] = No
 async def direct_message_history(partner_username: str, request: Request,
                                  before_id: Optional[int] = None):
     user = request_user(request)
-    partner = get_user_by_username(partner_username)
+    partner = resolve_dm_partner(partner_username)
     if not partner or partner["id"] == user["id"]:
         raise HTTPException(404, "대화 상대를 찾을 수 없습니다.")
     messages = get_direct_messages_between(

@@ -430,6 +430,40 @@ def _migrate_v21(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM chess_player_stats")
     conn.execute("UPDATE users SET quiz_badge_selection = 'score' WHERE quiz_badge_selection = 'chess'")
 
+def _migrate_v22(conn: sqlite3.Connection) -> None:
+    """Normalize user_conversation_state DM conversation_ids to user IDs."""
+    rows = conn.execute("SELECT id, username FROM users").fetchall()
+    for row in rows:
+        uid = str(row[0])
+        uname = str(row[1])
+        if uname != uid:
+            uname_rows = conn.execute(
+                "SELECT user_id, last_read_message_id, muted, updated_at FROM user_conversation_state WHERE conversation_type='dm' AND conversation_id=?",
+                (uname,)
+            ).fetchall()
+            for urow in uname_rows:
+                target_user_id = urow[0]
+                uname_last_read = urow[1]
+                uname_muted = urow[2]
+                uname_updated = urow[3]
+                existing = conn.execute(
+                    "SELECT last_read_message_id, muted FROM user_conversation_state WHERE user_id=? AND conversation_type='dm' AND conversation_id=?",
+                    (target_user_id, uid)
+                ).fetchone()
+                if existing:
+                    new_last_read = max(existing[0], uname_last_read)
+                    new_muted = existing[1] or uname_muted
+                    conn.execute(
+                        "UPDATE user_conversation_state SET last_read_message_id=?, muted=?, updated_at=? WHERE user_id=? AND conversation_type='dm' AND conversation_id=?",
+                        (new_last_read, new_muted, uname_updated, target_user_id, uid)
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO user_conversation_state (user_id, conversation_type, conversation_id, last_read_message_id, muted, updated_at) VALUES (?, 'dm', ?, ?, ?, ?)",
+                        (target_user_id, uid, uname_last_read, uname_muted, uname_updated)
+                    )
+            conn.execute("DELETE FROM user_conversation_state WHERE conversation_type='dm' AND conversation_id=?", (uname,))
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -452,6 +486,7 @@ _MIGRATIONS = [
     _migrate_v19,
     _migrate_v20,
     _migrate_v21,
+    _migrate_v22,
 ]
 
 

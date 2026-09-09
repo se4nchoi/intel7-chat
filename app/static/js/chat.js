@@ -576,6 +576,13 @@ export function appendMessageNode(msg, previousMsg) {
       pinBadge.textContent = '📌 고정됨';
       meta.appendChild(pinBadge);
     }
+    if (msg.is_hidden) {
+      const hiddenBadge = document.createElement('span');
+      hiddenBadge.className = 'hidden-indicator-badge';
+      hiddenBadge.textContent = '🙈 관리자 숨김';
+      hiddenBadge.title = '관리자에 의해 숨김 처리된 메시지입니다.';
+      meta.appendChild(hiddenBadge);
+    }
     row.appendChild(meta);
   } else {
     const label = document.createElement('div');
@@ -599,6 +606,13 @@ export function appendMessageNode(msg, previousMsg) {
       pinBadge.className = 'pinned-indicator-badge';
       pinBadge.textContent = '📌 고정됨';
       label.appendChild(pinBadge);
+    }
+    if (msg.is_hidden) {
+      const hiddenBadge = document.createElement('span');
+      hiddenBadge.className = 'hidden-indicator-badge';
+      hiddenBadge.textContent = '🙈 관리자 숨김';
+      hiddenBadge.title = '관리자에 의해 숨김 처리된 메시지입니다.';
+      label.appendChild(hiddenBadge);
     }
     row.appendChild(label);
   }
@@ -985,7 +999,28 @@ export function updateMessageHiddenInDOM(hiddenMsg, isHidden) {
   if (!hiddenMsg?.message_id) return;
   const row = document.querySelector(`.msg-row[data-message-id="${hiddenMsg.message_id}"]`);
   if (!row) return;
-  row.classList.toggle('hidden-msg', Boolean(isHidden ?? hiddenMsg.is_hidden));
+  const hidden = Boolean(isHidden ?? hiddenMsg.is_hidden);
+  row.classList.toggle('hidden-msg', hidden);
+
+  const meta = row.querySelector('.msg-meta') || row.querySelector('.dm-label');
+  let badge = meta?.querySelector('.hidden-indicator-badge');
+  if (hidden) {
+    if (!badge && meta) {
+      badge = document.createElement('span');
+      badge.className = 'hidden-indicator-badge';
+      badge.textContent = '🙈 관리자 숨김';
+      badge.title = '관리자에 의해 숨김 처리된 메시지입니다.';
+      meta.appendChild(badge);
+    }
+  } else if (badge) {
+    badge.remove();
+  }
+
+  const hideBtn = row.querySelector('.msg-action-hide-btn');
+  if (hideBtn) {
+    hideBtn.textContent = hidden ? '숨김 해제 👁️' : '숨김 🙈';
+    hideBtn.setAttribute('aria-label', hidden ? '메시지 숨김 해제' : '메시지 숨기기');
+  }
 }
 
 export function removeMessageFromDOM(messageId) {

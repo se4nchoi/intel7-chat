@@ -1000,6 +1000,35 @@ kbd {
   margin-left: 6px;
 }
 
+.hidden-indicator-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.msg-row.hidden-msg {
+  opacity: 0.55;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.msg-row.hidden-msg:hover {
+  opacity: 0.9;
+}
+
+.msg-row.hidden-msg .msg-bubble {
+  border: 1px dashed rgba(239, 68, 68, 0.45) !important;
+  background: rgba(239, 68, 68, 0.04) !important;
+}
+
 .msg-row.highlight-flash .msg-bubble {
   animation: highlightFlash 2s cubic-bezier(0.16, 1, 0.3, 1);
 }
