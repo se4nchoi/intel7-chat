@@ -313,6 +313,22 @@
               <button class="lb-period-btn" data-period="all" type="button">명예의 전당 🏛️</button>
               <button class="lb-period-btn" data-period="streak" type="button">꾸준 🔥</button>
             </div>
+            <div class="cbt-subject-lb-wrap">
+              <label for="cbt-subject-lb-select" class="cbt-subject-lb-label">주제별 랭킹:</label>
+              <select id="cbt-subject-lb-select" class="cbt-subject-lb-select">
+                <option value="">전체 종합 순위</option>
+                <option value="PLC">⚡ PLC</option>
+                <option value="전기">🔌 전기</option>
+                <option value="전자">🔧 전자</option>
+                <option value="자동화설비">🏭 자동화설비</option>
+                <option value="전기기능사">🧰 전기기능사</option>
+                <option value="전기기사">📐 전기기사</option>
+                <option value="디지털공학">⚙️ 디지털공학</option>
+                <option value="공압/유압">💨 공압/유압</option>
+                <option value="로봇 Python">🤖 로봇 Python</option>
+                <option value="상식">🌏 상식</option>
+              </select>
+            </div>
           </div>
 
           <div id="leaderboard-podium" class="cbt-podium-row"></div>
@@ -322,9 +338,9 @@
                 <tr>
                   <th style="width: 60px;">순위</th>
                   <th>사용자</th>
-                  <th>점수</th>
-                  <th>정답수</th>
-                  <th>STREAK</th>
+                  <th id="th-lb-score">점수</th>
+                  <th id="th-lb-correct">정답수</th>
+                  <th id="th-lb-streak">STREAK</th>
                 </tr>
               </thead>
               <tbody id="leaderboard-tbody"></tbody>

@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    BambooChat Chess Modal & Board Theme (Wood & Gold Classic)
    ============================================================ */
 #chess-modal {
@@ -44,9 +44,11 @@
     radial-gradient(circle at 80% 100%, rgba(36,64,47,0.25), transparent 45%),
     var(--ch-bg);
   color: var(--ch-ivory);
-  width: 100%;
-  max-width: 1100px;
+  width: 1080px;
+  max-width: 96vw;
+  height: 840px;
   max-height: 92vh;
+  min-height: 600px;
   border-radius: 14px;
   border: 1px solid rgba(204,159,69,0.3);
   box-shadow: 0 20px 60px rgba(0,0,0,0.7);
@@ -111,6 +113,8 @@
   padding: 18px 20px;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
+  scrollbar-gutter: stable;
 }
 
 /* Card */
@@ -218,6 +222,8 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
+  min-height: 380px;
+  align-content: start;
 }
 
 .chess-room-card {
@@ -290,6 +296,7 @@
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 12px;
+  min-height: 38px;
 }
 
 .chess-game-topbar > .ch-row:first-child {
@@ -325,6 +332,7 @@
   display: flex;
   gap: 10px;
   margin-bottom: 10px;
+  height: 48px;
 }
 
 .clock-chip {
@@ -337,6 +345,7 @@
   justify-content: space-between;
   align-items: center;
   font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
 }
 
 .clock-chip .label {
@@ -483,6 +492,8 @@
   background: var(--ch-bg-2);
   border: 1px solid rgba(204, 159, 69, 0.3);
   transition: all 0.2s ease;
+  min-height: 64px;
+  box-sizing: border-box;
 }
 
 .guide-card-box.game-over-mode {
@@ -515,9 +526,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 18px;
-  margin-bottom: 16px;
+  margin: 6px 0 12px;
   flex-wrap: wrap;
+  min-height: 30px;
 }
 
 .badge {
@@ -536,7 +547,9 @@
 
 /* Move History */
 .history-list {
-  max-height: 150px;
+  height: 125px;
+  min-height: 125px;
+  max-height: 125px;
   overflow-y: auto;
   background: var(--ch-bg-2);
   padding: 8px 10px;
@@ -549,6 +562,7 @@
   flex-wrap: wrap;
   align-content: flex-start;
   gap: 4px 6px;
+  box-sizing: border-box;
 }
 
 .history-row-unit {
@@ -755,4 +769,248 @@
 .placeholder-line {
   font-size: 12px;
   color: var(--ch-muted);
+}
+
+/* Lobby Tabs & Rankings */
+.chess-lobby-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.chess-lobby-tabs {
+  display: inline-flex;
+  background: var(--ch-bg-2);
+  border: 1px solid rgba(204,159,69,0.3);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 4px;
+}
+
+.chess-tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--ch-muted);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chess-tab-btn:hover {
+  color: var(--ch-ivory);
+}
+
+.chess-tab-btn.active {
+  background: rgba(204,159,69,0.22);
+  color: var(--ch-gold-soft);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.chess-rankings-panel {
+  padding: 10px 0 20px;
+}
+
+.chess-rank-scoring-note {
+  background: rgba(204,159,69,0.08);
+  border: 1px solid rgba(204,159,69,0.2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--ch-muted);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+
+.chess-podium-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+  min-height: 125px;
+}
+
+.chess-podium-card {
+  background: var(--ch-panel);
+  border: 1px solid rgba(204,159,69,0.25);
+  border-radius: 10px;
+  padding: 14px 10px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.chess-podium-card.rank-1 {
+  border-color: rgba(234, 179, 8, 0.6);
+  background: linear-gradient(180deg, rgba(204,159,69,0.18), var(--ch-panel));
+  box-shadow: 0 4px 16px rgba(204,159,69,0.12);
+}
+
+.chess-podium-card .podium-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.chess-podium-card .podium-name {
+  font-size: 13.5px;
+  color: var(--ch-ivory);
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.chess-podium-card .podium-score {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ch-gold-soft);
+}
+
+.chess-podium-card .podium-sub {
+  font-size: 11px;
+  color: var(--ch-muted);
+}
+
+.chess-table-box {
+  background: var(--ch-panel);
+  border: 1px solid rgba(204,159,69,0.2);
+  border-radius: 10px;
+  overflow: hidden;
+  min-height: 280px;
+}
+
+.chess-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.chess-table th {
+  background: var(--ch-bg-2);
+  padding: 10px 14px;
+  color: var(--ch-gold-soft);
+  font-size: 12px;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(204,159,69,0.2);
+}
+
+.chess-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  color: var(--ch-ivory);
+}
+
+.chess-table tr:hover td {
+  background: rgba(204,159,69,0.06);
+}
+
+.chess-table tr.my-row td {
+  background: rgba(204,159,69,0.12);
+  font-weight: 700;
+}
+
+/* In-Room Real-Time Chat */
+.chess-chat-card {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+  box-sizing: border-box;
+}
+
+.chess-chat-messages {
+  height: 120px;
+  overflow-y: auto;
+  background: var(--ch-bg-2);
+  border-radius: 6px;
+  padding: 8px;
+  border: 1px solid rgba(204,159,69,0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.chess-chat-notice {
+  font-size: 11px;
+  color: var(--ch-muted);
+  text-align: center;
+  padding: 4px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.chess-chat-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.chess-chat-msg-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.chess-chat-role {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.chess-chat-role.white {
+  background: var(--ch-gold-soft);
+  color: #1a130d;
+}
+
+.chess-chat-role.black {
+  background: #150f0a;
+  color: var(--ch-gold-soft);
+  border: 1px solid var(--ch-gold);
+}
+
+.chess-chat-role.spec {
+  background: rgba(255,255,255,0.1);
+  color: var(--ch-muted);
+}
+
+.chess-chat-name {
+  font-weight: 700;
+  color: var(--ch-ivory);
+}
+
+.chess-chat-msg.is-me .chess-chat-name {
+  color: var(--ch-gold-soft);
+}
+
+.chess-chat-time {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--ch-muted);
+  opacity: 0.7;
+}
+
+.chess-chat-text {
+  color: #e2e8f0;
+  padding-left: 2px;
+}
+
+.chess-chat-form {
+  display: flex;
+  gap: 6px;
+}
+
+.chess-chat-form input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12px;
 }

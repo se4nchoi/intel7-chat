@@ -26,7 +26,7 @@ class ChessManager:
         self.result_reset_tasks: Dict[str, asyncio.Task] = {}
         self.result_display_seconds = 3.0
         self.disconnect_tasks: Dict[tuple[str, str], asyncio.Task] = {}
-        self.disconnect_grace_seconds = 5.0
+        self.disconnect_grace_seconds = 30.0
 
     def start_clock_monitor(self) -> None:
         if self.clock_task is None or self.clock_task.done():
@@ -34,21 +34,27 @@ class ChessManager:
 
     async def _clock_monitor(self) -> None:
         while True:
-            await asyncio.sleep(0.2)
-            for room_id in list(self.rooms):
-                room = self.rooms.get(room_id)
-                if not room or not room["game_started"] or room["result"]:
-                    continue
-                if not room["white"] or not room["black"] or room["draw_offer"]:
-                    continue
-                now = time.time()
-                self._refresh_clock(room, now)
-                if room["clock"][f"{room['active_turn']}_remain"] <= 0:
-                    expected_color = room["active_turn"]
-                    winner = "b" if expected_color == "w" else "w"
-                    self._complete_game(room, {"type": "timeout", "winner": winner,
-                                               "desc": f"{'백' if winner == 'w' else '흑'} 시간승"})
-                await self.broadcast_room(room_id)
+            try:
+                await asyncio.sleep(0.2)
+                for room_id in list(self.rooms):
+                    room = self.rooms.get(room_id)
+                    if not room or not room["game_started"] or room["result"]:
+                        continue
+                    if not room["white"] or not room["black"] or room["draw_offer"]:
+                        continue
+                    now = time.time()
+                    self._refresh_clock(room, now)
+                    if room["clock"][f"{room['active_turn']}_remain"] <= 0:
+                        expected_color = room["active_turn"]
+                        winner = "b" if expected_color == "w" else "w"
+                        self._complete_game(room, {"type": "timeout", "winner": winner,
+                                                   "desc": f"{'백' if winner == 'w' else '흑'} 시간승"})
+                    await self.broadcast_room(room_id)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Unexpected error in chess _clock_monitor")
+                await asyncio.sleep(1.0)
 
     def register_client(self, ws: WebSocket, user: dict) -> None:
         self.socket_user[ws] = user
@@ -445,18 +451,17 @@ class ChessManager:
         for player in (room.get("white"), room.get("black"), *room.get("spectators", [])):
             if player:
                 player_id = str(player["id"])
-                try:
-                    current = get_user_by_id(int(player_id))
-                    if current:
-                        player["name"] = current.get("display_name") or current["username"]
-                except Exception:
-                    pass
-                if player_id in room["stats"]:
-                    continue
-                try:
-                    room["stats"][player_id] = get_chess_stats(int(player_id))
-                except Exception:
-                    room["stats"].setdefault(player_id, {"wins": 0, "draws": 0, "losses": 0})
+                if not player.get("name") or player_id not in room["stats"]:
+                    try:
+                        current = get_user_by_id(int(player_id))
+                        if current:
+                            player["name"] = current.get("display_name") or current["username"]
+                    except Exception:
+                        pass
+                    try:
+                        room["stats"][player_id] = get_chess_stats(int(player_id))
+                    except Exception:
+                        room["stats"].setdefault(player_id, {"wins": 0, "draws": 0, "losses": 0})
 
     async def make_move(self, user: dict, room_id: str, data: dict) -> None:
         room = self.rooms.get(room_id)
@@ -639,6 +644,42 @@ class ChessManager:
                 "name": user.get("display_name") or user["username"]
             })
             await self.broadcast_room(room_id)
+
+    async def send_room_chat(self, user: dict, room_id: str, text: str) -> None:
+        room = self.rooms.get(room_id)
+        if not room:
+            return
+        text = str(text or "")[:120].strip()
+        if not text:
+            return
+        player = self._player_for(user)
+        user_id = user["id"]
+        role = "관전자"
+        if room.get("white") and str(room["white"]["id"]) == str(user_id):
+            role = "백"
+        elif room.get("black") and str(room["black"]["id"]) == str(user_id):
+            role = "흑"
+
+        payload = json.dumps({
+            "type": "room_chat",
+            "room_id": room_id,
+            "message": {
+                "user_id": user_id,
+                "name": player["name"],
+                "role": role,
+                "text": text,
+                "time": time.time(),
+            }
+        }, ensure_ascii=False)
+
+        stale = []
+        for ws in list(self.room_sockets.get(room_id, set())):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                stale.append(ws)
+        for ws in stale:
+            self.room_sockets[room_id].discard(ws)
 
     def _record_game_stats(self, room: dict, winner: Optional[str]) -> None:
         w = room.get("white")

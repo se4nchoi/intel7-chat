@@ -1096,12 +1096,48 @@
 
 /* Leaderboard in CBT Slate Theme */
 .cbt-lb-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 18px;
 }
 
 .cbt-period-pills {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.cbt-subject-lb-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cbt-subject-lb-label {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cbt-subject-lb-select {
+  background: #141722;
+  border: 1px solid #23293c;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.cbt-subject-lb-select:focus {
+  border-color: #60a5fa;
 }
 
 .lb-period-btn {

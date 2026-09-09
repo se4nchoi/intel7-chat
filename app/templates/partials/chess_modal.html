@@ -17,13 +17,19 @@
       <!-- 1. 로비 화면 (Lobby) -->
       <div id="chess-lobby-screen">
         <div class="chess-lobby-header">
-          <div>
-            <h3 class="chess-lobby-title">대국실 목록</h3>
-            <span style="font-size:12px;color:var(--ch-muted);">원하는 방을 클릭하여 참가하거나 새 대국실을 개설하세요.</span>
+          <div class="chess-lobby-title-wrap">
+            <h3 class="chess-lobby-title">대나무숲 체스 로비</h3>
+            <div class="chess-lobby-tabs">
+              <button id="chLobbyTabRooms" class="chess-tab-btn active" type="button">♟️ 대국실 목록</button>
+              <button id="chLobbyTabRank" class="chess-tab-btn" type="button">🏆 체스 명예의 전당</button>
+            </div>
           </div>
-          <div class="ch-row">
+          <div class="ch-row" id="chLobbyActionsRooms">
             <button id="chess-refresh-lobby-btn" class="ch-btn ch-btn-ghost small" type="button">🔄 목록 새로고침</button>
             <button id="chess-open-create-btn" class="ch-btn ch-btn-primary small" type="button">➕ 새 방 만들기</button>
+          </div>
+          <div class="ch-row hidden" id="chLobbyActionsRank">
+            <button id="chess-refresh-rank-btn" class="ch-btn ch-btn-ghost small" type="button">🔄 랭킹 새로고침</button>
           </div>
         </div>
 
@@ -55,6 +61,29 @@
         <div id="chess-lobby-empty" class="chess-lobby-empty hidden">
           <p style="margin:0 0 10px;font-size:15px;color:var(--ch-gold-soft);">현재 개설된 체스방이 없습니다.</p>
           <p style="margin:0;font-size:13px;">[새 방 만들기] 버튼을 눌러 첫 번째 대국실을 열어보세요!</p>
+        </div>
+
+        <!-- 체스 명예의 전당 (랭킹 패널) -->
+        <div id="chess-rankings-panel" class="chess-rankings-panel hidden">
+          <div class="chess-rank-scoring-note">
+            <span>체스 대국 승리 시 전적이 집계됩니다. 동률 시 해당 승수를 먼저 달성한 플레이어가 상위 순위에 오릅니다. (1~3위 칭호 자동 부여)</span>
+          </div>
+          <div id="chess-podium-row" class="chess-podium-row"></div>
+          <div class="chess-table-box">
+            <table class="chess-table">
+              <thead>
+                <tr>
+                  <th style="width: 50px;">순위</th>
+                  <th>플레이어</th>
+                  <th style="width: 70px;">승수</th>
+                  <th style="width: 100px;">전적 (승/무/패)</th>
+                  <th style="width: 70px;">승률</th>
+                  <th>칭호</th>
+                </tr>
+              </thead>
+              <tbody id="chess-rankings-tbody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -167,6 +196,21 @@
               <div id="chSpectatorsBox" class="spec-list">
                 <span class="placeholder-line">관전자가 없습니다.</span>
               </div>
+            </div>
+
+            <!-- 실시간 대국실 채팅 -->
+            <div class="ch-card chess-chat-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <h3 style="margin:0;font-size:12.5px;color:var(--ch-gold-soft);">💬 대국실 채팅</h3>
+                <span style="font-size:10.5px;color:var(--ch-muted);opacity:0.8;">임시 채팅 (DB 미저장)</span>
+              </div>
+              <div id="chChatMessages" class="chess-chat-messages">
+                <div class="chess-chat-notice">대국자와 관전자가 실시간으로 대화할 수 있습니다.</div>
+              </div>
+              <form id="chChatForm" class="chess-chat-form">
+                <input type="text" id="chChatInput" class="ch-input" placeholder="메시지 입력 (Enter)" maxlength="100" autocomplete="off" />
+                <button type="submit" class="ch-btn ch-btn-primary small" style="padding:6px 12px;white-space:nowrap;">전송</button>
+              </form>
             </div>
           </div>
         </div>

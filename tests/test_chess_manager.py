@@ -92,8 +92,8 @@ def test_spectator_join_stays_spectator_until_picking_a_seat():
     manager = ChessManager()
     white_ws = FakeWebSocket()
     black_ws = FakeWebSocket()
-    white = {"id": 1, "username": "white", "display_name": "White"}
-    black = {"id": 2, "username": "black", "display_name": "Black"}
+    white = {"id": 9901, "username": "white", "display_name": "White"}
+    black = {"id": 9902, "username": "black", "display_name": "Black"}
 
     async def setup():
         manager.register_client(white_ws, white)
@@ -104,13 +104,13 @@ def test_spectator_join_stays_spectator_until_picking_a_seat():
 
     room_id = asyncio.run(setup())
     room = manager.rooms[room_id]
-    assert room["white"]["id"] == 1
+    assert room["white"]["id"] == 9901
     assert room["black"] is None
-    assert room["spectators"] == [{"id": 2, "username": "black", "name": "Black"}]
+    assert room["spectators"] == [{"id": 9902, "username": "black", "name": "Black"}]
 
     asyncio.run(manager.pick_role(black, room_id, "b"))
-    assert manager.rooms[room_id]["white"]["id"] == 1
-    assert manager.rooms[room_id]["black"]["id"] == 2
+    assert manager.rooms[room_id]["white"]["id"] == 9901
+    assert manager.rooms[room_id]["black"]["id"] == 9902
     assert manager.rooms[room_id]["spectators"] == []
 
 
@@ -170,3 +170,46 @@ def test_disconnect_grace_preserves_player_during_refresh_reconnect():
     room = manager.rooms[room_id]
     assert room["white"]["id"] == white["id"]
     assert room["result"] is None
+
+
+def test_send_room_chat():
+    manager = ChessManager()
+    white_ws = FakeWebSocket()
+    black_ws = FakeWebSocket()
+    spec_ws = FakeWebSocket()
+
+    white = {"id": 9981, "username": "w_user", "display_name": "WhitePlayer"}
+    black = {"id": 9982, "username": "b_user", "display_name": "BlackPlayer"}
+    spec = {"id": 9983, "username": "s_user", "display_name": "Spectator"}
+
+    async def run_chat():
+        manager.register_client(white_ws, white)
+        room = await manager.create_room(white_ws, white, "ChatRoom", 10)
+        room_id = room["id"]
+        manager.register_client(black_ws, black)
+        await manager.join_room(black_ws, black, room_id, "black")
+        manager.register_client(spec_ws, spec)
+        await manager.join_room(spec_ws, spec, room_id, "spectator")
+
+        await manager.send_room_chat(white, room_id, "Hello from White")
+        await manager.send_room_chat(black, room_id, "Hello from Black")
+        await manager.send_room_chat(spec, room_id, "Hello from Spectator")
+
+        return room_id
+
+    room_id = asyncio.run(run_chat())
+
+    chats = [msg for msg in white_ws.messages if msg.get("type") == "room_chat"]
+    assert len(chats) == 3
+
+    assert chats[0]["message"]["name"] == "WhitePlayer"
+    assert chats[0]["message"]["role"] == "백"
+    assert chats[0]["message"]["text"] == "Hello from White"
+
+    assert chats[1]["message"]["name"] == "BlackPlayer"
+    assert chats[1]["message"]["role"] == "흑"
+    assert chats[1]["message"]["text"] == "Hello from Black"
+
+    assert chats[2]["message"]["name"] == "Spectator"
+    assert chats[2]["message"]["role"] == "관전자"
+    assert chats[2]["message"]["text"] == "Hello from Spectator"

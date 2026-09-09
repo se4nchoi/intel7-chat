@@ -60,6 +60,13 @@ export function initChessListeners() {
   const cancelCreateBtn = $('chess-cancel-create-btn');
   const submitCreateBtn = $('chess-submit-create-btn');
   const refreshLobbyBtn = $('chess-refresh-lobby-btn');
+  const lobbyTabRooms = $('chLobbyTabRooms');
+  const lobbyTabRank = $('chLobbyTabRank');
+  const refreshRankBtn = $('chess-refresh-rank-btn');
+
+  if (lobbyTabRooms) lobbyTabRooms.addEventListener('click', () => switchLobbyTab('rooms'));
+  if (lobbyTabRank) lobbyTabRank.addEventListener('click', () => switchLobbyTab('rank'));
+  if (refreshRankBtn) refreshRankBtn.addEventListener('click', fetchAndRenderChessRankings);
 
   if (openCreateBtn) {
     openCreateBtn.addEventListener('click', () => {
@@ -77,6 +84,12 @@ export function initChessListeners() {
   }
   if (refreshLobbyBtn) {
     refreshLobbyBtn.addEventListener('click', requestLobbyList);
+  }
+
+  // In-Room Chat
+  const chatForm = $('chChatForm');
+  if (chatForm) {
+    chatForm.addEventListener('submit', handleSendChat);
   }
 
   const roomGrid = $('chess-room-grid');
@@ -146,8 +159,14 @@ export function closeChessModal() {
   const modal = $('chess-modal');
   if (!modal) return;
   modal.classList.add('hidden');
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   notifyTurnIfHidden();
 }
+
+let reconnectTimer = null;
 
 function ensureChessWs() {
   if (chessWs && (chessWs.readyState === WebSocket.OPEN || chessWs.readyState === WebSocket.CONNECTING)) {
@@ -158,13 +177,18 @@ function ensureChessWs() {
   chessWs = new WebSocket(url);
 
   chessWs.onopen = () => {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     requestLobbyList();
-    const savedRoomId = sessionStorage.getItem(SAVED_CHESS_ROOM_KEY);
-    if (savedRoomId) {
+    const activeRoomId = currentRoom?.id || sessionStorage.getItem(SAVED_CHESS_ROOM_KEY);
+    if (activeRoomId) {
+      const rolePref = myColor === 'w' ? 'white' : (myColor === 'b' ? 'black' : 'spectator');
       chessWs.send(JSON.stringify({
         action: 'join_room',
-        room_id: savedRoomId,
-        role_pref: 'spectator'
+        room_id: activeRoomId,
+        role_pref: rolePref
       }));
     }
     if (pendingRoomRequest) {
@@ -186,6 +210,15 @@ function ensureChessWs() {
 
   chessWs.onclose = () => {
     if (clockInterval) clearInterval(clockInterval);
+    const modal = $('chess-modal');
+    if (modal && !modal.classList.contains('hidden')) {
+      if (!reconnectTimer) {
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          ensureChessWs();
+        }, 2000);
+      }
+    }
   };
 
   chessWs.onerror = (err) => {
@@ -216,6 +249,12 @@ function handleWsMessage(msg) {
       }
       syncRoomState(msg.room);
       notifyTurnIfHidden();
+      break;
+    case 'room_chat':
+      if (currentRoom && msg.room_id === currentRoom.id) {
+        renderChatMessage(msg.message, true);
+        saveRoomChatMessage(msg.room_id, msg.message);
+      }
       break;
     case 'error':
       showToast(msg.message || '오류가 발생했습니다.', 'error');
@@ -259,6 +298,7 @@ function handleLeaveRoom() {
   currentRoom = null;
   myColor = null;
   sessionStorage.removeItem(SAVED_CHESS_ROOM_KEY);
+  loadRoomChat(null);
   showLobbyScreen();
 }
 
@@ -306,10 +346,46 @@ window.pickChessRole = function(role) {
 };
 
 // ================= RENDER LOBBY =================
+function switchLobbyTab(tab) {
+  const tabRooms = $('chLobbyTabRooms');
+  const tabRank = $('chLobbyTabRank');
+  const actionsRooms = $('chLobbyActionsRooms');
+  const actionsRank = $('chLobbyActionsRank');
+  const roomGrid = $('chess-room-grid');
+  const empty = $('chess-lobby-empty');
+  const createPanel = $('chess-create-panel');
+  const rankPanel = $('chess-rankings-panel');
+
+  if (tab === 'rank') {
+    tabRooms?.classList.remove('active');
+    tabRank?.classList.add('active');
+    actionsRooms?.classList.add('hidden');
+    actionsRank?.classList.remove('hidden');
+    roomGrid?.classList.add('hidden');
+    empty?.classList.add('hidden');
+    createPanel?.classList.add('hidden');
+    rankPanel?.classList.remove('hidden');
+    fetchAndRenderChessRankings();
+  } else {
+    tabRooms?.classList.add('active');
+    tabRank?.classList.remove('active');
+    actionsRooms?.classList.remove('hidden');
+    actionsRank?.classList.add('hidden');
+    roomGrid?.classList.remove('hidden');
+    rankPanel?.classList.add('hidden');
+    requestLobbyList();
+  }
+}
+
 function showLobbyScreen() {
   $('chess-lobby-screen').classList.remove('hidden');
   $('chess-game-screen').classList.add('hidden');
-  requestLobbyList();
+  const isRankActive = $('chLobbyTabRank')?.classList.contains('active');
+  if (isRankActive) {
+    fetchAndRenderChessRankings();
+  } else {
+    requestLobbyList();
+  }
 }
 
 function showGameScreen() {
@@ -319,16 +395,22 @@ function showGameScreen() {
 
 function renderLobby(rooms) {
   if (currentRoom) return;
+  const isRankTab = $('chLobbyTabRank')?.classList.contains('active');
   const grid = $('chess-room-grid');
   const empty = $('chess-lobby-empty');
   if (!grid || !empty) return;
 
   grid.innerHTML = '';
   if (rooms.length === 0) {
-    empty.classList.remove('hidden');
+    if (!isRankTab) empty.classList.remove('hidden');
     return;
   }
   empty.classList.add('hidden');
+  if (isRankTab) {
+    grid.classList.add('hidden');
+  } else {
+    grid.classList.remove('hidden');
+  }
 
   rooms.forEach(r => {
     const card = document.createElement('div');
@@ -379,9 +461,13 @@ window.chessJoin = function(roomId, mode) {
 // ================= SYNC GAME ROOM =================
 function syncRoomState(room) {
   if (!room) return;
+  const isNewRoom = !currentRoom || currentRoom.id !== room.id;
   currentRoom = room;
   sessionStorage.setItem(SAVED_CHESS_ROOM_KEY, room.id);
   showGameScreen();
+  if (isNewRoom) {
+    loadRoomChat(room.id);
+  }
 
   const previousColor = myColor;
   const myUserId = state.currentUser?.id;
@@ -1003,4 +1089,193 @@ function showResultBanner(res) {
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ================= CHESS RANKINGS & HALL OF FAME =================
+async function fetchAndRenderChessRankings() {
+  const podiumRow = $('chess-podium-row');
+  const tbody = $('chess-rankings-tbody');
+  if (!podiumRow || !tbody) return;
+
+  if (!podiumRow.children.length) {
+    podiumRow.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--ch-muted);">랭킹 불러오는 중...</div>';
+  }
+  if (!tbody.children.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:var(--ch-muted);">랭킹 불러오는 중...</td></tr>';
+  }
+
+  try {
+    const res = await fetch('/api/chess/rankings');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderChessRankings(data.leaderboard || data.rankings || []);
+  } catch (err) {
+    console.error('Failed to fetch chess rankings:', err);
+    if (!podiumRow.children.length) podiumRow.innerHTML = '';
+    if (!tbody.children.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:var(--ch-muted);">랭킹을 불러오지 못했습니다.</td></tr>';
+    }
+  }
+}
+
+function renderChessRankings(list) {
+  const podiumRow = $('chess-podium-row');
+  const tbody = $('chess-rankings-tbody');
+  if (!podiumRow || !tbody) return;
+
+  podiumRow.replaceChildren();
+  tbody.replaceChildren();
+
+  const top3 = list.slice(0, 3);
+  const podiumIcons = ['👑', '🥈', '🥉'];
+  top3.forEach((item, idx) => {
+    const card = document.createElement('div');
+    card.className = `chess-podium-card rank-${idx + 1}`;
+
+    const icon = document.createElement('div');
+    icon.className = 'podium-icon';
+    icon.textContent = podiumIcons[idx];
+
+    const name = document.createElement('div');
+    name.className = 'podium-name';
+    name.textContent = item.display_name || item.username;
+
+    const score = document.createElement('div');
+    score.className = 'podium-score';
+    score.textContent = `${item.wins || 0}승`;
+
+    const sub = document.createElement('div');
+    sub.className = 'podium-sub';
+    sub.textContent = `${item.wins || 0}승 ${item.draws || 0}무 ${item.losses || 0}패 (${item.win_rate || 0}%)`;
+
+    card.append(icon, name, score, sub);
+    podiumRow.appendChild(card);
+  });
+
+  if (list.length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="6" style="text-align:center;padding:24px;color:var(--ch-muted);">아직 등록된 체스 승리 기록이 없습니다. 첫 승리에 도전해보세요!</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+
+  const myUserId = state.currentUser ? Number(state.currentUser.id) : null;
+  const rankMedals = { 1: '🥇 1', 2: '🥈 2', 3: '🥉 3' };
+
+  list.forEach(item => {
+    const tr = document.createElement('tr');
+    const isMe = sameUser(item.user_id, myUserId);
+    if (isMe) tr.className = 'my-row';
+
+    const rankDisplay = rankMedals[item.rank] || item.rank;
+
+    let badgeHtml = '<span style="color:var(--ch-muted);opacity:0.6;">-</span>';
+    if (item.badge) {
+      badgeHtml = `<span style="background:rgba(204,159,69,0.18);color:var(--ch-gold-soft);border:1px solid rgba(204,159,69,0.3);padding:2px 7px;border-radius:4px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">${item.badge.icon} ${escapeHtml(item.badge.label)}</span>`;
+    }
+
+    tr.innerHTML = `
+      <td style="font-weight:700;color:var(--ch-gold-soft);">${rankDisplay}</td>
+      <td>
+        <strong style="color:var(--ch-ivory);">${escapeHtml(item.display_name || item.username)}</strong>
+        ${isMe ? '<span style="font-size:10.5px;color:var(--ch-good);margin-left:4px;">(나)</span>' : ''}
+      </td>
+      <td style="font-weight:700;color:var(--ch-gold);">${item.wins || 0}승</td>
+      <td style="color:var(--ch-muted);font-size:12px;">${item.wins || 0}승 ${item.draws || 0}무 ${item.losses || 0}패</td>
+      <td style="color:var(--ch-ivory);">${item.win_rate || 0}%</td>
+      <td>${badgeHtml}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ================= IN-ROOM REAL-TIME CHAT (LOCALSTORAGE) =================
+function getRoomChatKey(roomId) {
+  return `bamboo_chess_chat_${roomId}`;
+}
+
+function loadRoomChat(roomId) {
+  const container = $('chChatMessages');
+  if (!container) return;
+  container.innerHTML = '<div class="chess-chat-notice">대국자와 관전자가 실시간으로 대화할 수 있습니다.</div>';
+  if (!roomId) return;
+  try {
+    const raw = localStorage.getItem(getRoomChatKey(roomId));
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        list.forEach(msg => renderChatMessage(msg, false));
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to load chess chat from localStorage:', e);
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
+function saveRoomChatMessage(roomId, msg) {
+  if (!roomId || !msg) return;
+  try {
+    const key = getRoomChatKey(roomId);
+    let list = [];
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      list = JSON.parse(raw);
+      if (!Array.isArray(list)) list = [];
+    }
+    list.push(msg);
+    if (list.length > 50) {
+      list = list.slice(-50);
+    }
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Failed to save chess chat to localStorage:', e);
+  }
+}
+
+function formatChatTime(ts) {
+  if (!ts) return '';
+  const date = typeof ts === 'number' && ts < 10000000000 ? new Date(ts * 1000) : new Date(ts);
+  const h = String(date.getHours()).padStart(2, '0');
+  const m = String(date.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+function renderChatMessage(msg, autoScroll = true) {
+  const container = $('chChatMessages');
+  if (!container || !msg) return;
+  const msgEl = document.createElement('div');
+  const isMe = sameUser(msg.user_id, state.currentUser?.id);
+  msgEl.className = `chess-chat-msg${isMe ? ' is-me' : ''}`;
+
+  let roleClass = 'spec';
+  if (msg.role === '백') roleClass = 'white';
+  else if (msg.role === '흑') roleClass = 'black';
+
+  const timeStr = formatChatTime(msg.time);
+
+  msgEl.innerHTML = `
+    <div class="chess-chat-msg-header">
+      <span class="chess-chat-role ${roleClass}">${escapeHtml(msg.role || '관전')}</span>
+      <span class="chess-chat-name">${escapeHtml(msg.name || '알 수 없음')}</span>
+      <span class="chess-chat-time">${escapeHtml(timeStr)}</span>
+    </div>
+    <div class="chess-chat-text">${escapeHtml(msg.text || '')}</div>
+  `;
+  container.appendChild(msgEl);
+  if (autoScroll) {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function handleSendChat(e) {
+  if (e) e.preventDefault();
+  if (!currentRoom) return;
+  const input = $('chChatInput');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  if (sendWs({ action: 'chat', room_id: currentRoom.id, text })) {
+    input.value = '';
+  }
 }

@@ -43,6 +43,7 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     update_direct_message_content,
     normalize_dm_conversation_id, pin_message, unpin_message, get_pinned_messages, get_pinned_message_ids,
     get_daily_quizzes, submit_quiz_answer, get_user_quiz_stats, get_quiz_leaderboard,
+    get_quiz_subject_leaderboard, get_chess_leaderboard,
     get_user_quiz_badge, get_user_quiz_badges_map, get_user_quiz_title_options,
     update_quiz_badge_selection, create_quiz, create_quiz_batch,
     get_all_quizzes_admin, delete_quiz, update_quiz, save_quiz_source_document, get_quiz_source_documents,
@@ -1380,8 +1381,15 @@ async def api_quiz_review(request: Request, mode: str = "wrong"):
 
 
 @app.get("/api/quiz/leaderboard")
-async def api_quiz_leaderboard(request: Request, period: str = "weekly"):
+async def api_quiz_leaderboard(request: Request, period: str = "weekly", category: Optional[str] = None):
     request_user(request)
+    if category:
+        leaderboard = get_quiz_subject_leaderboard(category)
+        return {
+            "period": "subject",
+            "category": category,
+            "leaderboard": leaderboard,
+        }
     if period not in {"daily", "weekly", "all", "streak"}:
         period = "weekly"
     leaderboard = get_quiz_leaderboard(period)
@@ -1389,6 +1397,17 @@ async def api_quiz_leaderboard(request: Request, period: str = "weekly"):
         "period": period,
         "leaderboard": leaderboard,
     }
+
+
+@app.get("/api/chess/rankings")
+async def api_chess_rankings(request: Request, limit: int = 20):
+    request_user(request)
+    leaderboard = get_chess_leaderboard(limit=limit)
+    return {
+        "leaderboard": leaderboard,
+        "rankings": leaderboard,
+    }
+
 
 
 @app.get("/api/quiz/stats")
@@ -1819,6 +1838,10 @@ async def chess_websocket_endpoint(ws: WebSocket):
                 await chess_manager.resign(user, room_id)
             elif action == "join_queue" and room_id:
                 await chess_manager.join_match_queue(user, room_id)
+            elif action == "chat" and room_id:
+                text = str(data.get("text", "")).strip()
+                if text:
+                    await chess_manager.send_room_chat(user, room_id, text)
             elif action == "ping":
                 await ws.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:

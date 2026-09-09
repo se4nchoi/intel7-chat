@@ -421,6 +421,15 @@ def _migrate_v19(conn: sqlite3.Connection) -> None:
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     )""")
 
+def _migrate_v20(conn: sqlite3.Connection) -> None:
+    """Add last_win_at timestamp to chess_player_stats for tie-breaking rankings."""
+    _add_column_if_missing(conn, "chess_player_stats", "last_win_at", "TEXT")
+
+def _migrate_v21(conn: sqlite3.Connection) -> None:
+    """Reset historical chess records and associated user badge selection."""
+    conn.execute("DELETE FROM chess_player_stats")
+    conn.execute("UPDATE users SET quiz_badge_selection = 'score' WHERE quiz_badge_selection = 'chess'")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -441,6 +450,8 @@ _MIGRATIONS = [
     _migrate_v17,
     _migrate_v18,
     _migrate_v19,
+    _migrate_v20,
+    _migrate_v21,
 ]
 
 
@@ -1694,6 +1705,25 @@ def _subject_quiz_badge(category: Optional[str], subject_rank: int,
         "title": f"{category} {subject_rank}위 · {subject_score}점",
     }
 
+
+CHESS_TITLES = {
+    1: ("👑", "체스의 신"),
+    2: ("♟️", "체스킹"),
+    3: ("♟️", "체스고인물"),
+}
+
+def _chess_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:
+    if rank not in CHESS_TITLES:
+        return None
+    icon, label = CHESS_TITLES[rank]
+    return {
+        "type": "chess",
+        "icon": icon,
+        "label": label,
+        "title": f"체스 {rank}위 · {wins}승",
+    }
+
+
 def normalize_quiz_import(items: Any, expertise: str) -> List[Dict[str, Any]]:
     expertise = normalize_quiz_expertise(expertise)
     if not isinstance(items, list) or not 1 <= len(items) <= 50:
@@ -1956,18 +1986,51 @@ def update_pending_user_quiz_set(set_id: int, expertise: str, title: str, items:
 
 def ensure_daily_quiz_set(assigned_date: str, count: int = 5, created_by_user_id: Optional[int] = None) -> int:
     with get_connection() as conn:
-        row=conn.execute("SELECT id FROM daily_quiz_sets WHERE assigned_date=?", (assigned_date,)).fetchone()
-        if row: return int(row["id"])
-        quiz_rows=conn.execute("""SELECT q.id FROM quizzes q
-            WHERE q.is_active=1 AND NOT EXISTS (
-                SELECT 1 FROM daily_quiz_set_items used WHERE used.quiz_id=q.id
-            ) ORDER BY q.id ASC LIMIT ?""", (count,)).fetchall()
-        if not quiz_rows: return 0
-        now=utc_now(); cur=conn.execute("INSERT INTO daily_quiz_sets (assigned_date,status,created_by_user_id,created_at) VALUES (?,'published',?,?)",
-            (assigned_date, created_by_user_id, now)); set_id=int(cur.lastrowid)
-        conn.executemany("INSERT INTO daily_quiz_set_items (set_id,quiz_id,position,points) VALUES (?,?,?,20)",
-            [(set_id,row["id"],index) for index,row in enumerate(quiz_rows, start=1)])
-        conn.commit(); return set_id
+        row = conn.execute("SELECT id FROM daily_quiz_sets WHERE assigned_date=?", (assigned_date,)).fetchone()
+        if row:
+            return int(row["id"])
+
+        # 1. Prefer active quizzes never used in any daily set
+        unused_rows = conn.execute("""
+            SELECT q.id FROM quizzes q
+            WHERE q.is_active = 1 AND NOT EXISTS (
+                SELECT 1 FROM daily_quiz_set_items used WHERE used.quiz_id = q.id
+            ) ORDER BY q.id ASC LIMIT ?
+        """, (count,)).fetchall()
+
+        selected_ids = [int(r["id"]) for r in unused_rows]
+
+        # 2. If fewer than count unused quizzes exist, fill up with least-frequently / oldest assigned quizzes
+        if len(selected_ids) < count:
+            needed = count - len(selected_ids)
+            placeholders = ",".join("?" for _ in selected_ids) if selected_ids else "0"
+            recycled_rows = conn.execute(f"""
+                SELECT q.id, COUNT(dqi.set_id) as times_used, MAX(dqs.assigned_date) as last_assigned
+                FROM quizzes q
+                LEFT JOIN daily_quiz_set_items dqi ON dqi.quiz_id = q.id
+                LEFT JOIN daily_quiz_sets dqs ON dqs.id = dqi.set_id
+                WHERE q.is_active = 1 AND q.id NOT IN ({placeholders})
+                GROUP BY q.id
+                ORDER BY times_used ASC, last_assigned ASC, q.id ASC
+                LIMIT ?
+            """, (*selected_ids, needed) if selected_ids else (needed,)).fetchall()
+            selected_ids.extend([int(r["id"]) for r in recycled_rows])
+
+        if not selected_ids:
+            return 0
+
+        now = utc_now()
+        cur = conn.execute(
+            "INSERT INTO daily_quiz_sets (assigned_date, status, created_by_user_id, created_at) VALUES (?,'published',?,?)",
+            (assigned_date, created_by_user_id, now)
+        )
+        set_id = int(cur.lastrowid)
+        conn.executemany(
+            "INSERT INTO daily_quiz_set_items (set_id, quiz_id, position, points) VALUES (?,?,?,20)",
+            [(set_id, qid, index) for index, qid in enumerate(selected_ids, start=1)]
+        )
+        conn.commit()
+        return set_id
 
 def assign_daily_quizzes(assigned_date: str, quiz_ids: List[int], admin_user_id: int) -> int:
     if not quiz_ids or len(quiz_ids) > 20: raise ValueError("1~20개의 문제를 배정하세요.")
@@ -2602,13 +2665,22 @@ def get_user_quiz_stats(user_id: int) -> Dict[str, Any]:
 def record_chess_result(white_id: int, black_id: int, winner: Optional[str]) -> None:
     """Persist one completed chess result for both players."""
     columns = {"w": ("wins", "losses"), "b": ("losses", "wins")}
+    now = utc_now()
     with get_connection() as conn:
         for user_id in (white_id, black_id):
             conn.execute("INSERT OR IGNORE INTO chess_player_stats (user_id) VALUES (?)", (user_id,))
         if winner in columns:
             white_column, black_column = columns[winner]
-            conn.execute(f"UPDATE chess_player_stats SET {white_column} = {white_column} + 1 WHERE user_id = ?", (white_id,))
-            conn.execute(f"UPDATE chess_player_stats SET {black_column} = {black_column} + 1 WHERE user_id = ?", (black_id,))
+            winner_id = white_id if winner == "w" else black_id
+            loser_id = black_id if winner == "w" else white_id
+            conn.execute(
+                f"UPDATE chess_player_stats SET {white_column} = {white_column} + 1, last_win_at = ? WHERE user_id = ?",
+                (now, winner_id),
+            )
+            conn.execute(
+                f"UPDATE chess_player_stats SET {black_column} = {black_column} + 1 WHERE user_id = ?",
+                (loser_id,),
+            )
         else:
             conn.execute("UPDATE chess_player_stats SET draws = draws + 1 WHERE user_id IN (?, ?)", (white_id, black_id))
 
@@ -2617,6 +2689,96 @@ def get_chess_stats(user_id: int) -> Dict[str, int]:
     with get_connection() as conn:
         row = conn.execute("SELECT wins, draws, losses FROM chess_player_stats WHERE user_id = ?", (user_id,)).fetchone()
     return dict(row) if row else {"wins": 0, "draws": 0, "losses": 0}
+
+
+def get_chess_rankings(limit: int = 20) -> List[Dict[str, Any]]:
+    """Return top chess players sorted by wins (desc) and time achieved (asc)."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT ps.user_id, u.username, u.display_name,
+                   ps.wins, ps.draws, ps.losses, ps.last_win_at,
+                   ROW_NUMBER() OVER (
+                       ORDER BY ps.wins DESC, ps.last_win_at ASC, ps.user_id ASC
+                   ) AS rank
+            FROM chess_player_stats ps
+            JOIN users u ON u.id = ps.user_id
+            WHERE ps.wins > 0
+            ORDER BY rank ASC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def reset_chess_records() -> None:
+    """Resets all chess player stats and clears existing chess win/loss/draw records."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM chess_player_stats")
+        conn.execute("UPDATE users SET quiz_badge_selection = 'score' WHERE quiz_badge_selection = 'chess'")
+
+
+def get_chess_leaderboard(limit: int = 20) -> List[Dict[str, Any]]:
+    """Return enriched chess rankings with win rates and badges."""
+    rankings = get_chess_rankings(limit=limit)
+    results = []
+    for r in rankings:
+        rank = int(r["rank"])
+        badge = _chess_badge(rank, int(r["wins"]))
+        total = r["wins"] + r.get("draws", 0) + r.get("losses", 0)
+        win_rate = round((r["wins"] / total * 100), 1) if total > 0 else 0.0
+        results.append({
+            "user_id": r["user_id"],
+            "username": r["username"],
+            "display_name": r["display_name"],
+            "rank": rank,
+            "score": r["wins"],
+            "wins": r["wins"],
+            "draws": r.get("draws", 0),
+            "losses": r.get("losses", 0),
+            "win_rate": win_rate,
+            "badge": badge,
+            "last_win_at": r.get("last_win_at"),
+        })
+    return results
+
+
+def get_quiz_subject_leaderboard(category: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Return ranking for a specific quiz subject."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            WITH subject_scores AS (
+                SELECT qs.user_id,
+                       SUM(qs.score_earned) AS score,
+                       SUM(CASE WHEN qs.score_earned > 0 THEN 1 ELSE 0 END) as correct_count,
+                       COUNT(qs.id) as solved_count,
+                       MAX(qs.submitted_at) AS score_reached_at
+                FROM quiz_submissions qs
+                JOIN quizzes q ON q.id = qs.quiz_id
+                WHERE q.category = ? AND qs.score_earned > 0
+                GROUP BY qs.user_id
+            ), ranked AS (
+                SELECT ss.user_id, u.username, u.display_name,
+                       ss.score, ss.correct_count, ss.solved_count, ss.score_reached_at,
+                       COALESCE(st.current_streak, 0) as current_streak,
+                       ROW_NUMBER() OVER (
+                           ORDER BY ss.score DESC, ss.score_reached_at ASC, ss.user_id ASC
+                       ) AS rank
+                FROM subject_scores ss
+                JOIN users u ON u.id = ss.user_id
+                LEFT JOIN user_quiz_stats st ON st.user_id = ss.user_id
+            )
+            SELECT user_id, username, display_name, score, correct_count,
+                   solved_count, current_streak, score_reached_at, rank
+            FROM ranked
+            ORDER BY rank ASC
+            LIMIT ?
+        """, (category, limit)).fetchall()
+
+    results = []
+    for r in rows:
+        item = dict(r)
+        item["badge"] = _subject_quiz_badge(category, item["rank"], item["score"])
+        results.append(item)
+    return results
 
 
 def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[str, Any]]:
@@ -2663,7 +2825,7 @@ def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[s
 
 
 def get_user_quiz_title_options(user_id: int) -> List[Dict[str, Any]]:
-    """Return every subject title the user currently holds (top three by score)."""
+    """Return every subject title the user currently holds (top three by score or chess wins)."""
     with get_connection() as conn:
         rows = conn.execute("""
             WITH subject_scores AS (
@@ -2699,6 +2861,32 @@ def get_user_quiz_title_options(user_id: int) -> List[Dict[str, Any]]:
                 "selection": f"subject:{row['category']}",
                 "rank": int(row["subject_rank"]),
                 "score": int(row["subject_score"]),
+            })
+    with get_connection() as conn:
+        chess_row = conn.execute("""
+            WITH ranked_chess AS (
+                SELECT user_id, wins,
+                       ROW_NUMBER() OVER (
+                           ORDER BY wins DESC, last_win_at ASC, user_id ASC
+                       ) AS chess_rank
+                FROM chess_player_stats
+                WHERE wins > 0
+            )
+            SELECT chess_rank, wins
+            FROM ranked_chess
+            WHERE user_id = ? AND chess_rank <= 3
+        """, (user_id,)).fetchone()
+    if chess_row:
+        rank = int(chess_row["chess_rank"])
+        wins = int(chess_row["wins"])
+        badge = _chess_badge(rank, wins)
+        if badge:
+            options.append({
+                **badge,
+                "category": "체스",
+                "selection": "chess",
+                "rank": rank,
+                "score": wins,
             })
     with get_connection() as conn:
         stats = conn.execute(
@@ -2806,6 +2994,21 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
         for subject_row in subject_rows:
             subject_map.setdefault(subject_row["user_id"], {})[subject_row["category"]] = dict(subject_row)
 
+        chess_rows = conn.execute(f"""
+            WITH ranked_chess AS (
+                SELECT user_id, wins,
+                       ROW_NUMBER() OVER (
+                           ORDER BY wins DESC, last_win_at ASC, user_id ASC
+                       ) AS chess_rank
+                FROM chess_player_stats
+                WHERE wins > 0
+            )
+            SELECT user_id, wins, chess_rank
+            FROM ranked_chess
+            WHERE user_id IN ({placeholders}) AND chess_rank <= 3
+        """, user_ids).fetchall()
+        chess_map = {r["user_id"]: dict(r) for r in chess_rows}
+
         for uid in user_ids:
             st = stats_map.get(uid)
             if not st:
@@ -2818,22 +3021,26 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
                 subject = subjects.get(selection.removeprefix("subject:"))
             if selection == "none":
                 badges[uid] = None
+            elif selection == "chess" and uid in chess_map:
+                badges[uid] = _chess_badge(
+                    int(chess_map[uid]["chess_rank"]), int(chess_map[uid]["wins"])
+                )
             elif selection == "streak" and st.get("current_streak", 0) >= 3:
                 badges[uid] = {
                     "type": "streak", "icon": "🔥", "label": "꾸준러",
                     "title": f"오늘의 퀴즈 {st['current_streak']}일 연속",
                 }
+            elif selection.startswith("subject:") and subject:
+                badges[uid] = _subject_quiz_badge(
+                    subject["category"], int(subject["subject_rank"]),
+                    int(subject["subject_score"]),
+                )
             elif selection == "score" or not subject:
                 badges[uid] = None if st["total_score"] <= 0 else {
                     "type": "score", "icon": "⚡",
                     "label": f"{st['total_score']}점",
                     "title": f"퀴즈 누적 {st['total_score']}점",
                 }
-            elif subject:
-                badges[uid] = _subject_quiz_badge(
-                    subject["category"], int(subject["subject_rank"]),
-                    int(subject["subject_score"]),
-                )
             else:
                 badges[uid] = None if st["total_score"] <= 0 else {
                     "type": "score", "icon": "⚡", "label": f"{st['total_score']}점",

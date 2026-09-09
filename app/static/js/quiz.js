@@ -13,6 +13,7 @@ let currentQuizNav = 'daily';
 let solvedHistoryQuizzes = [];
 let currentHistoryFilter = 'all';
 let currentLeaderboardPeriod = 'weekly';
+let currentLeaderboardCategory = '';
 let quizPageOffset = 0;
 let quizPageLoading = false;
 let quizHasMore = true;
@@ -681,8 +682,12 @@ export function renderActiveQuiz() {
     quizTypeTag.textContent = typeMap[q.question_type] || q.question_type;
   }
   if (quizScoreBadge) {
-    const scoreMap = { easy: '+10점', medium: '+20점', hard: '+30점' };
-    quizScoreBadge.textContent = q.is_solved && currentQuizNav !== 'daily' ? '재풀이 · 0점' : (scoreMap[q.difficulty] || '+20점');
+    if (q.is_solved) {
+      quizScoreBadge.textContent = q.score_earned > 0 ? `+${q.score_earned}점` : '재풀이 · 0점';
+    } else {
+      const scoreMap = { easy: '+10점', medium: '+20점', hard: '+30점' };
+      quizScoreBadge.textContent = scoreMap[q.difficulty] || '+20점';
+    }
   }
   if (quizQuestionText) renderMarkdown(quizQuestionText, q.question);
 
@@ -787,10 +792,14 @@ export function renderQuizFeedback(q) {
   }
   if (quizResultIcon) quizResultIcon.textContent = isCorrect ? '✅' : '❌';
   if (quizResultTitle) {
-    if (currentQuizNav === 'daily') {
-      quizResultTitle.textContent = isCorrect ? `정답입니다! (+${q.score_earned || 20}점)` : '오답입니다!';
+    if (isCorrect) {
+      if (q.score_earned > 0) {
+        quizResultTitle.textContent = `정답입니다! (+${q.score_earned}점)`;
+      } else {
+        quizResultTitle.textContent = '🎉 숙달했습니다! (연습 · 0점)';
+      }
     } else {
-      quizResultTitle.textContent = isCorrect ? '🎉 숙달했습니다! (연습 · 0점)' : '❌ 아쉽게도 오답입니다.';
+      quizResultTitle.textContent = currentQuizNav === 'daily' ? '오답입니다!' : '❌ 아쉽게도 오답입니다.';
     }
   }
   if (quizResultAnswers) {
@@ -880,17 +889,30 @@ export async function submitQuiz(answerVal = null) {
   }
 }
 
-export async function fetchLeaderboard(period = 'weekly') {
+export async function fetchLeaderboard(period = 'weekly', category = '') {
   const leaderboardTbody = document.getElementById('leaderboard-tbody');
   const lbPeriodButtons = document.querySelectorAll('.lb-period-btn');
+  const subjectSelect = document.getElementById('cbt-subject-lb-select');
   if (!leaderboardTbody) return;
   currentLeaderboardPeriod = period;
-  lbPeriodButtons.forEach(b => b.classList.toggle('active', b.dataset.period === period));
+  currentLeaderboardCategory = category || '';
+
+  if (category) {
+    lbPeriodButtons.forEach(b => b.classList.remove('active'));
+    if (subjectSelect) subjectSelect.value = category;
+  } else {
+    lbPeriodButtons.forEach(b => b.classList.toggle('active', b.dataset.period === period));
+    if (subjectSelect) subjectSelect.value = '';
+  }
+
   try {
-    const res = await fetch(`/api/quiz/leaderboard?period=${period}`);
+    const url = category
+      ? `/api/quiz/leaderboard?category=${encodeURIComponent(category)}`
+      : `/api/quiz/leaderboard?period=${period}`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error('리더보드를 불러오지 못했습니다.');
     const data = await res.json();
-    renderLeaderboard(data.leaderboard || []);
+    renderLeaderboard(data.leaderboard || [], category);
   } catch (err) {
     showToast(err.message || '리더보드 조회 실패', 'error');
   }
@@ -898,16 +920,26 @@ export async function fetchLeaderboard(period = 'weekly') {
 
 export function handleLeaderboardInvalidated() {
   if (currentQuizNav === 'leaderboard') {
-    fetchLeaderboard(currentLeaderboardPeriod);
+    fetchLeaderboard(currentLeaderboardPeriod, currentLeaderboardCategory);
   }
 }
 
-export function renderLeaderboard(list) {
+export function renderLeaderboard(list, category = '') {
   const leaderboardPodium = document.getElementById('leaderboard-podium');
   const leaderboardTbody = document.getElementById('leaderboard-tbody');
+  const thScore = document.getElementById('th-lb-score');
+  const thCorrect = document.getElementById('th-lb-correct');
+  const thStreak = document.getElementById('th-lb-streak');
+
   if (!leaderboardPodium || !leaderboardTbody) return;
   leaderboardPodium.replaceChildren();
   leaderboardTbody.replaceChildren();
+
+  const isSubject = Boolean(category);
+
+  if (thScore) thScore.textContent = '점수';
+  if (thCorrect) thCorrect.textContent = '정답수';
+  if (thStreak) thStreak.textContent = isSubject ? '칭호' : 'STREAK';
 
   const myUserId = state.currentUser ? Number(state.currentUser.id) : null;
 
@@ -922,17 +954,30 @@ export function renderLeaderboard(list) {
     const name = document.createElement('strong');
     name.className = 'podium-name';
     name.textContent = item.display_name || item.username;
-    if (item.current_streak >= 3) {
+
+    if (item.badge) {
+      const badgeSpan = document.createElement('span');
+      badgeSpan.className = `quiz-user-badge badge-${item.badge.type || 'subject'}`;
+      badgeSpan.textContent = `${item.badge.icon} ${item.badge.label}`;
+      badgeSpan.title = item.badge.title || '';
+      name.append(' ', badgeSpan);
+    } else if (item.current_streak >= 3) {
       const fire = document.createElement('span'); fire.className = 'quiz-fire-badge'; fire.textContent = '🔥 꾸준러';
       name.append(' ', fire);
     }
+
     const score = document.createElement('span');
     score.className = 'podium-score';
     score.textContent = `${item.score || 0}점`;
-    const streak = document.createElement('small');
-    streak.className = 'field-hint';
-    streak.textContent = item.current_streak ? `🔥 STREAK ${item.current_streak}` : '';
-    card.append(icon, name, score, streak);
+
+    const subText = document.createElement('small');
+    subText.className = 'field-hint';
+    if (isSubject) {
+      subText.textContent = item.correct_count ? `${item.correct_count}문제 정답` : '';
+    } else {
+      subText.textContent = item.current_streak ? `🔥 STREAK ${item.current_streak}` : '';
+    }
+    card.append(icon, name, score, subText);
     leaderboardPodium.appendChild(card);
   });
 
@@ -953,7 +998,13 @@ export function renderLeaderboard(list) {
     const tdUser = document.createElement('td');
     const uName = item.display_name || item.username;
     tdUser.textContent = uName + (Number(item.user_id) === myUserId ? ' (나)' : '');
-    if (item.current_streak >= 3) {
+    if (item.badge) {
+      const badgeSpan = document.createElement('span');
+      badgeSpan.className = `quiz-user-badge badge-${item.badge.type || 'subject'}`;
+      badgeSpan.textContent = `${item.badge.icon} ${item.badge.label}`;
+      badgeSpan.title = item.badge.title || '';
+      tdUser.append(' ', badgeSpan);
+    } else if (item.current_streak >= 3) {
       const fire = document.createElement('span'); fire.className = 'quiz-fire-badge'; fire.textContent = '🔥 꾸준러';
       tdUser.append(' ', fire);
     }
@@ -965,7 +1016,11 @@ export function renderLeaderboard(list) {
     tdCorrect.textContent = `${item.correct_count || 0}문제`;
 
     const tdStreak = document.createElement('td');
-    tdStreak.textContent = item.current_streak ? `${item.current_streak}일 연속 🔥` : '-';
+    if (isSubject) {
+      tdStreak.textContent = item.badge ? `${item.badge.icon} ${item.badge.label}` : '-';
+    } else {
+      tdStreak.textContent = item.current_streak ? `${item.current_streak}일 연속 🔥` : '-';
+    }
 
     tr.append(tdRank, tdUser, tdScore, tdCorrect, tdStreak);
     leaderboardTbody.appendChild(tr);
@@ -1455,9 +1510,23 @@ export function initQuizListeners() {
 
   lbPeriodButtons.forEach(btn => {
     btn.addEventListener('click', () => {
+      const subjectSelect = document.getElementById('cbt-subject-lb-select');
+      if (subjectSelect) subjectSelect.value = '';
       fetchLeaderboard(btn.dataset.period);
     });
   });
+
+  const subjectLbSelect = document.getElementById('cbt-subject-lb-select');
+  if (subjectLbSelect) {
+    subjectLbSelect.addEventListener('change', () => {
+      const category = subjectLbSelect.value;
+      if (category) {
+        fetchLeaderboard('subject', category);
+      } else {
+        fetchLeaderboard('weekly');
+      }
+    });
+  }
 
   cbtHistFilterButtons.forEach(btn => {
     btn.addEventListener('click', () => {
