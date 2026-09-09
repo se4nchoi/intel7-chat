@@ -82,6 +82,16 @@
   color: #6ee7b7;
 }
 
+.quiz-user-badge.badge-chess {
+  background: rgba(234, 179, 8, 0.15);
+  border: 1.5px solid #facc15;
+  color: #fef08a;
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.45), inset 0 0 3px rgba(250, 204, 21, 0.2);
+  text-shadow: 0 0 4px rgba(250, 204, 21, 0.35);
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+
 /* CBT Modal Window Box (Expanded In-App Portal Dimensions) */
 .cbt-modal-box {
   width: 1040px;

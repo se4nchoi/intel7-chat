@@ -1436,7 +1436,7 @@ function renderChessRankings(list) {
 
     let badgeHtml = '<span style="color:var(--ch-muted);opacity:0.6;">-</span>';
     if (item.badge) {
-      badgeHtml = `<span style="background:rgba(204,159,69,0.18);color:var(--ch-gold-soft);border:1px solid rgba(204,159,69,0.3);padding:2px 7px;border-radius:4px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">${item.badge.icon} ${escapeHtml(item.badge.label)}</span>`;
+      badgeHtml = `<span class="quiz-user-badge badge-chess">${item.badge.icon} ${escapeHtml(item.badge.label)}</span>`;
     }
 
     tr.innerHTML = `

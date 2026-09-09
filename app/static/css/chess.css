@@ -44,11 +44,11 @@
     radial-gradient(circle at 80% 100%, rgba(36,64,47,0.25), transparent 45%),
     var(--ch-bg);
   color: var(--ch-ivory);
-  width: 1080px;
-  max-width: 96vw;
-  height: 840px;
-  max-height: 92vh;
-  min-height: 600px;
+  width: 1240px;
+  max-width: 97vw;
+  height: 860px;
+  max-height: 94vh;
+  min-height: 620px;
   border-radius: 14px;
   border: 1px solid rgba(204,159,69,0.3);
   box-shadow: 0 20px 60px rgba(0,0,0,0.7);
@@ -317,14 +317,58 @@
 
 .chess-game-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 520px) 300px;
+  grid-template-columns: minmax(320px, 460px) 270px minmax(280px, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 
-@media (max-width: 860px) {
+.chess-info-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.chess-info-column .ch-card {
+  margin-top: 0 !important;
+  margin-bottom: 0;
+}
+
+.chess-info-column .history-list {
+  height: 140px;
+  min-height: 140px;
+  max-height: 140px;
+}
+
+.chess-chat-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+}
+
+@media (max-width: 1180px) {
+  .chess-game-grid {
+    grid-template-columns: minmax(320px, 460px) 1fr;
+  }
+  .chess-chat-column {
+    grid-column: 1 / -1;
+  }
+  .chess-chat-card.full-height {
+    min-height: 280px;
+  }
+  .chess-chat-messages {
+    min-height: 180px;
+    max-height: 250px;
+  }
+}
+
+@media (max-width: 780px) {
   .chess-game-grid {
     grid-template-columns: 1fr;
+  }
+  .chess-chat-column {
+    grid-column: auto;
   }
 }
 
@@ -1011,35 +1055,109 @@
   font-weight: 700;
 }
 
-/* In-Room Real-Time Chat */
+/* In-Room Real-Time Chat (Dedicated 3rd Column) */
 .chess-chat-card {
   display: flex;
   flex-direction: column;
-  margin-top: 10px;
   box-sizing: border-box;
 }
 
+.chess-chat-card.full-height {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  margin-top: 0 !important;
+  padding: 14px;
+}
+
+.chess-chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(204, 159, 69, 0.15);
+}
+
+.chess-chat-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ch-gold-soft);
+}
+
+.chess-chat-sub {
+  font-size: 10.5px;
+  color: var(--ch-muted);
+  opacity: 0.8;
+}
+
+.chess-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  letter-spacing: 0.05em;
+}
+
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #ef4444;
+  animation: live-pulse 1.4s infinite ease-in-out;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.7); }
+}
+
 .chess-chat-messages {
-  height: 120px;
+  flex: 1;
+  min-height: 380px;
+  max-height: 620px;
   overflow-y: auto;
   background: var(--ch-bg-2);
-  border-radius: 6px;
-  padding: 8px;
+  border-radius: 8px;
+  padding: 10px;
   border: 1px solid rgba(204,159,69,0.2);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  margin-bottom: 8px;
+  gap: 8px;
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+
+.chess-chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+.chess-chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chess-chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(204, 159, 69, 0.25);
+  border-radius: 3px;
+}
+.chess-chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(204, 159, 69, 0.45);
 }
 
 .chess-chat-notice {
   font-size: 11px;
   color: var(--ch-muted);
   text-align: center;
-  padding: 4px;
-  background: rgba(255,255,255,0.02);
-  border-radius: 4px;
+  padding: 6px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 6px;
   margin-bottom: 4px;
 }
 
@@ -1109,6 +1227,24 @@
 
 .chess-chat-form input {
   flex: 1;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+
+/* Chess Title Highlighted Badge */
+.quiz-user-badge.badge-chess,
+.chess-title-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(234, 179, 8, 0.15);
+  border: 1.5px solid #facc15;
+  color: #fef08a;
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.45), inset 0 0 3px rgba(250, 204, 21, 0.2);
+  text-shadow: 0 0 4px rgba(250, 204, 21, 0.35);
+  font-weight: 800;
+  border-radius: 4px;
+  padding: 1.5px 7px;
+  font-size: 11px;
+  line-height: 1.2;
 }
