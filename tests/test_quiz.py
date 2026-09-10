@@ -9,11 +9,12 @@ from app import auth, database, quiz_ai
 
 
 @pytest.fixture
-def temp_db(tmp_path: Path):
-    db_file = tmp_path / "test_chat.db"
-    database.configure_storage(tmp_path, 100 * 1024 * 1024)
+def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "chat.db")
+    monkeypatch.setattr(database, "DB_MAX_BYTES", 100 * 1024 * 1024)
     database.init_db()
-    return tmp_path
+    yield tmp_path
+
 
 
 def test_quiz_normalization():
@@ -29,6 +30,32 @@ def test_quiz_normalization():
     assert quiz_ai.check_quiz_answer(["1. AND", "AND"], "AND") is True
     assert quiz_ai.check_quiz_answer(["인터록", "인터록 회로"], "인터록") is True
     assert quiz_ai.check_quiz_answer(["인터록", "인터록 회로"], "틀린답") is False
+
+    # Spacing and punctuation tolerance
+    assert quiz_ai.check_quiz_answer(["자기유지회로"], "자기 유지 회로") is True
+    assert quiz_ai.check_quiz_answer(["자기 유지 회로"], "자기유지회로") is True
+    assert quiz_ai.check_quiz_answer(["바나나"], "바나나!") is True
+    assert quiz_ai.check_quiz_answer(["오징어"], "'오징어'") is True
+
+    # Korean suffix / particle tolerance
+    assert quiz_ai.check_quiz_answer(["인터록 회로"], "인터록") is True
+    assert quiz_ai.check_quiz_answer(["인터록"], "인터록 회로") is True
+    assert quiz_ai.check_quiz_answer(["인터록"], "인터록이다") is True
+
+    # Parenthetical alias tolerance
+    assert quiz_ai.check_quiz_answer(["릴레이 (Relay)"], "릴레이") is True
+    assert quiz_ai.check_quiz_answer(["릴레이 (Relay)"], "relay") is True
+    assert quiz_ai.check_quiz_answer(["AND 게이트 (AND Gate)"], "and") is True
+
+    # Comma / Slash separated candidate tolerance
+    assert quiz_ai.check_quiz_answer(["A, B, C"], "B") is True
+    assert quiz_ai.check_quiz_answer(["직렬 / 시리즈"], "시리즈") is True
+
+    # Unit tolerance
+    assert quiz_ai.check_quiz_answer(["100V"], "100 V") is True
+    assert quiz_ai.check_quiz_answer(["100V"], "100") is True
+    assert quiz_ai.check_quiz_answer(["5S"], "5초") is True
+
 
 
 def test_all_first_attempts_score_but_only_daily_quizzes_extend_streak(temp_db):
@@ -276,5 +303,56 @@ def test_quiz_review_and_retry(temp_db):
     assert len(wrong_after) == 1
     assert wrong_after[0]["id"] == q1["id"]
     assert wrong_after[0]["is_correct"] is True
+
+
+def test_quiz_flagging_and_admin_management(temp_db):
+    admin = database.create_user("flag_admin", auth.hash_secret("admin123"), role="admin")
+    student = database.create_user("flag_student", auth.hash_secret("pass123"))
+
+    quizzes = database.get_daily_quizzes(student["id"], count=3)
+    target_quiz = quizzes[0]
+
+    # Student reports an issue
+    flag_res = database.flag_quiz_question(
+        quiz_id=target_quiz["id"],
+        user_id=student["id"],
+        reason_type="wrong_answer",
+        comment="자기유지회로 정답 인정 요청"
+    )
+    assert flag_res["status"] == "open"
+    flag_id = flag_res["flag_id"]
+
+    # Open flags list
+    open_flags = database.get_quiz_flags(status="open")
+    assert any(f["id"] == flag_id and f["quiz_id"] == target_quiz["id"] for f in open_flags)
+
+    # Admin quiz search with filters
+    all_admin = database.get_all_quizzes_admin()
+    flagged_target = next(q for q in all_admin if q["id"] == target_quiz["id"])
+    assert flagged_target["open_flags_count"] >= 1
+
+    # Filter by flagged_only
+    flagged_only_list = database.get_all_quizzes_admin(flagged_only=True)
+    assert all(q["open_flags_count"] > 0 for q in flagged_only_list)
+    assert any(q["id"] == target_quiz["id"] for q in flagged_only_list)
+
+    # Search filter by id or keyword
+    search_by_id = database.get_all_quizzes_admin(search=str(target_quiz["id"]))
+    assert any(q["id"] == target_quiz["id"] for q in search_by_id)
+
+    # Category filter
+    cat_list = database.get_all_quizzes_admin(category=target_quiz["category"])
+    assert all(q["category"] == target_quiz["category"] for q in cat_list)
+
+    # Resolve the flag
+    ok = database.resolve_quiz_flag(flag_id, admin["id"])
+    assert ok is True
+
+    # Now open flags count for this quiz is 0
+    updated_quiz = database.get_quiz_by_id_admin(target_quiz["id"])
+    assert updated_quiz["open_flags_count"] == 0
+    open_flags_after = database.get_quiz_flags(quiz_id=target_quiz["id"], status="open")
+    assert len(open_flags_after) == 0
+
 
 

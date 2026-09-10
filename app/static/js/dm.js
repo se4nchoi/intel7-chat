@@ -4,6 +4,7 @@
 
 import { state, isConversationMuted } from './state.js';
 import { makeKeyboardClickable } from './utils.js';
+import { screenshareState, getDmRoomId } from './screenshare.js';
 
 export const userDirectory = new Map();
 
@@ -80,6 +81,15 @@ export function renderDms(onSwitchConv) {
       badge.className = 'sidebar-badge conv-unread dm-unread';
       badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
       item.appendChild(badge);
+    }
+
+    const dmRoomId = getDmRoomId(state.currentUser?.username, conv.name);
+    if (dmRoomId && screenshareState?.hasSession(dmRoomId)) {
+      const liveBadge = document.createElement('span');
+      liveBadge.className = 'channel-live-badge';
+      liveBadge.textContent = '🔴 LIVE';
+      liveBadge.title = '화면 공유 중';
+      item.appendChild(liveBadge);
     }
 
     const activate = () => onSwitchConv('dm', conv.name);

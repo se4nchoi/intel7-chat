@@ -8,10 +8,11 @@ from app import database
 
 
 @pytest.fixture
-def temp_db(tmp_path: Path):
-    database.configure_storage(tmp_path, 100 * 1024 * 1024)
+def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "chat.db")
+    monkeypatch.setattr(database, "DB_MAX_BYTES", 100 * 1024 * 1024)
     database.init_db()
-    return tmp_path
+    yield tmp_path
 
 
 def test_chess_rankings_and_tie_breaking(temp_db):

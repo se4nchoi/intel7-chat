@@ -2,9 +2,21 @@ import asyncio
 import json
 import time
 
+from pathlib import Path
+import pytest
 import chess
 
+from app import database
 from app.chess_manager import ChessManager, START_FEN
+
+
+@pytest.fixture(autouse=True)
+def isolated_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "chat.db")
+    monkeypatch.setattr(database, "DB_MAX_BYTES", 100 * 1024 * 1024)
+    database.init_db()
+    yield
+
 
 
 class FakeWebSocket:

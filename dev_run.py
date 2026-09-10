@@ -18,7 +18,7 @@ if venv_python.exists() and Path(sys.executable).resolve() != venv_python.resolv
 import argparse
 import uvicorn
 from app.config import load_config
-from run import first_run
+from run import first_run, get_all_lan_ips
 
 
 def main() -> None:
@@ -64,15 +64,20 @@ def main() -> None:
     print(f"Host: {host}")
     print(f"Port: {port}")
     print(f"Auto-reload: {'ON' if args.reload else 'OFF'}")
-    print(f"접속 주소: http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}")
-    print(f"LAN 접속 주소: http://{host}:{port}\n")
+    print(f"접속 주소 (로컬): http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}")
+    if host == "0.0.0.0":
+        for ip in get_all_lan_ips():
+            print(f"LAN 접속 주소:   http://{ip}:{port}")
+    else:
+        print(f"LAN 접속 주소:   http://{host}:{port}")
+    print()
 
     uvicorn.run(
         "app.main:app",
         host=host,
         port=port,
         reload=args.reload,
-        ws_max_size=8192,
+        ws_max_size=65536,
         ws_max_queue=16,
         ws_per_message_deflate=False,
         limit_concurrency=60,

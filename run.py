@@ -19,6 +19,22 @@ def detect_lan_ip() -> str:
     finally:
         sock.close()
 
+def get_all_lan_ips() -> list[str]:
+    ips = set()
+    primary = detect_lan_ip()
+    if primary and primary != "0.0.0.0":
+        ips.add(primary)
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127."):
+                ips.add(ip)
+    except OSError:
+        pass
+    return sorted(ips)
+
+
 def prompt(label: str, default: str) -> str:
     return input(f"{label} [{default}]: ").strip() or default
 
@@ -106,9 +122,17 @@ def main() -> None:
         print(f"{user['username']} 비밀번호를 재설정했습니다. 기존 세션은 종료되었습니다.")
         return
     print(f"\n{config.server_name}")
-    print(f"접속 주소: http://{config.bind_host}:{config.port}")
+    hostname = socket.gethostname()
+    if config.bind_host == "0.0.0.0":
+        print(f"접속 주소 (호스트 로컬): http://localhost:{config.port}")
+        for ip in get_all_lan_ips():
+            print(f"접속 주소 (교실 LAN):   http://{ip}:{config.port}")
+        if hostname:
+            print(f"접속 주소 (호스트명):   http://{hostname}:{config.port}")
+    else:
+        print(f"접속 주소: http://{config.bind_host}:{config.port}")
     print("주의: HTTP LAN 서비스입니다. 비밀번호를 재사용하거나 민감정보를 공유하지 마세요.\n")
-    uvicorn.run("app.main:app", host=config.bind_host, port=config.port, ws_max_size=8192,
+    uvicorn.run("app.main:app", host=config.bind_host, port=config.port, ws_max_size=65536,
         ws_max_queue=16, ws_per_message_deflate=False, limit_concurrency=60, server_header=False)
 
 if __name__ == "__main__":

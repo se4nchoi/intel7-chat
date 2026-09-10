@@ -11,6 +11,15 @@ import { displayNickname, renderOnlineList, getOrCreateDm, userDirectory } from 
 
 import { getOrCreateChannel, channelsDirectory } from './channels.js';
 import { appendMessageNode, setMentionUsers, refreshRenderedAuthorNames } from './chat.js';
+import {
+  onScreenshareStarted,
+  onScreenshareStopped,
+  onScreenshareViewersUpdate,
+  handleViewerJoined,
+  handleViewerLeft,
+  handleSignal,
+  syncAllActiveSessions,
+} from './screenshare.js';
 
 const RECONNECT_DELAY = 3000;
 let reconnectTimer = null;
@@ -316,11 +325,43 @@ export function initWebSocket(callbacks = {}) {
         if (data.unread_counts && typeof data.unread_counts === 'object') {
           applyServerUnreadCounts(data.unread_counts);
         }
+        if (data.screenshares || data.screenshare) {
+          syncAllActiveSessions(data.screenshares || data.screenshare);
+        }
         if (callbacks.onDmsUpdated) callbacks.onDmsUpdated();
         if (callbacks.onUnreadUpdated) callbacks.onUnreadUpdated(data.unread_counts);
         break;
       }
 
+      case 'screenshare_started': {
+        onScreenshareStarted(data);
+        break;
+      }
+
+      case 'screenshare_stopped': {
+        onScreenshareStopped(data);
+        break;
+      }
+
+      case 'screenshare_viewers_update': {
+        onScreenshareViewersUpdate(data);
+        break;
+      }
+
+      case 'screenshare_viewer_joined': {
+        handleViewerJoined(data);
+        break;
+      }
+
+      case 'screenshare_viewer_left': {
+        handleViewerLeft(data);
+        break;
+      }
+
+      case 'screenshare_signal': {
+        handleSignal(data);
+        break;
+      }
 
       case 'error': {
         showToast(data.message || '오류가 발생했습니다.', 'error');

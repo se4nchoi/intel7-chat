@@ -464,6 +464,36 @@ def _migrate_v22(conn: sqlite3.Connection) -> None:
                     )
             conn.execute("DELETE FROM user_conversation_state WHERE conversation_type='dm' AND conversation_id=?", (uname,))
 
+def _migrate_v23(conn: sqlite3.Connection) -> None:
+    """Create quiz_flags table for reporting question errors and typos."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS quiz_flags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quiz_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        reason_type TEXT NOT NULL,
+        comment TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        resolved_by_user_id INTEGER,
+        FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_flags_status ON quiz_flags(status, quiz_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_flags_quiz ON quiz_flags(quiz_id)")
+
+def _migrate_v24(conn: sqlite3.Connection) -> None:
+    """Create and seed the permanent screen sharing channel."""
+    existing = conn.execute("SELECT id FROM channels WHERE name = 'screenshare'").fetchone()
+    if not existing:
+        now = utc_now()
+        chan_uuid = _uuid.uuid4().hex
+        conn.execute("""INSERT INTO channels
+            (name, display_name, description, uuid, is_default, archived, created_at)
+            VALUES ('screenshare', '🖥️ 화면 공유', '실시간 LAN 화면 공유 및 질의응답 채널', ?, 1, 0, ?)""",
+            (chan_uuid, now))
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -487,7 +517,10 @@ _MIGRATIONS = [
     _migrate_v20,
     _migrate_v21,
     _migrate_v22,
+    _migrate_v23,
+    _migrate_v24,
 ]
+
 
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -1716,6 +1749,7 @@ QUIZ_SUBJECT_TITLES = {
     "공압/유압": ("💨", "압력 찍먹", "밸브 좀 함", "유공압 고인물"),
     "로봇 Python": ("🤖", "로봇 찍먹", "코드 좀 함", "로봇 고인물"),
     "상식": ("🌏", "몰상식하진않음", "상식적인사람", "상식의 왕"),
+    "넌센스퀴즈": ("💡", "센스있는사람", "틀을 깨는자", "센스의 왕"),
 }
 
 
@@ -2254,26 +2288,142 @@ def update_quiz(quiz_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         conn.commit()
         if not cur.rowcount:
             return None
-    return next((item for item in get_all_quizzes_admin() if item["id"] == quiz_id), None)
+    return get_quiz_by_id_admin(quiz_id)
 
 
-def get_all_quizzes_admin(limit: int = 200) -> List[Dict[str, Any]]:
-    """Returns all active quizzes for management view."""
+def get_quiz_by_id_admin(quiz_id: int) -> Optional[Dict[str, Any]]:
+    """Returns a single quiz with options, correct answers, and flag count."""
     with get_connection() as conn:
-        rows = conn.execute("""
-            SELECT q.*, d.filename as source_doc_filename
+        r = conn.execute("""
+            SELECT q.*, d.filename as source_doc_filename,
+                   (SELECT COUNT(*) FROM quiz_flags f WHERE f.quiz_id = q.id AND f.status = 'open') as open_flags_count
             FROM quizzes q
             LEFT JOIN quiz_source_documents d ON q.source_doc_id = d.id
-            ORDER BY q.id DESC
-            LIMIT ?
-        """, (limit,)).fetchall()
+            WHERE q.id = ?
+        """, (quiz_id,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        d["options"] = json.loads(d["options_json"]) if d["options_json"] else None
+        d["correct_answers"] = json.loads(d["correct_answers_json"]) if d["correct_answers_json"] else []
+        d["open_flags_count"] = d.get("open_flags_count", 0) or 0
+        return d
+
+
+def get_all_quizzes_admin(
+    search: str = "",
+    category: str = "",
+    flagged_only: bool = False,
+    limit: int = 200,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """Returns quizzes for management view with search, category filtering, and open flag counts."""
+    with get_connection() as conn:
+        conditions = ["q.is_active = 1"]
+        params: List[Any] = []
+
+        if category and category.strip():
+            conditions.append("q.category = ?")
+            params.append(category.strip())
+
+        if search and search.strip():
+            kw = f"%{search.strip()}%"
+            conditions.append("(q.question LIKE ? OR q.correct_answers_json LIKE ? OR q.explanation LIKE ? OR CAST(q.id AS TEXT) = ?)")
+            params.extend([kw, kw, kw, search.strip()])
+
+        where_clause = " AND ".join(conditions)
+        having_clause = "HAVING open_flags_count > 0" if flagged_only else ""
+
+        sql = f"""
+            SELECT q.*, d.filename as source_doc_filename,
+                   COUNT(CASE WHEN f.status = 'open' THEN 1 END) as open_flags_count,
+                   GROUP_CONCAT(CASE WHEN f.status = 'open' THEN f.reason_type || ': ' || f.comment END, ' || ') as flag_summaries
+            FROM quizzes q
+            LEFT JOIN quiz_source_documents d ON q.source_doc_id = d.id
+            LEFT JOIN quiz_flags f ON q.id = f.quiz_id
+            WHERE {where_clause}
+            GROUP BY q.id
+            {having_clause}
+            ORDER BY open_flags_count DESC, q.id DESC
+            LIMIT ? OFFSET ?
+        """
+        params.extend([limit, offset])
+        rows = conn.execute(sql, params).fetchall()
         results = []
         for r in rows:
             d = dict(r)
             d["options"] = json.loads(d["options_json"]) if d["options_json"] else None
             d["correct_answers"] = json.loads(d["correct_answers_json"]) if d["correct_answers_json"] else []
+            d["open_flags_count"] = d.get("open_flags_count", 0) or 0
             results.append(d)
         return results
+
+
+def flag_quiz_question(quiz_id: int, user_id: int, reason_type: str, comment: str = "") -> Dict[str, Any]:
+    """Records a question error/dispute flag submitted by a student."""
+    now = utc_now()
+    reason = str(reason_type or "other").strip()[:50]
+    note = str(comment or "").strip()[:500]
+    with get_connection() as conn:
+        quiz = conn.execute("SELECT id FROM quizzes WHERE id = ?", (quiz_id,)).fetchone()
+        if not quiz:
+            raise ValueError(f"Quiz #{quiz_id} not found.")
+
+        existing = conn.execute(
+            "SELECT id FROM quiz_flags WHERE quiz_id = ? AND user_id = ? AND status = 'open'",
+            (quiz_id, user_id)
+        ).fetchone()
+
+        if existing:
+            conn.execute(
+                "UPDATE quiz_flags SET reason_type = ?, comment = ?, created_at = ? WHERE id = ?",
+                (reason, note, now, existing["id"])
+            )
+            flag_id = existing["id"]
+        else:
+            cur = conn.execute(
+                "INSERT INTO quiz_flags (quiz_id, user_id, reason_type, comment, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)",
+                (quiz_id, user_id, reason, note, now)
+            )
+            flag_id = cur.lastrowid
+        conn.commit()
+        return {"flag_id": flag_id, "quiz_id": quiz_id, "status": "open"}
+
+
+def get_quiz_flags(quiz_id: Optional[int] = None, status: Optional[str] = "open") -> List[Dict[str, Any]]:
+    """Fetches question error reports."""
+    with get_connection() as conn:
+        conditions = []
+        params: List[Any] = []
+        if quiz_id is not None:
+            conditions.append("f.quiz_id = ?")
+            params.append(quiz_id)
+        if status:
+            conditions.append("f.status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        rows = conn.execute(f"""
+            SELECT f.*, u.username, u.display_name, q.category, q.question
+            FROM quiz_flags f
+            JOIN users u ON f.user_id = u.id
+            JOIN quizzes q ON f.quiz_id = q.id
+            {where}
+            ORDER BY f.id DESC
+        """, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def resolve_quiz_flag(flag_id: int, resolved_by_user_id: int) -> bool:
+    """Marks a reported issue as resolved."""
+    now = utc_now()
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE quiz_flags SET status = 'resolved', resolved_at = ?, resolved_by_user_id = ? WHERE id = ?",
+            (now, resolved_by_user_id, flag_id)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
 
 
 def delete_quiz(quiz_id: int) -> bool:

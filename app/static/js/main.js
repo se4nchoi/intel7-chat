@@ -36,6 +36,7 @@ import {
   handleLeaderboardInvalidated,
 } from './quiz.js';
 import { initChessListeners } from './chess.js';
+import { initScreenShareUI, handleConversationSwitch, handleChannelSwitch } from './screenshare.js';
 import {
   openGlobalNotificationModal,
   closeGlobalNotificationModal,
@@ -171,6 +172,7 @@ async function switchConversation(type, id) {
   loadActiveDraft();
   renderComposerPreviews();
   updateConversationNotificationUI();
+  handleConversationSwitch(type, id);
   renderChannels(switchConversation);
   renderDms(switchConversation);
 
@@ -550,7 +552,11 @@ function initApp() {
   initQuizListeners();
   initChessListeners();
   initSearchListeners(switchConversation);
+  initScreenShareUI();
   initSidebarSections();
+  window.bambooChatSwitchChannel = (cid) => switchConversation('channel', cid);
+  window.bambooChatSwitchConversation = (type, id) => switchConversation(type, id);
+  window.bambooChatRenderDms = () => renderDms(switchConversation);
 
   // 4. Load older messages button
   const loadOlderBtn = document.getElementById('load-older-btn');

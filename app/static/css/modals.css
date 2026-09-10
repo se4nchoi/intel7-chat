@@ -140,7 +140,7 @@
   appearance: checkbox;
 }
 
-.modal-box:not(.cbt-modal-box) button:not(.admin-close):not(.auth-mode-toggle):not(.danger-btn):not(.caution-btn):not(.inline-edit-cancel):not(.snooze-btn):not(.inline-edit-btn) {
+.modal-box:not(.cbt-modal-box) button:not(.admin-close):not(.auth-mode-toggle):not(.danger-btn):not(.caution-btn):not(.inline-edit-cancel):not(.snooze-btn):not(.inline-edit-btn):not(.ss-copy-btn):not(.ss-confirm-btn) {
   width: 100%;
   box-sizing: border-box;
   padding: 11px 18px;
@@ -156,7 +156,7 @@
   justify-content: center;
   transition: all .18s ease;
 }
-.modal-box:not(.cbt-modal-box) button:not(.admin-close):not(.auth-mode-toggle):not(.danger-btn):not(.caution-btn):not(.inline-edit-cancel):not(.snooze-btn):not(.inline-edit-btn):hover:not(:disabled) {
+.modal-box:not(.cbt-modal-box) button:not(.admin-close):not(.auth-mode-toggle):not(.danger-btn):not(.caution-btn):not(.inline-edit-cancel):not(.snooze-btn):not(.inline-edit-btn):not(.ss-copy-btn):not(.ss-confirm-btn):hover:not(:disabled) {
   background: rgba(79, 142, 247, 0.12);
   border-color: #60a5fa;
   color: #fff;

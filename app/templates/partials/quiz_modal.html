@@ -9,11 +9,13 @@
         </div>
       </div>
       <div class="cbt-header-right">
-        <div id="quiz-streak-pill" class="cbt-streak-pill" title="오늘의 퀴즈를 풀면 STREAK이 유지됩니다." aria-label="오늘의 퀴즈를 풀면 스트릭이 유지됩니다">
+        <div id="quiz-streak-pill" class="cbt-streak-pill" title="오늘의 퀴즈를 풀면 STREAK이 유지됩니다."
+          aria-label="오늘의 퀴즈를 풀면 스트릭이 유지됩니다">
           <span class="cbt-streak-flame">🔥</span>
           <span id="quiz-stat-streak">0일 연속 🔥</span>
         </div>
-        <button id="quiz-modal-close" class="cbt-modal-close-btn" type="button" aria-label="퀴즈 창 닫기" title="닫기">×</button>
+        <button id="quiz-modal-close" class="cbt-modal-close-btn" type="button" aria-label="퀴즈 창 닫기"
+          title="닫기">×</button>
       </div>
     </div>
 
@@ -46,7 +48,8 @@
 
         <div class="cbt-sidebar-section quiz-question-sidebar-section hidden">
           <div class="quiz-question-panel-heading">
-            <button id="quiz-sidebar-back-btn" class="quiz-sidebar-back-btn hidden" type="button" aria-label="주제 목록으로 돌아가기">←</button>
+            <button id="quiz-sidebar-back-btn" class="quiz-sidebar-back-btn hidden" type="button"
+              aria-label="주제 목록으로 돌아가기">←</button>
             <div id="quiz-question-panel-title" class="quiz-question-panel-title">📋 문제 목록</div>
           </div>
           <div id="quiz-question-panel" class="quiz-question-panel">
@@ -138,8 +141,10 @@
               <div class="cbt-card-header">
                 <span id="quiz-category-tag" class="cbt-category-tag">PLC</span>
                 <div class="cbt-header-badges">
-                  <button id="quiz-star-btn" class="cbt-star-btn" type="button" title="문제 보관/북마크">⭐ <span id="quiz-star-label">보관</span></button>
+                  <button id="quiz-star-btn" class="cbt-star-btn" type="button" title="문제 보관/북마크">⭐ <span
+                      id="quiz-star-label">보관</span></button>
                   <button id="quiz-hint-btn" class="cbt-hint-btn" type="button" title="힌트 보기">💡 힌트</button>
+                  <button id="quiz-flag-btn" class="cbt-flag-btn" type="button" title="문제 오류/정답 이상 신고">🚩 신고</button>
                   <span id="quiz-difficulty-tag" class="cbt-diff-badge">보통</span>
                   <span id="quiz-type-tag" class="cbt-type-badge">4지선다</span>
                   <span id="quiz-score-badge" class="cbt-score-badge">+20점</span>
@@ -183,10 +188,11 @@
                 <div id="quiz-input-container" class="cbt-input-wrap hidden">
                   <div class="cbt-input-label">정답 입력</div>
                   <div class="cbt-input-row">
-                    <input id="quiz-answer-input" type="text" class="cbt-text-input" placeholder="정답을 입력하세요 (예: X0, Y0, AND, 인터록)" autocomplete="off" />
+                    <input id="quiz-answer-input" type="text" class="cbt-text-input"
+                      placeholder="정답을 입력하세요" autocomplete="off" />
                     <button id="quiz-submit-btn" class="cbt-submit-btn" type="button">정답 제출</button>
                   </div>
-                  <div class="cbt-input-guide">대소문자, 앞뒤 공백은 자동으로 무시됩니다. Enter 제출</div>
+                  <div class="cbt-input-guide">대소문자, 띄어쓰기, 단위(초/S, V 등), 보편적인 유의어는 자동으로 인정됩니다. Enter 제출</div>
                   <div class="cbt-symbol-chips">
                     <span class="cbt-chip-label">빠른 기호 입력:</span>
                     <button type="button" class="cbt-chip-btn" data-sym="X0">X0</button>
@@ -230,7 +236,8 @@
           <div class="quiz-community-grid">
             <section class="cbt-admin-card">
               <h3 class="cbt-admin-title">🧠 NotebookLM으로 문제집 만들기</h3>
-              <p class="cbt-admin-desc">분야를 고른 뒤 아래 프롬프트를 NotebookLM에 붙여넣으세요. 이미지는 제외하고, 회로나 도면은 문제 본문의 Markdown 코드 블록에 ASCII로 표현합니다.</p>
+              <p class="cbt-admin-desc">분야를 고른 뒤 아래 프롬프트를 NotebookLM에 붙여넣으세요. 이미지는 제외하고, 회로나 도면은 문제 본문의 Markdown 코드 블록에
+                ASCII로 표현합니다.</p>
               <p class="quiz-integrity-note">AI 결과는 초안입니다. 정답·보기·해설·출처를 직접 검증한 문항만 제출하세요.</p>
               <label for="quiz-set-expertise-choice">주제</label>
               <div class="quiz-expertise-picker-row">
@@ -248,9 +255,8 @@
                   <option value="로봇 Python">로봇 Python</option>
                 </select>
               </div>
-              <input id="quiz-set-expertise" class="form-input hidden" type="text"
-                     minlength="2" maxlength="40" value="PLC"
-                     placeholder="새로운 주제명 (2~40자)" aria-label="새 문제집 주제 직접 입력" />
+              <input id="quiz-set-expertise" class="form-input hidden" type="text" minlength="2" maxlength="40"
+                value="PLC" placeholder="새로운 주제명 (2~40자)" aria-label="새 문제집 주제 직접 입력" />
               <p class="field-hint">목록의 ‘새 주제 직접 입력’을 선택하면 새 분야를 만들 수 있습니다.</p>
               <label for="quiz-notebook-prompt">NotebookLM 프롬프트</label>
               <textarea id="quiz-notebook-prompt" class="quiz-prompt-box" rows="9" readonly></textarea>
@@ -261,7 +267,8 @@
               <label for="quiz-set-title">문제집 제목</label>
               <input id="quiz-set-title" type="text" maxlength="80" placeholder="예: PLC 인터록 핵심 10제" />
               <label for="quiz-set-json">JSON 배열</label>
-              <textarea id="quiz-set-json" rows="12" placeholder='[{"difficulty":"medium","question_type":"multiple_choice","question":"...","options":["1. ...","2. ...","3. ...","4. ..."],"correct_answers":["1"],"hint":"...","explanation":"...","source_ref":"..."}]'></textarea>
+              <textarea id="quiz-set-json" rows="12"
+                placeholder='[{"difficulty":"medium","question_type":"multiple_choice","question":"...","options":["1. ...","2. ...","3. ...","4. ..."],"correct_answers":["1"],"hint":"...","explanation":"...","source_ref":"..."}]'></textarea>
               <p id="quiz-set-status" class="admin-status-msg"></p>
               <button id="quiz-set-validate-btn" type="button" class="secondary-btn">DB 유사도·정답 편향 검사</button>
               <button id="quiz-set-save-btn" type="button" class="cbt-action-btn">초안 저장</button>
@@ -327,6 +334,7 @@
                 <option value="공압/유압">💨 공압/유압</option>
                 <option value="로봇 Python">🤖 로봇 Python</option>
                 <option value="상식">🌏 상식</option>
+                <option value="넌센스퀴즈">💡 넌센스퀴즈</option>
               </select>
             </div>
           </div>
@@ -399,7 +407,8 @@
               <p class="cbt-admin-desc">NotebookLM에서 생성된 JSON 코드 블록을 그대로 붙여넣어 일괄 등록합니다.</p>
               <form id="quiz-json-import-form" class="channel-form">
                 <label for="quiz-json-input">JSON 데이터</label>
-                <textarea id="quiz-json-input" rows="4" placeholder='[{"category":"PLC","question":"...","correct_answers":["X0"]}]' required></textarea>
+                <textarea id="quiz-json-input" rows="4"
+                  placeholder='[{"category":"PLC","question":"...","correct_answers":["X0"]}]' required></textarea>
                 <p id="quiz-json-status" class="admin-status-msg"></p>
                 <button id="quiz-json-submit" type="submit" class="cbt-action-btn">📥 JSON 일괄 등록</button>
               </form>
@@ -414,29 +423,131 @@
                 </div>
                 <button id="admin-quiz-new-btn" type="button" class="cbt-action-btn compact">+ 새 문항</button>
               </div>
+
+              <!-- Admin Quiz Search & Filter Toolbar -->
+              <div class="admin-quiz-toolbar">
+                <div class="admin-quiz-search-wrap">
+                  <span class="admin-quiz-search-icon">🔍</span>
+                  <input id="admin-quiz-search" type="text" class="admin-quiz-search-input"
+                    placeholder="문제 내용, 정답, 해설, 문항번호(#ID) 검색..." autocomplete="off" />
+                  <button id="admin-quiz-search-clear" type="button" class="admin-quiz-search-clear hidden"
+                    title="검색어 초기화">✕</button>
+                </div>
+                <select id="admin-quiz-category-filter" class="admin-quiz-cat-filter">
+                  <option value="">전체 과목</option>
+                </select>
+                <button id="admin-quiz-flagged-toggle" type="button" class="admin-flag-toggle-btn"
+                  title="오류 신고된 문항만 필터링">
+                  🚩 신고 문항 (<span id="admin-flagged-count">0</span>)
+                </button>
+              </div>
+
               <form id="admin-quiz-editor" class="admin-quiz-editor hidden">
                 <input id="admin-quiz-edit-id" type="hidden" />
+
+                <!-- Flag Reports Panel inside Editor -->
+                <div id="admin-quiz-flag-panel" class="admin-quiz-flag-panel hidden">
+                  <div class="admin-quiz-flag-panel-header">
+                    <span class="admin-quiz-flag-panel-title">🚩 접수된 학생 오류 신고</span>
+                    <span id="admin-quiz-flag-panel-badge" class="admin-quiz-flag-pill">0건</span>
+                  </div>
+                  <div id="admin-quiz-flag-items" class="admin-quiz-flag-items"></div>
+                </div>
+
                 <div class="form-row-3">
                   <div><label for="admin-quiz-category">과목</label><input id="admin-quiz-category" required /></div>
-                  <div><label for="admin-quiz-difficulty">난이도</label><select id="admin-quiz-difficulty"><option value="easy">쉬움</option><option value="medium">보통</option><option value="hard">어려움</option></select></div>
-                  <div><label for="admin-quiz-type">유형</label><select id="admin-quiz-type"><option value="multiple_choice">객관식</option><option value="short_answer">단답형</option><option value="ladder_input">래더 입력</option></select></div>
+                  <div><label for="admin-quiz-difficulty">난이도</label><select id="admin-quiz-difficulty">
+                      <option value="easy">쉬움</option>
+                      <option value="medium">보통</option>
+                      <option value="hard">어려움</option>
+                    </select></div>
+                  <div><label for="admin-quiz-type">유형</label><select id="admin-quiz-type">
+                      <option value="multiple_choice">객관식</option>
+                      <option value="short_answer">단답형</option>
+                      <option value="ladder_input">래더 입력</option>
+                    </select></div>
                 </div>
-                <label for="admin-quiz-question">문제</label><textarea id="admin-quiz-question" rows="4" required></textarea>
-                <label for="admin-quiz-options">보기 (객관식은 한 줄에 하나씩 정확히 4개)</label><textarea id="admin-quiz-options" rows="4"></textarea>
-                <label for="admin-quiz-answers">정답 (한 줄에 하나씩)</label><textarea id="admin-quiz-answers" rows="3" required></textarea>
+                <label for="admin-quiz-question">문제</label><textarea id="admin-quiz-question" rows="4"
+                  required></textarea>
+                <label for="admin-quiz-options">보기 (객관식은 한 줄에 하나씩 정확히 4개)</label><textarea id="admin-quiz-options"
+                  rows="4"></textarea>
+                <div class="admin-quiz-answer-label-row">
+                  <label for="admin-quiz-answers">정답 (한 줄에 하나씩)</label>
+                  <span class="admin-label-hint">※ 유사 표현, 단위 생략, 영문명 등 복수 정답을 줄바꿈으로 추가할 수 있습니다.</span>
+                </div>
+                <textarea id="admin-quiz-answers" rows="3" required></textarea>
                 <div class="form-row-2">
                   <div><label for="admin-quiz-hint">힌트</label><textarea id="admin-quiz-hint" rows="2"></textarea></div>
-                  <div><label for="admin-quiz-source">출처</label><textarea id="admin-quiz-source" rows="2"></textarea></div>
+                  <div><label for="admin-quiz-source">출처</label><textarea id="admin-quiz-source" rows="2"></textarea>
+                  </div>
                 </div>
                 <label for="admin-quiz-explanation">해설</label><textarea id="admin-quiz-explanation" rows="3"></textarea>
                 <p id="admin-quiz-editor-status" class="admin-status-msg"></p>
-                <div class="admin-editor-actions"><button type="button" id="admin-quiz-editor-cancel" class="secondary-btn">취소</button><button type="submit" class="cbt-action-btn compact">저장</button></div>
+                <div class="admin-editor-actions"><button type="button" id="admin-quiz-editor-cancel"
+                    class="secondary-btn">취소</button><button type="submit" class="cbt-action-btn compact">저장</button>
+                </div>
               </form>
               <div id="admin-quiz-list" class="admin-quiz-list"></div>
             </div>
           </div>
         </div>
       </main>
+    </div>
+  </div>
+
+  <!-- Question Error / Issue Flag Reporting Submodal -->
+  <div id="quiz-flag-modal" class="cbt-submodal-backdrop hidden">
+    <div class="cbt-flag-card">
+      <div class="cbt-flag-header">
+        <div class="cbt-flag-title-wrap">
+          <span class="cbt-flag-icon">🚩</span>
+          <h4 class="cbt-flag-title">문제 오류 신고</h4>
+        </div>
+        <button id="quiz-flag-close-btn" type="button" class="cbt-submodal-close" title="닫기">&times;</button>
+      </div>
+      <p class="cbt-flag-desc">정답 오표기, 오탈자, 불명확한 지문 등을 접수해 주시면 관리자가 검토 후 즉각 정정합니다.</p>
+
+      <div class="cbt-flag-target-box">
+        <span class="cbt-flag-target-badge" id="quiz-flag-target-badge">#0</span>
+        <span class="cbt-flag-target-text" id="quiz-flag-target-text">문제 내용 미리보기</span>
+      </div>
+
+      <form id="quiz-flag-form">
+        <div class="cbt-flag-field">
+          <label class="cbt-flag-label">신고 사유</label>
+          <div class="cbt-flag-radios">
+            <label class="cbt-flag-radio-item">
+              <input type="radio" name="quiz-flag-reason" value="wrong_answer" checked />
+              <span><strong>정답 오류</strong> (정답인데 오답 처리, 답안 키 이상)</span>
+            </label>
+            <label class="cbt-flag-radio-item">
+              <input type="radio" name="quiz-flag-reason" value="typo_or_broken" />
+              <span><strong>오탈자 / 지문 훼손</strong> (오타, 특수문자 깨짐, 보기 이상)</span>
+            </label>
+            <label class="cbt-flag-radio-item">
+              <input type="radio" name="quiz-flag-reason" value="bad_explanation" />
+              <span><strong>해설 오류 / 부실</strong> (설명이 틀리거나 부족함)</span>
+            </label>
+            <label class="cbt-flag-radio-item">
+              <input type="radio" name="quiz-flag-reason" value="other" />
+              <span><strong>기타 의견</strong></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="cbt-flag-field">
+          <label for="quiz-flag-comment" class="cbt-flag-label">상세 의견 <small class="cbt-optional">(선택)</small></label>
+          <textarea id="quiz-flag-comment" rows="3" class="cbt-flag-textarea"
+            placeholder="예: '자기유지회로'도 정답으로 인정되어야 합니다."></textarea>
+        </div>
+
+        <p id="quiz-flag-status" class="admin-status-msg"></p>
+
+        <div class="cbt-flag-actions">
+          <button id="quiz-flag-cancel-btn" type="button" class="secondary-btn">취소</button>
+          <button id="quiz-flag-submit-btn" type="submit" class="danger-btn">🚩 신고 접수</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>

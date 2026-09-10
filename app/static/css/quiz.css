@@ -698,6 +698,27 @@
   color: #fff !important;
 }
 
+.cbt-flag-btn {
+  background: transparent !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+  color: #fca5a5 !important;
+  font-size: 0.76rem !important;
+  font-weight: 700 !important;
+  padding: 3px 9px !important;
+  border-radius: 6px !important;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.cbt-flag-btn:hover {
+  background: rgba(239, 68, 68, 0.12) !important;
+  border-color: #f87171 !important;
+  color: #fff !important;
+}
+
 .cbt-diff-badge {
   background: transparent;
   border: 1px solid #293046;
@@ -1797,3 +1818,513 @@
   color: #64748b;
   margin-top: 4px;
 }
+
+/* ============================================================
+   Flagging & Quiz Admin Overhaul Styles
+   ============================================================ */
+
+/* Question Error Flag Submodal */
+.cbt-submodal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  background: rgba(4, 6, 12, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: cbtFadeIn 0.2s ease-out;
+}
+
+.cbt-submodal-backdrop.hidden {
+  display: none !important;
+}
+
+.cbt-flag-card {
+  background: #111522;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 25px rgba(239, 68, 68, 0.15);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 520px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  animation: cbtScaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes cbtScaleUp {
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.cbt-flag-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cbt-flag-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cbt-flag-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fee2e2;
+  margin: 0;
+}
+
+.cbt-submodal-close {
+  background: transparent;
+  border: 1px solid #283049;
+  border-radius: 6px;
+  color: #94a3b8;
+  font-size: 1.25rem;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.cbt-submodal-close:hover {
+  border-color: #ef4444;
+  color: #fff;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.cbt-flag-desc {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin: -6px 0 0 0;
+  line-height: 1.4;
+}
+
+.cbt-flag-target-box {
+  background: #090c14;
+  border: 1px solid #20263a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.cbt-flag-target-badge {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.cbt-flag-target-text {
+  font-size: 0.84rem;
+  color: #cbd5e1;
+  line-height: 1.4;
+  margin: 0;
+  max-height: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.cbt-flag-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cbt-flag-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.cbt-optional {
+  color: #64748b;
+  font-weight: normal;
+  font-size: 0.76rem;
+}
+
+.cbt-flag-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cbt-flag-radio-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #0d111a;
+  border: 1px solid #1f273b;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.cbt-flag-radio-item:hover {
+  border-color: #3b82f6;
+  background: #131926;
+}
+
+.cbt-flag-radio-item input[type="radio"] {
+  accent-color: #ef4444;
+  cursor: pointer;
+}
+
+.cbt-flag-radio-item strong {
+  color: #f8fafc;
+}
+
+.cbt-flag-textarea {
+  background: #0d111a;
+  border: 1px solid #1f273b;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #f1f5f9;
+  font-size: 0.82rem;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+}
+
+.cbt-flag-textarea:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.4);
+}
+
+.cbt-flag-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* Admin Quiz Toolbar */
+.admin-quiz-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.admin-quiz-search-wrap {
+  flex: 1;
+  min-width: 220px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.admin-quiz-search-icon {
+  position: absolute;
+  left: 10px;
+  font-size: 0.85rem;
+  color: #64748b;
+  pointer-events: none;
+}
+
+.admin-quiz-search-input {
+  width: 100%;
+  padding: 8px 30px 8px 32px;
+  background: #0d111a;
+  border: 1px solid #23293c;
+  border-radius: 6px;
+  color: #f1f5f9;
+  font-size: 0.82rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.admin-quiz-search-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4);
+}
+
+.admin-quiz-search-clear {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.admin-quiz-search-clear:hover {
+  color: #fff;
+  background: #23293c;
+}
+
+.admin-quiz-cat-filter {
+  padding: 8px 12px;
+  background: #0d111a;
+  border: 1px solid #23293c;
+  border-radius: 6px;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.admin-quiz-cat-filter:focus {
+  border-color: #3b82f6;
+}
+
+.admin-flag-toggle-btn {
+  padding: 8px 12px;
+  background: #0d111a;
+  border: 1px solid #23293c;
+  border-radius: 6px;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.admin-flag-toggle-btn:hover {
+  border-color: #ef4444;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.admin-flag-toggle-btn.active {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #fee2e2;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35);
+}
+
+/* Admin Quiz Flag Panel inside Editor */
+.admin-quiz-flag-panel {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-quiz-flag-panel.hidden {
+  display: none !important;
+}
+
+.admin-quiz-flag-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-quiz-flag-panel-title {
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: #fca5a5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-quiz-flag-pill {
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.admin-quiz-flag-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-quiz-flag-row {
+  background: #0d1017;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.8rem;
+}
+
+.admin-quiz-flag-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.admin-quiz-flag-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
+.admin-quiz-flag-meta strong {
+  color: #f87171;
+}
+
+.admin-quiz-flag-comment {
+  color: #f1f5f9;
+  font-weight: 500;
+}
+
+.admin-quiz-flag-resolve-btn {
+  background: #15803d;
+  color: #fff;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.admin-quiz-flag-resolve-btn:hover {
+  background: #16a34a;
+}
+
+/* Enhanced admin quiz list items */
+.admin-quiz-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #11141c;
+  border: 1px solid #23293c;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.84rem;
+  gap: 12px;
+  transition: border-color 0.15s ease;
+}
+
+.admin-quiz-item:hover {
+  border-color: #3b82f6;
+}
+
+.admin-quiz-item.has-flags {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.08) 0%, #11141c 100%);
+}
+
+.admin-quiz-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-quiz-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-quiz-cat-badge {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.admin-quiz-flag-badge {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  animation: adminPulse 2s infinite;
+}
+
+@keyframes adminPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}
+
+.admin-quiz-item-title {
+  font-weight: 600;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 580px;
+}
+
+.admin-quiz-item-answers {
+  font-size: 0.76rem;
+  color: #86efac;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-quiz-answer-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.admin-label-hint {
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+

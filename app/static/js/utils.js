@@ -238,27 +238,59 @@ export function highlightMentions(container, mentions) {
 }
 
 export async function copyText(text, successMsg = '클립보드에 복사했습니다.') {
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast(successMsg, 'success');
-  } catch {
+  let copied = false;
+
+  // 1. Modern Clipboard API (available in secure contexts: HTTPS or localhost)
+  if (window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch {
+      copied = false;
+    }
+  }
+
+  // 2. Fallback for insecure HTTP LAN contexts using textarea + execCommand
+  if (!copied) {
     const ta = document.createElement('textarea');
     ta.value = text;
+    ta.setAttribute('readonly', '');
     ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.width = '2em';
+    ta.style.height = '2em';
+    ta.style.padding = '0';
+    ta.style.border = 'none';
+    ta.style.outline = 'none';
+    ta.style.boxShadow = 'none';
+    ta.style.background = 'transparent';
     ta.style.opacity = '0';
+    ta.style.zIndex = '-1';
     document.body.appendChild(ta);
     ta.focus();
     ta.select();
     ta.setSelectionRange(0, ta.value.length);
     try {
-      if (!document.execCommand('copy')) throw new Error('copy command rejected');
-      showToast(successMsg, 'success');
+      copied = Boolean(document.execCommand('copy'));
     } catch {
-      showToast('복사에 실패했습니다.', 'error');
+      copied = false;
     }
     ta.remove();
   }
+
+  // 3. Fallback prompt if clipboard access is completely blocked by policy
+  if (!copied) {
+    window.prompt('아래 텍스트를 Ctrl+C를 눌러 복사하세요:', text);
+    copied = true;
+  }
+
+  if (copied && successMsg) {
+    showToast(successMsg, 'success');
+  }
+  return copied;
 }
+
 
 export function makeKeyboardClickable(el, handler) {
   el.setAttribute('tabindex', '0');

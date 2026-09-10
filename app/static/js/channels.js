@@ -4,6 +4,7 @@
 
 import { state, isConversationMuted } from './state.js';
 import { makeKeyboardClickable, slugify, showToast } from './utils.js';
+import { screenshareState } from './screenshare.js';
 
 export const channelsDirectory = new Map();
 
@@ -101,6 +102,14 @@ export function renderChannels(onSwitchConv) {
       badge.className = 'sidebar-badge conv-unread';
       badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
       item.appendChild(badge);
+    }
+
+    if (screenshareState.hasSession(conv.channelId)) {
+      const liveBadge = document.createElement('span');
+      liveBadge.className = 'channel-live-badge';
+      liveBadge.innerHTML = '<span class="live-pulse-dot"></span>LIVE';
+      liveBadge.title = '실시간 화면 공유 방송 중';
+      item.appendChild(liveBadge);
     }
 
     const activate = () => onSwitchConv('channel', conv.channelId);

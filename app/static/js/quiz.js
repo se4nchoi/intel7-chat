@@ -22,6 +22,11 @@ let sidebarCategoryName = '';
 let sidebarCategoryOffset = 0;
 let sidebarCategoryHasMore = false;
 let editingMySetId = null;
+let adminQuizSearch = '';
+let adminQuizCategory = '';
+let adminQuizFlaggedOnly = false;
+let adminQuizSearchTimer = null;
+let currentFlagTargetQuiz = null;
 
 export function getCategoryIcon(catName = '') {
   const lower = catName.toLowerCase();
@@ -1246,7 +1251,7 @@ export async function fetchAdminQuizSubmissions() {
   } catch (err) { list.textContent = err.message; }
 }
 
-function openAdminQuizEditor(quiz = null) {
+export async function openAdminQuizEditor(quiz = null) {
   const editor = document.getElementById('admin-quiz-editor');
   if (!editor) return;
   editor.classList.remove('hidden');
@@ -1261,34 +1266,220 @@ function openAdminQuizEditor(quiz = null) {
   document.getElementById('admin-quiz-source').value = quiz?.source_ref || '';
   document.getElementById('admin-quiz-explanation').value = quiz?.explanation || '';
   document.getElementById('admin-quiz-editor-status').textContent = quiz ? `#${quiz.id} 문항을 수정합니다.` : '새 문항을 작성합니다.';
+
+  // Handle reported flags panel
+  const flagPanel = document.getElementById('admin-quiz-flag-panel');
+  const flagBadge = document.getElementById('admin-quiz-flag-panel-badge');
+  const flagItems = document.getElementById('admin-quiz-flag-items');
+  if (flagPanel && flagItems) {
+    if (quiz?.id && (quiz.open_flags_count > 0 || quiz.flag_summaries)) {
+      flagPanel.classList.remove('hidden');
+      if (flagBadge) flagBadge.textContent = `${quiz.open_flags_count || 1}건`;
+      await loadQuizFlagsForEditor(quiz.id);
+    } else {
+      flagPanel.classList.add('hidden');
+      flagItems.replaceChildren();
+    }
+  }
+
   editor.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function loadQuizFlagsForEditor(quizId) {
+  const flagItems = document.getElementById('admin-quiz-flag-items');
+  const flagBadge = document.getElementById('admin-quiz-flag-panel-badge');
+  if (!flagItems) return;
+  flagItems.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8; padding:6px;">신고 내역을 불러오는 중...</div>';
+  try {
+    const res = await fetch(`/api/admin/quiz/flags?quiz_id=${quizId}&status=open`);
+    if (!res.ok) throw new Error('신고 내역을 불러오지 못했습니다.');
+    const data = await res.json();
+    const flags = data.flags || [];
+    if (flagBadge) flagBadge.textContent = `${flags.length}건`;
+    flagItems.replaceChildren();
+    if (flags.length === 0) {
+      flagItems.innerHTML = '<div style="font-size:0.8rem; color:#86efac; padding:6px;">접수된 미해결 신고가 없습니다.</div>';
+      return;
+    }
+    const reasonMap = {
+      wrong_answer: '정답 오류',
+      typo_or_broken: '오탈자/훼손',
+      bad_explanation: '해설 부실',
+      other: '기타'
+    };
+    flags.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'admin-quiz-flag-row';
+
+      const info = document.createElement('div');
+      info.className = 'admin-quiz-flag-info';
+
+      const meta = document.createElement('div');
+      meta.className = 'admin-quiz-flag-meta';
+      const reasonSpan = document.createElement('strong');
+      reasonSpan.textContent = `[${reasonMap[f.reason_type] || f.reason_type}]`;
+      const userSpan = document.createElement('span');
+      userSpan.textContent = `신고자: ${f.display_name || f.username}`;
+      const timeSpan = document.createElement('span');
+      timeSpan.textContent = String(f.created_at || '').substring(0, 16).replace('T', ' ');
+      meta.append(reasonSpan, userSpan, timeSpan);
+
+      const commentDiv = document.createElement('div');
+      commentDiv.className = 'admin-quiz-flag-comment';
+      commentDiv.textContent = f.comment ? `"${f.comment}"` : '(상세 의견 없음)';
+
+      info.append(meta, commentDiv);
+
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.gap = '6px';
+      actions.style.alignItems = 'center';
+
+      if (f.reason_type === 'wrong_answer' && f.comment) {
+        const quickAddBtn = document.createElement('button');
+        quickAddBtn.type = 'button';
+        quickAddBtn.className = 'secondary-btn';
+        quickAddBtn.style.fontSize = '0.72rem';
+        quickAddBtn.style.padding = '3px 8px';
+        quickAddBtn.textContent = '+ 정답 추가';
+        quickAddBtn.title = '이 의견의 내용을 정답 목록에 바로 추가합니다';
+        quickAddBtn.addEventListener('click', () => {
+          const ansArea = document.getElementById('admin-quiz-answers');
+          if (ansArea) {
+            const current = ansArea.value.trim();
+            const toAdd = f.comment.replace(/^["']|["']$/g, '').trim();
+            ansArea.value = current ? `${current}\n${toAdd}` : toAdd;
+            showToast(`'${toAdd}' 정답 후보를 추가했습니다. 저장 버튼을 눌러 확정하세요.`, 'info');
+          }
+        });
+        actions.appendChild(quickAddBtn);
+      }
+
+      const resolveBtn = document.createElement('button');
+      resolveBtn.type = 'button';
+      resolveBtn.className = 'admin-quiz-flag-resolve-btn';
+      resolveBtn.textContent = '해결 완료';
+      resolveBtn.addEventListener('click', async () => {
+        try {
+          const rRes = await fetch(`/api/admin/quiz/flags/${f.id}/resolve`, { method: 'POST' });
+          if (!rRes.ok) throw new Error('해결 처리에 실패했습니다.');
+          showToast('신고를 해결 완료 처리했습니다.', 'success');
+          row.remove();
+          const remaining = flagItems.querySelectorAll('.admin-quiz-flag-row').length;
+          if (flagBadge) flagBadge.textContent = `${remaining}건`;
+          if (remaining === 0) {
+            flagItems.innerHTML = '<div style="font-size:0.8rem; color:#86efac; padding:6px;">모든 신고가 해결되었습니다.</div>';
+          }
+          fetchAdminQuizzes();
+        } catch (err) {
+          showToast(err.message || '해결 처리 실패', 'error');
+        }
+      });
+      actions.appendChild(resolveBtn);
+
+      row.append(info, actions);
+      flagItems.appendChild(row);
+    });
+  } catch (err) {
+    flagItems.innerHTML = `<div style="font-size:0.8rem; color:#fca5a5; padding:6px;">${err.message}</div>`;
+  }
 }
 
 export async function fetchAdminQuizzes() {
   const adminQuizList = document.getElementById('admin-quiz-list');
   const adminQuizTotalCount = document.getElementById('admin-quiz-total-count');
+  const adminFlaggedCount = document.getElementById('admin-flagged-count');
+  const adminCatFilter = document.getElementById('admin-quiz-category-filter');
   if (!adminQuizList || state.currentUser?.role !== 'admin') return;
+
   try {
-    const res = await fetch('/api/admin/quiz/list');
+    const params = new URLSearchParams();
+    if (adminQuizSearch) params.set('search', adminQuizSearch);
+    if (adminQuizCategory) params.set('category', adminQuizCategory);
+    if (adminQuizFlaggedOnly) params.set('flagged_only', 'true');
+    params.set('limit', '300');
+
+    const res = await fetch('/api/admin/quiz/list?' + params.toString());
     if (!res.ok) return;
     const data = await res.json();
     const quizzes = data.quizzes || [];
     if (adminQuizTotalCount) adminQuizTotalCount.textContent = String(quizzes.length);
+
+    if (adminCatFilter && Array.isArray(data.categories)) {
+      const currentSelected = adminCatFilter.value;
+      const existingVals = Array.from(adminCatFilter.options).map(o => o.value);
+      data.categories.forEach(cat => {
+        if (!existingVals.includes(cat)) {
+          const opt = document.createElement('option');
+          opt.value = cat;
+          opt.textContent = cat;
+          adminCatFilter.appendChild(opt);
+        }
+      });
+      adminCatFilter.value = currentSelected;
+    }
+
+    let flaggedCount = 0;
+    quizzes.forEach(q => {
+      if (q.open_flags_count > 0) flaggedCount++;
+    });
+    if (adminFlaggedCount) adminFlaggedCount.textContent = String(flaggedCount);
+
     adminQuizList.replaceChildren();
 
     if (quizzes.length === 0) {
-      adminQuizList.innerHTML = '<div class="field-hint" style="padding: 10px;">등록된 퀴즈가 없습니다. 위 AI 생성이나 JSON 등록을 이용해 추가하세요.</div>';
+      adminQuizList.innerHTML = `<div class="field-hint" style="padding: 16px; text-align:center;">${
+        adminQuizSearch || adminQuizCategory || adminQuizFlaggedOnly
+          ? '검색 조건에 일치하는 문항이 없습니다.'
+          : '등록된 퀴즈가 없습니다. 위 AI 생성이나 JSON 등록을 이용해 추가하세요.'
+      }</div>`;
       return;
     }
 
     quizzes.forEach(q => {
       const item = document.createElement('div');
-      item.className = 'admin-quiz-item';
+      item.className = `admin-quiz-item${q.open_flags_count > 0 ? ' has-flags' : ''}`;
 
-      const title = document.createElement('span');
+      const content = document.createElement('div');
+      content.className = 'admin-quiz-item-content';
+
+      const header = document.createElement('div');
+      header.className = 'admin-quiz-item-header';
+
+      const catBadge = document.createElement('span');
+      catBadge.className = 'admin-quiz-cat-badge';
+      catBadge.textContent = q.category || '기타';
+
+      const diffBadge = document.createElement('span');
+      diffBadge.className = 'cbt-diff-badge';
+      const diffMap = { easy: '쉬움', medium: '보통', hard: '어려움' };
+      diffBadge.textContent = diffMap[q.difficulty] || q.difficulty;
+
+      const typeBadge = document.createElement('span');
+      typeBadge.className = 'cbt-type-badge';
+      const typeMap = { multiple_choice: '4지선다', short_answer: '단답형', ladder_input: '래더' };
+      typeBadge.textContent = typeMap[q.question_type] || q.question_type;
+
+      header.append(catBadge, diffBadge, typeBadge);
+
+      if (q.open_flags_count > 0) {
+        const flagBadge = document.createElement('span');
+        flagBadge.className = 'admin-quiz-flag-badge';
+        flagBadge.textContent = `🚩 신고 ${q.open_flags_count}건`;
+        flagBadge.title = q.flag_summaries || '오류 신고 접수됨';
+        header.appendChild(flagBadge);
+      }
+
+      const title = document.createElement('div');
       title.className = 'admin-quiz-item-title';
-      title.textContent = `[${q.category}] ${q.question}`;
+      title.textContent = `#${q.id} ${q.question}`;
       title.title = q.question;
+
+      const ansPreview = document.createElement('div');
+      ansPreview.className = 'admin-quiz-item-answers';
+      ansPreview.textContent = `정답: ${Array.isArray(q.correct_answers) ? q.correct_answers.join(', ') : '-'}`;
+
+      content.append(header, title, ansPreview);
 
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
@@ -1297,7 +1488,7 @@ export async function fetchAdminQuizzes() {
       delBtn.style.fontSize = '0.76rem';
       delBtn.textContent = '삭제';
       delBtn.addEventListener('click', async () => {
-        if (!confirm('이 퀴즈를 삭제하시겠습니까?')) return;
+        if (!confirm(`퀴즈 #${q.id}를 삭제하시겠습니까?`)) return;
         try {
           const dRes = await fetch(`/api/admin/quiz/${q.id}`, { method: 'DELETE' });
           if (!dRes.ok) throw new Error('삭제 실패');
@@ -1309,14 +1500,88 @@ export async function fetchAdminQuizzes() {
         }
       });
 
-      const actions = document.createElement('div'); actions.className = 'admin-quiz-item-actions';
-      const editBtn = document.createElement('button'); editBtn.type = 'button'; editBtn.className = 'secondary-btn'; editBtn.textContent = '수정';
+      const actions = document.createElement('div');
+      actions.className = 'admin-quiz-item-actions';
+      actions.style.display = 'flex';
+      actions.style.gap = '6px';
+      actions.style.alignItems = 'center';
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = q.open_flags_count > 0 ? 'cbt-action-btn compact' : 'secondary-btn';
+      editBtn.textContent = q.open_flags_count > 0 ? '신고 확인·수정' : '수정';
       editBtn.addEventListener('click', () => openAdminQuizEditor(q));
+
       actions.append(editBtn, delBtn);
-      item.append(title, actions);
+      item.append(content, actions);
       adminQuizList.appendChild(item);
     });
   } catch { /* admin fetch error */ }
+}
+
+export function openQuizFlagModal(quiz) {
+  if (!quiz) return;
+  currentFlagTargetQuiz = quiz;
+  const modal = document.getElementById('quiz-flag-modal');
+  const targetBadge = document.getElementById('quiz-flag-target-badge');
+  const targetText = document.getElementById('quiz-flag-target-text');
+  const commentInput = document.getElementById('quiz-flag-comment');
+  const statusMsg = document.getElementById('quiz-flag-status');
+
+  if (targetBadge) targetBadge.textContent = `#${quiz.id}`;
+  if (targetText) targetText.textContent = quiz.question || '';
+  if (commentInput) commentInput.value = '';
+  if (statusMsg) {
+    statusMsg.textContent = '';
+    statusMsg.className = 'admin-status-msg';
+  }
+
+  const defaultRadio = document.querySelector('input[name="quiz-flag-reason"][value="wrong_answer"]');
+  if (defaultRadio) defaultRadio.checked = true;
+
+  modal?.classList.remove('hidden');
+}
+
+export function closeQuizFlagModal() {
+  const modal = document.getElementById('quiz-flag-modal');
+  modal?.classList.add('hidden');
+  currentFlagTargetQuiz = null;
+}
+
+export async function submitQuizFlag(e) {
+  e.preventDefault();
+  if (!currentFlagTargetQuiz) return;
+  const statusMsg = document.getElementById('quiz-flag-status');
+  const submitBtn = document.getElementById('quiz-flag-submit-btn');
+  const reasonRadio = document.querySelector('input[name="quiz-flag-reason"]:checked');
+  const reason_type = reasonRadio ? reasonRadio.value : 'wrong_answer';
+  const comment = (document.getElementById('quiz-flag-comment')?.value || '').trim();
+
+  if (submitBtn) submitBtn.disabled = true;
+  if (statusMsg) {
+    statusMsg.textContent = '신고를 접수하는 중...';
+    statusMsg.className = 'admin-status-msg';
+  }
+
+  try {
+    const res = await fetch(`/api/quiz/${currentFlagTargetQuiz.id}/flag`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason_type, comment })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '신고 접수에 실패했습니다.');
+
+    showToast('문제 오류 신고가 접수되었습니다. 관리자가 검토 후 즉시 반영합니다.', 'success');
+    closeQuizFlagModal();
+  } catch (err) {
+    if (statusMsg) {
+      statusMsg.textContent = err.message || '신고 접수 중 오류가 발생했습니다.';
+      statusMsg.className = 'admin-status-msg error';
+    }
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
 }
 
 export function initQuizListeners() {
@@ -1456,6 +1721,67 @@ export function initQuizListeners() {
 
   if (quizStarBtn) quizStarBtn.addEventListener('click', toggleStarCurrentQuiz);
   if (quizHintBtn) quizHintBtn.addEventListener('click', () => quizHintBox?.classList.toggle('hidden'));
+
+  const quizFlagBtn = document.getElementById('quiz-flag-btn');
+  if (quizFlagBtn) {
+    quizFlagBtn.addEventListener('click', () => {
+      const q = todayQuizzes[currentQuizIndex];
+      if (q) openQuizFlagModal(q);
+    });
+  }
+
+  const quizFlagCloseBtn = document.getElementById('quiz-flag-close-btn');
+  const quizFlagCancelBtn = document.getElementById('quiz-flag-cancel-btn');
+  const quizFlagForm = document.getElementById('quiz-flag-form');
+  const quizFlagModal = document.getElementById('quiz-flag-modal');
+  quizFlagCloseBtn?.addEventListener('click', closeQuizFlagModal);
+  quizFlagCancelBtn?.addEventListener('click', closeQuizFlagModal);
+  quizFlagModal?.addEventListener('click', (e) => {
+    if (e.target === quizFlagModal) closeQuizFlagModal();
+  });
+  quizFlagForm?.addEventListener('submit', submitQuizFlag);
+
+  // Admin Search & Filter Toolbar
+  const adminQuizSearchInput = document.getElementById('admin-quiz-search');
+  const adminQuizSearchClear = document.getElementById('admin-quiz-search-clear');
+  const adminQuizCatFilter = document.getElementById('admin-quiz-category-filter');
+  const adminQuizFlaggedToggle = document.getElementById('admin-quiz-flagged-toggle');
+
+  if (adminQuizSearchInput) {
+    adminQuizSearchInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      if (adminQuizSearchClear) adminQuizSearchClear.classList.toggle('hidden', !val);
+      clearTimeout(adminQuizSearchTimer);
+      adminQuizSearchTimer = setTimeout(() => {
+        adminQuizSearch = val.trim();
+        fetchAdminQuizzes();
+      }, 250);
+    });
+  }
+
+  if (adminQuizSearchClear) {
+    adminQuizSearchClear.addEventListener('click', () => {
+      if (adminQuizSearchInput) adminQuizSearchInput.value = '';
+      adminQuizSearchClear.classList.add('hidden');
+      adminQuizSearch = '';
+      fetchAdminQuizzes();
+    });
+  }
+
+  if (adminQuizCatFilter) {
+    adminQuizCatFilter.addEventListener('change', (e) => {
+      adminQuizCategory = e.target.value;
+      fetchAdminQuizzes();
+    });
+  }
+
+  if (adminQuizFlaggedToggle) {
+    adminQuizFlaggedToggle.addEventListener('click', () => {
+      adminQuizFlaggedOnly = !adminQuizFlaggedOnly;
+      adminQuizFlaggedToggle.classList.toggle('active', adminQuizFlaggedOnly);
+      fetchAdminQuizzes();
+    });
+  }
 
   if (quizPrevBtn) {
     quizPrevBtn.addEventListener('click', () => {
