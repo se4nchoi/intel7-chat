@@ -181,10 +181,17 @@ function renderOmRankings(rankings) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--om-muted);">아직 기록된 전적이 없습니다.</td></tr>';
     return;
   }
+  const getOmBadge = (rank) => {
+    if (rank === 1) return '<span class="quiz-user-badge badge-omok" style="margin-left:6px;">⚫ 오목의 신</span>';
+    if (rank === 2) return '<span class="quiz-user-badge badge-omok" style="margin-left:6px;">⚪ 오목의 왕</span>';
+    if (rank === 3) return '<span class="quiz-user-badge badge-omok" style="margin-left:6px;">⚫ 오목고인물</span>';
+    return '';
+  };
+
   tbody.innerHTML = rankings.map(r => `
     <tr>
       <td style="text-align:center;font-weight:700;">${r.rank === 1 ? '🥇 1' : r.rank === 2 ? '🥈 2' : r.rank === 3 ? '🥉 3' : r.rank}</td>
-      <td style="font-weight:600;">${r.display_name || r.username}</td>
+      <td style="font-weight:600;">${r.display_name || r.username}${getOmBadge(r.rank)}</td>
       <td style="text-align:center;color:#fde68a;font-weight:700;">${r.wins}승</td>
       <td style="text-align:center;">${r.win_rate}%</td>
       <td style="text-align:center;color:var(--om-muted);">${r.wins}승 ${r.draws}무 ${r.losses}패</td>

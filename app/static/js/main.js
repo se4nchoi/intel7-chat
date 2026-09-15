@@ -35,6 +35,7 @@ import {
   refreshQuizHeaderStreak,
   refreshQuizSidebarCounts,
   handleLeaderboardInvalidated,
+} from './quiz.js';
 import { initChessListeners } from './chess.js';
 import { initPlayHubListeners } from './play_hub.js';
 import { initJanggiListeners } from './janggi.js';

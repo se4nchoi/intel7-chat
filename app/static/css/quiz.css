@@ -92,6 +92,30 @@
   letter-spacing: 0.02em;
 }
 
+/* Janggi Green-ish Jade/Bamboo Badge */
+.quiz-user-badge.badge-janggi,
+.janggi-title-badge {
+  background: rgba(16, 185, 129, 0.18);
+  border: 1.5px solid #10b981;
+  color: #a7f3d0;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.45), inset 0 0 3px rgba(16, 185, 129, 0.25);
+  text-shadow: 0 0 4px rgba(16, 185, 129, 0.4);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+/* Omok Woody Warm Kaya Amber Badge */
+.quiz-user-badge.badge-omok,
+.omok-title-badge {
+  background: rgba(217, 119, 6, 0.22);
+  border: 1.5px solid #f59e0b;
+  color: #fde68a;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.45), inset 0 0 3px rgba(245, 158, 11, 0.25);
+  text-shadow: 0 0 4px rgba(245, 158, 11, 0.4);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
 /* CBT Modal Window Box (Expanded In-App Portal Dimensions) */
 .cbt-modal-box {
   width: 1040px;

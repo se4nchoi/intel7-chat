@@ -3471,6 +3471,58 @@ def get_user_quiz_title_options(user_id: int) -> List[Dict[str, Any]]:
                 "score": wins,
             })
     with get_connection() as conn:
+        jg_row = conn.execute("""
+            WITH ranked_janggi AS (
+                SELECT user_id, wins,
+                       ROW_NUMBER() OVER (
+                           ORDER BY wins DESC, last_win_at ASC, user_id ASC
+                       ) AS jg_rank
+                FROM janggi_player_stats
+                WHERE wins > 0
+            )
+            SELECT jg_rank, wins
+            FROM ranked_janggi
+            WHERE user_id = ? AND jg_rank <= 3
+        """, (user_id,)).fetchone()
+    if jg_row:
+        rank = int(jg_row["jg_rank"])
+        wins = int(jg_row["wins"])
+        badge = _janggi_badge(rank, wins)
+        if badge:
+            options.append({
+                **badge,
+                "category": "장기",
+                "selection": "janggi",
+                "rank": rank,
+                "score": wins,
+            })
+    with get_connection() as conn:
+        om_row = conn.execute("""
+            WITH ranked_omok AS (
+                SELECT user_id, wins,
+                       ROW_NUMBER() OVER (
+                           ORDER BY wins DESC, last_win_at ASC, user_id ASC
+                       ) AS om_rank
+                FROM omok_player_stats
+                WHERE wins > 0
+            )
+            SELECT om_rank, wins
+            FROM ranked_omok
+            WHERE user_id = ? AND om_rank <= 3
+        """, (user_id,)).fetchone()
+    if om_row:
+        rank = int(om_row["om_rank"])
+        wins = int(om_row["wins"])
+        badge = _omok_badge(rank, wins)
+        if badge:
+            options.append({
+                **badge,
+                "category": "오목",
+                "selection": "omok",
+                "rank": rank,
+                "score": wins,
+            })
+    with get_connection() as conn:
         stats = conn.execute(
             "SELECT current_streak, last_solved_date FROM user_quiz_stats WHERE user_id=?", (user_id,)
         ).fetchone()
@@ -3593,6 +3645,36 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
         """, user_ids).fetchall()
         chess_map = {r["user_id"]: dict(r) for r in chess_rows}
 
+        janggi_rows = conn.execute(f"""
+            WITH ranked_jg AS (
+                SELECT user_id, wins,
+                       ROW_NUMBER() OVER (
+                           ORDER BY wins DESC, last_win_at ASC, user_id ASC
+                       ) AS jg_rank
+                FROM janggi_player_stats
+                WHERE wins > 0
+            )
+            SELECT user_id, wins, jg_rank
+            FROM ranked_jg
+            WHERE user_id IN ({placeholders}) AND jg_rank <= 3
+        """, user_ids).fetchall()
+        janggi_map = {r["user_id"]: dict(r) for r in janggi_rows}
+
+        omok_rows = conn.execute(f"""
+            WITH ranked_om AS (
+                SELECT user_id, wins,
+                       ROW_NUMBER() OVER (
+                           ORDER BY wins DESC, last_win_at ASC, user_id ASC
+                       ) AS om_rank
+                FROM omok_player_stats
+                WHERE wins > 0
+            )
+            SELECT user_id, wins, om_rank
+            FROM ranked_om
+            WHERE user_id IN ({placeholders}) AND om_rank <= 3
+        """, user_ids).fetchall()
+        omok_map = {r["user_id"]: dict(r) for r in omok_rows}
+
         for uid in user_ids:
             st = stats_map.get(uid)
             if not st:
@@ -3608,6 +3690,14 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
             elif selection == "chess" and uid in chess_map:
                 badges[uid] = _chess_badge(
                     int(chess_map[uid]["chess_rank"]), int(chess_map[uid]["wins"])
+                )
+            elif selection == "janggi" and uid in janggi_map:
+                badges[uid] = _janggi_badge(
+                    int(janggi_map[uid]["jg_rank"]), int(janggi_map[uid]["wins"])
+                )
+            elif selection == "omok" and uid in omok_map:
+                badges[uid] = _omok_badge(
+                    int(omok_map[uid]["om_rank"]), int(omok_map[uid]["wins"])
                 )
             elif selection == "streak" and st.get("current_streak", 0) >= 3 and is_streak_active(st.get("last_solved_date")):
                 badges[uid] = {
