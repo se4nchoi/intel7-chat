@@ -340,6 +340,16 @@ function renderOmBoard(room) {
     (room.result?.winning_line || []).map(pt => `${pt[0]},${pt[1]}`)
   );
 
+  const foulMove = room.result?.foul_move;
+  const isFoulStone = (c, r) => foulMove && foulMove[0] === c && foulMove[1] === r;
+
+  const forbiddenMap = {};
+  if (room.active_turn === 'b' && !room.result) {
+    (room.board?.forbidden_points || []).forEach(f => {
+      forbiddenMap[`${f.col},${f.row}`] = f.type;
+    });
+  }
+
   const isMyTurn = (room.game_started && !room.result && myColor && room.active_turn === myColor);
 
   for (let c = 0; c < 15; c++) {
@@ -348,9 +358,11 @@ function renderOmBoard(room) {
       const color = stoneMap[`${c},${r}`];
       const isLastMove = room.last_move && room.last_move[0] === c && room.last_move[1] === r;
       const isWinningStone = winningLineSet.has(`${c},${r}`);
+      const isFoul = isFoulStone(c, r);
+      const foulType = forbiddenMap[`${c},${r}`];
 
       const ptDiv = document.createElement('div');
-      ptDiv.className = `om-point ${isLastMove ? 'last-move' : ''} ${isWinningStone ? 'winning-stone' : ''}`;
+      ptDiv.className = `om-point ${isLastMove ? 'last-move' : ''} ${isWinningStone ? 'winning-stone' : ''} ${isFoul ? 'foul-stone' : ''} ${foulType ? 'forbidden' : ''}`;
       ptDiv.style.left = `${pt.x}px`;
       ptDiv.style.top = `${pt.y}px`;
 
@@ -358,18 +370,38 @@ function renderOmBoard(room) {
         const stoneDiv = document.createElement('div');
         stoneDiv.className = `om-stone ${color === 'b' ? 'black' : 'white'}`;
         ptDiv.appendChild(stoneDiv);
-      } else if (isMyTurn) {
-        // Hover preview
-        ptDiv.addEventListener('mouseenter', () => {
-          ptDiv.classList.add('hover-preview', myColor === 'b' ? 'preview-b' : 'preview-w');
-        });
-        ptDiv.addEventListener('mouseleave', () => {
-          ptDiv.classList.remove('hover-preview', 'preview-b', 'preview-w');
-        });
+      } else {
+        // Empty intersection
+        if (foulType && room.active_turn === 'b') {
+          const badge = document.createElement('span');
+          badge.className = 'om-forbidden-marker';
+          const foulLabel = foulType === '33' ? '3·3' : (foulType === '44' ? '4·4' : '6+');
+          badge.textContent = foulLabel;
+          badge.title = `흑 ${foulLabel} 금수 (착수 시 자동패)`;
+          ptDiv.appendChild(badge);
+        }
+
+        if (isMyTurn) {
+          // Hover preview
+          ptDiv.addEventListener('mouseenter', () => {
+            ptDiv.classList.add('hover-preview', myColor === 'b' ? 'preview-b' : 'preview-w');
+            if (foulType && myColor === 'b') {
+              ptDiv.classList.add('preview-forbidden');
+            }
+          });
+          ptDiv.addEventListener('mouseleave', () => {
+            ptDiv.classList.remove('hover-preview', 'preview-b', 'preview-w', 'preview-forbidden');
+          });
+        }
       }
 
       ptDiv.addEventListener('click', () => {
         if (!color && isMyTurn) {
+          if (foulType && myColor === 'b') {
+            const foulKorean = foulType === '33' ? '3-3(삼삼)' : (foulType === '44' ? '4-4(사사)' : '장목(6목 이상)');
+            const proceed = confirm(`⚠️ 경고: [${foulKorean} 금수 자리]입니다!\n착수 시 국제 렌주룰에 의해 즉시 "자동패(금수패)" 처리됩니다.\n\n정말로 착수하시겠습니까?`);
+            if (!proceed) return;
+          }
           sendOmAction('move', { col: c, row: r });
           playStoneClickSound();
         }

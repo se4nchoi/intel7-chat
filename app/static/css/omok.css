@@ -285,3 +285,45 @@
 .om-point.hover-preview.preview-w::before {
   background: #ffffff;
 }
+
+/* Renju Forbidden Points Marker */
+.om-forbidden-marker {
+  position: absolute;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.28);
+  border: 1.5px solid #ef4444;
+  color: #fca5a5;
+  font-size: 9.5px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
+  z-index: 12;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  letter-spacing: -0.5px;
+}
+
+/* Hover on forbidden point: Red danger warning */
+.om-point.hover-preview.preview-forbidden::before {
+  background: radial-gradient(circle at 35% 30%, #7f1d1d 0%, #450a0a 100%) !important;
+  border: 2px dashed #ef4444 !important;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.9) !important;
+  opacity: 0.8 !important;
+}
+
+/* Foul stone pulse upon auto-loss */
+.om-point.foul-stone .om-stone {
+  box-shadow: 0 0 20px #ef4444, 0 4px 12px rgba(0, 0, 0, 0.8) !important;
+  border: 2px solid #f87171 !important;
+  animation: om-foul-pulse 1.2s infinite alternate;
+}
+
+@keyframes om-foul-pulse {
+  0% { transform: scale(1); filter: drop-shadow(0 0 6px #ef4444); }
+  100% { transform: scale(1.15); filter: drop-shadow(0 0 14px #dc2626); }
+}
+

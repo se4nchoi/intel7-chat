@@ -478,12 +478,22 @@ class OmokManager:
         })
 
         if move_res.get("winner"):
-            self._complete_game(room, {
-                "type": "win",
-                "winner": move_res["winner"],
-                "desc": f"{'흑(黑)' if move_res['winner'] == 'b' else '백(白)'} 5목 승리!",
-                "winning_line": move_res.get("winning_line"),
-            })
+            if move_res.get("foul"):
+                self._complete_game(room, {
+                    "type": "foul_loss",
+                    "winner": move_res["winner"],
+                    "foul": move_res["foul"],
+                    "foul_player": move_res.get("foul_player"),
+                    "desc": move_res.get("foul_desc") or "금수 착수로 인한 반칙패",
+                    "foul_move": (col, row),
+                })
+            else:
+                self._complete_game(room, {
+                    "type": "win",
+                    "winner": move_res["winner"],
+                    "desc": f"{'흑(黑)' if move_res['winner'] == 'b' else '백(白)'} 5목 승리!",
+                    "winning_line": move_res.get("winning_line"),
+                })
         elif move_res.get("is_draw"):
             self._complete_game(room, {"type": "draw", "winner": None, "desc": "무승부 (판 가득 참)"})
 
