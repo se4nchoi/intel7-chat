@@ -32,9 +32,13 @@ export function getCategoryIcon(catName = '') {
   const lower = catName.toLowerCase();
   if (lower.includes('로봇') || lower.includes('robot')) return '🤖';
   if (lower.includes('plc') || lower.includes('시퀀스')) return '⚡';
-  if (lower.includes('전기') || lower.includes('회로')) return '🔌';
-  if (lower.includes('디지털') || lower.includes('전자')) return '⚙️';
-  if (lower.includes('공압') || lower.includes('유압')) return '💨';
+  if (lower.includes('전기')) return '🔌';
+  if (lower.includes('전자')) return '🔋';
+  if (lower.includes('안전')) return '⛑️';
+  if (lower.includes('기사')) return '📐';
+  if (lower.includes('기능사')) return '🧰';
+  if (lower.includes('넌센스')) return '💡';
+  if (lower.includes('상식')) return '🌏';
   if (lower.includes('cbt') || lower.includes('기출')) return '📜';
   return '📖';
 }
@@ -445,24 +449,50 @@ export async function fetchTodayQuizzes(category = null, append = false) {
     quizContainer?.classList.add('hidden');
   }
   try {
-    const params = new URLSearchParams({ count: '5', offset: String(quizPageOffset) });
+    const existingIds = todayQuizzes.map(item => item.id).filter(Boolean);
+    const params = new URLSearchParams({ count: '5' });
     if (category) params.set('category', category);
-    if (append && category === 'random') params.set('exclude', todayQuizzes.map(item => item.id).join(','));
+
+    if (append && existingIds.length > 0) {
+      params.set('exclude', existingIds.join(','));
+      params.set('offset', '0');
+    } else {
+      params.set('offset', String(quizPageOffset));
+    }
+
     const url = `/api/quiz/today?${params}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('퀴즈 목록을 불러오지 못했습니다.');
     const data = await res.json();
     const page = data.quizzes || [];
-    quizHasMore = page.length === 5;
-    todayQuizzes = append ? todayQuizzes.concat(page) : page;
-    quizPageOffset += page.length;
+
+    if (append) {
+      const existingIdSet = new Set(todayQuizzes.map(item => item.id));
+      const uniqueNew = page.filter(item => !existingIdSet.has(item.id));
+      todayQuizzes = todayQuizzes.concat(uniqueNew);
+      quizHasMore = page.length === 5 && uniqueNew.length > 0;
+      if (sidebarCategoryQuizzes) {
+        const sideIdSet = new Set(sidebarCategoryQuizzes.map(item => item.id));
+        const newForSide = uniqueNew.filter(item => !sideIdSet.has(item.id));
+        if (newForSide.length > 0) {
+          sidebarCategoryQuizzes = sidebarCategoryQuizzes.concat(newForSide);
+        }
+      }
+    } else {
+      todayQuizzes = page;
+      quizHasMore = page.length === 5;
+    }
+    quizPageOffset = todayQuizzes.length;
+
     updateDailyCompletionCover();
     userQuizStats = data.stats || null;
     renderQuizStats();
     if (todayQuizzes.length > 0) {
-      if (!append) currentQuizIndex = 0;
-      renderQuizPillNav();
-      renderActiveQuiz();
+      if (!append) {
+        currentQuizIndex = 0;
+        renderQuizPillNav();
+        renderActiveQuiz();
+      }
       quizLoadingState?.classList.add('hidden');
       quizContainer?.classList.remove('hidden');
     } else {
@@ -522,12 +552,26 @@ async function loadSidebarCategoryPage(append = true) {
   const more = document.getElementById('quiz-sidebar-more-btn');
   if (!category || (!sidebarCategoryHasMore && append)) return;
   try {
-    const res = await fetch(`/api/quiz/today?category=${encodeURIComponent(category)}&count=50&offset=${sidebarCategoryOffset}`);
+    const params = new URLSearchParams({ category, count: '50' });
+    if (append && sidebarCategoryQuizzes && sidebarCategoryQuizzes.length > 0) {
+      params.set('exclude', sidebarCategoryQuizzes.map(item => item.id).filter(Boolean).join(','));
+      params.set('offset', '0');
+    } else {
+      params.set('offset', String(sidebarCategoryOffset));
+    }
+    const res = await fetch(`/api/quiz/today?${params}`);
     if (!res.ok) throw new Error('주제 문제 목록을 불러오지 못했습니다.');
     const page = (await res.json()).quizzes || [];
-    sidebarCategoryQuizzes = append ? sidebarCategoryQuizzes.concat(page) : page;
-    sidebarCategoryOffset += page.length;
-    sidebarCategoryHasMore = page.length === 50;
+    if (append) {
+      const existingIdSet = new Set(sidebarCategoryQuizzes.map(item => item.id));
+      const uniqueNew = page.filter(item => !existingIdSet.has(item.id));
+      sidebarCategoryQuizzes = sidebarCategoryQuizzes.concat(uniqueNew);
+      sidebarCategoryHasMore = page.length === 50 && uniqueNew.length > 0;
+    } else {
+      sidebarCategoryQuizzes = page;
+      sidebarCategoryHasMore = page.length === 50;
+    }
+    sidebarCategoryOffset = sidebarCategoryQuizzes.length;
     renderSidebarQuestionList(sidebarCategoryQuizzes);
     more?.classList.toggle('hidden', !sidebarCategoryHasMore);
   } catch (err) {
@@ -636,7 +680,11 @@ export function renderQuizPillNav() {
   const atEnd = currentQuizIndex === todayQuizzes.length - 1;
   if (quizNextBtn) {
     quizNextBtn.disabled = atEnd && (!canLoadMore || !quizHasMore);
-    quizNextBtn.textContent = atEnd && canLoadMore && quizHasMore ? '5개 더' : '다음 문제 ▶';
+    if (atEnd && (!canLoadMore || !quizHasMore)) {
+      quizNextBtn.textContent = '마지막 문제';
+    } else {
+      quizNextBtn.textContent = atEnd && canLoadMore && quizHasMore ? '5개 더' : '다음 문제 ▶';
+    }
   }
 }
 
@@ -644,17 +692,25 @@ function renderSidebarQuestionList(items = sidebarCategoryQuizzes || todayQuizze
   const list = document.getElementById('quiz-sidebar-question-list');
   if (!list) return;
   list.replaceChildren();
+  const currentQuiz = todayQuizzes[currentQuizIndex];
+  const activeId = currentQuiz ? currentQuiz.id : null;
   items.forEach((q, idx) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `quiz-sidebar-question${idx === currentQuizIndex ? ' active' : ''}`;
+    const isActive = activeId !== null ? q.id === activeId : idx === currentQuizIndex;
+    button.className = `quiz-sidebar-question${isActive ? ' active' : ''}`;
     if (q.is_solved) button.classList.add(q.is_correct ? 'solved-correct' : 'solved-wrong');
     const number = document.createElement('span'); number.className = 'quiz-sidebar-question-number'; number.textContent = String(idx + 1);
     const label = document.createElement('span'); label.className = 'quiz-sidebar-question-label'; label.textContent = q.question || '문제';
     button.append(number, label);
     button.addEventListener('click', () => {
-      if (sidebarCategoryQuizzes) { todayQuizzes = sidebarCategoryQuizzes; quizHasMore = false; }
-      currentQuizIndex = idx; renderQuizPillNav(); renderActiveQuiz();
+      if (sidebarCategoryQuizzes) {
+        todayQuizzes = sidebarCategoryQuizzes;
+        quizHasMore = sidebarCategoryHasMore;
+      }
+      currentQuizIndex = idx;
+      renderQuizPillNav();
+      renderActiveQuiz();
     });
     list.appendChild(button);
   });
@@ -900,6 +956,10 @@ export async function toggleStarCurrentQuiz() {
     if (!res.ok) throw new Error('북마크 변경 실패');
     const data = await res.json();
     q.is_starred = data.is_starred;
+    if (sidebarCategoryQuizzes) {
+      const match = sidebarCategoryQuizzes.find(item => item.id === q.id);
+      if (match) match.is_starred = data.is_starred;
+    }
     if (quizStarBtn) quizStarBtn.classList.toggle('active', Boolean(q.is_starred));
     if (quizStarLabel) quizStarLabel.textContent = q.is_starred ? '보관됨' : '보관';
     showToast(q.is_starred ? '⭐ 보관함에 문제를 저장했습니다.' : '보관을 해제했습니다.', 'info');
@@ -943,6 +1003,19 @@ export async function submitQuiz(answerVal = null) {
     q.correct_answers = data.correct_answers;
     q.explanation = data.explanation;
     q.source_ref = data.source_ref;
+
+    if (sidebarCategoryQuizzes) {
+      const match = sidebarCategoryQuizzes.find(item => item.id === q.id);
+      if (match) {
+        match.is_solved = true;
+        match.is_correct = data.is_correct;
+        match.user_answer = answer;
+        match.score_earned = data.score_earned;
+        match.correct_answers = data.correct_answers;
+        match.explanation = data.explanation;
+        match.source_ref = data.source_ref;
+      }
+    }
 
     if (data.user_stats) {
       userQuizStats = data.user_stats;
@@ -1881,11 +1954,22 @@ export function initQuizListeners() {
       } else if (currentQuizNav === 'random' || currentQuizNav.startsWith('category:')) {
         const category = currentQuizNav === 'random' ? 'random' : currentQuizNav.replace('category:', '');
         const previousLength = todayQuizzes.length;
-        await fetchTodayQuizzes(category, true);
-        if (todayQuizzes.length > previousLength) {
-          currentQuizIndex = previousLength;
+        quizNextBtn.disabled = true;
+        quizNextBtn.textContent = '불러오는 중...';
+        try {
+          await fetchTodayQuizzes(category, true);
+          if (todayQuizzes.length > previousLength) {
+            currentQuizIndex = previousLength;
+            renderQuizPillNav();
+            renderActiveQuiz();
+            showToast(`새로운 문제 ${todayQuizzes.length - previousLength}문항을 추가로 불러왔습니다. (${currentQuizIndex + 1}/${todayQuizzes.length})`, 'success');
+          } else {
+            showToast('해당 주제의 모든 문제를 확인했습니다!', 'info');
+            quizHasMore = false;
+            renderQuizPillNav();
+          }
+        } finally {
           renderQuizPillNav();
-          renderActiveQuiz();
         }
       }
     });

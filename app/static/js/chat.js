@@ -214,6 +214,12 @@ export function createAttachmentEntry(attachment) {
     image.alt = attachment.name;
     image.loading = 'lazy';
     card.appendChild(image);
+    card.addEventListener('click', (e) => {
+      if (!e.ctrlKey && !e.metaKey && e.button === 0) {
+        e.preventDefault();
+        openImageLightbox(attachment.url, attachment.name, formatBytes(attachment.size));
+      }
+    });
   }
   const icon = document.createElement('span');
   icon.className = 'attachment-icon';
@@ -684,6 +690,54 @@ export function scrollBottom() {
   messageListEl.scrollTop = messageListEl.scrollHeight;
 }
 
+export function isImageFile(file, filename) {
+  if (file?.type && file.type.startsWith('image/')) return true;
+  const name = filename || file?.name || '';
+  return /\.(jpe?g|png|gif|webp|svg|bmp|ico)$/i.test(name);
+}
+
+export function getFileBadge(filename, isImg) {
+  if (isImg) return { icon: '🖼️', ext: 'IMG' };
+  const ext = ((filename || '').split('.').pop() || '').toLowerCase();
+  if (['pdf'].includes(ext)) return { icon: '📕', ext: 'PDF' };
+  if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].includes(ext)) return { icon: '📦', ext: ext.toUpperCase() };
+  if (['doc', 'docx'].includes(ext)) return { icon: '📘', ext: 'DOC' };
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return { icon: '📊', ext: ext.toUpperCase() };
+  if (['ppt', 'pptx'].includes(ext)) return { icon: '📙', ext: 'PPT' };
+  if (['txt', 'md', 'log'].includes(ext)) return { icon: '📝', ext: ext.toUpperCase() };
+  if (['py', 'js', 'html', 'css', 'json', 'sql', 'c', 'cpp', 'java', 'ts'].includes(ext)) return { icon: '💻', ext: ext.toUpperCase() };
+  if (['mp3', 'wav', 'ogg', 'm4a', 'flac'].includes(ext)) return { icon: '🎵', ext: ext.toUpperCase() };
+  if (['mp4', 'avi', 'mov', 'webm', 'mkv'].includes(ext)) return { icon: '🎬', ext: ext.toUpperCase() };
+  return { icon: '📄', ext: (ext || 'FILE').toUpperCase().slice(0, 4) };
+}
+
+export function openImageLightbox(src, title, meta) {
+  const modal = document.getElementById('image-lightbox-modal');
+  const img = document.getElementById('image-lightbox-img');
+  const titleEl = document.getElementById('image-lightbox-title');
+  const metaEl = document.getElementById('image-lightbox-meta');
+  const downloadLink = document.getElementById('image-lightbox-download');
+  if (!modal || !img) return;
+
+  img.src = src;
+  img.alt = title || '이미지 미리보기';
+  if (titleEl) titleEl.textContent = title || '이미지 미리보기';
+  if (metaEl) metaEl.textContent = meta || '';
+  if (downloadLink) {
+    downloadLink.href = src;
+    if (title) downloadLink.download = title;
+  }
+  modal.classList.remove('hidden');
+}
+
+export function closeImageLightbox() {
+  const modal = document.getElementById('image-lightbox-modal');
+  const img = document.getElementById('image-lightbox-img');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  if (img) img.src = '';
+}
+
 export function renderComposerPreviews() {
   const currentKey = `${state.activeRoom.type}:${state.activeRoom.id}`;
   const replyPreview = document.getElementById('reply-preview');
@@ -707,24 +761,80 @@ export function renderComposerPreviews() {
     for (const st of states) {
       const row = document.createElement('div');
       row.className = `attachment-queue-item ${st.status}`;
-      const icon = document.createElement('span');
-      icon.className = 'attachment-preview-icon';
-      icon.textContent = '📎';
+      row.setAttribute('role', 'listitem');
+
+      const sizeStr = st.file ? formatBytes(st.file.size) : (st.meta ? formatBytes(st.meta.size) : '');
+
+      if (st.isImage && st.previewUrl) {
+        const thumbWrap = document.createElement('div');
+        thumbWrap.className = 'attachment-preview-thumb-wrap';
+        thumbWrap.title = '클릭하여 크게 보기';
+
+        const img = document.createElement('img');
+        img.className = 'attachment-preview-thumb';
+        img.src = st.previewUrl;
+        img.alt = st.name;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'attachment-thumb-overlay';
+        overlay.textContent = '🔍 확대';
+
+        thumbWrap.append(img, overlay);
+        thumbWrap.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openImageLightbox(st.previewUrl, st.name, sizeStr);
+        });
+        row.appendChild(thumbWrap);
+      } else {
+        const badge = getFileBadge(st.name, st.isImage);
+        const iconWrap = document.createElement('div');
+        iconWrap.className = 'attachment-preview-file-icon';
+        const emoji = document.createElement('span');
+        emoji.textContent = badge.icon;
+        const extSpan = document.createElement('span');
+        extSpan.className = 'attachment-preview-ext';
+        extSpan.textContent = badge.ext;
+        iconWrap.append(emoji, extSpan);
+        row.appendChild(iconWrap);
+      }
+
       const info = document.createElement('div');
-      const name = document.createElement('strong');
+      info.className = 'attachment-queue-info';
+      const name = document.createElement('span');
+      name.className = 'attachment-queue-name';
       name.textContent = st.name;
+      name.title = st.name;
+
       const meta = document.createElement('span');
-      if (st.status === 'queued') meta.textContent = '대기 중';
+      meta.className = `attachment-queue-meta ${st.status}`;
+      if (st.status === 'queued') meta.textContent = `${sizeStr ? sizeStr + ' · ' : ''}대기 중`;
       if (st.status === 'uploading') meta.textContent = `업로드 중 · ${Math.round(st.progress || 0)}%`;
-      if (st.status === 'ready') meta.textContent = `${formatBytes(st.meta.size)} · 준비됨`;
-      if (st.status === 'error') meta.textContent = st.error || '업로드 실패';
+      if (st.status === 'ready') meta.textContent = `✅ ${sizeStr ? sizeStr + ' · ' : ''}준비됨`;
+      if (st.status === 'error') meta.textContent = `❌ ${st.error || '업로드 실패'}`;
       info.append(name, meta);
+
+      if (st.status === 'uploading') {
+        const prog = document.createElement('div');
+        prog.className = 'attachment-progress-bar';
+        const fill = document.createElement('div');
+        fill.className = 'attachment-progress-bar-fill';
+        fill.style.width = `${Math.round(st.progress || 0)}%`;
+        prog.appendChild(fill);
+        info.appendChild(prog);
+      }
+
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'preview-remove';
       remove.textContent = '×';
-      remove.addEventListener('click', () => clearPendingAttachment(currentKey, st.clientId));
-      row.append(icon, info, remove);
+      remove.setAttribute('aria-label', `${st.name} 첨부 취소`);
+      remove.title = '첨부 취소';
+      remove.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearPendingAttachment(currentKey, st.clientId);
+      });
+
+      row.append(info, remove);
       attachmentList.appendChild(row);
     }
   }
@@ -738,15 +848,36 @@ export function clearPendingAttachment(convKey, clientId) {
   const index = states.findIndex(s => s.clientId === clientId);
   if (index < 0) return;
   const [removed] = states.splice(index, 1);
+  if (removed?.previewUrl && removed.previewUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(removed.previewUrl);
+  }
   if (!states.length) pendingAttachments.delete(convKey);
   if (removed.status === 'uploading' && removed.xhr) removed.xhr.abort();
   renderComposerPreviews();
   processUploadQueue();
 }
 
+export function clearAllPendingAttachments(convKey) {
+  const states = pendingAttachments.get(convKey) || [];
+  for (const st of states) {
+    if (st.previewUrl && st.previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(st.previewUrl);
+    }
+    if (st.status === 'uploading' && st.xhr) {
+      st.xhr.abort();
+    }
+  }
+  pendingAttachments.delete(convKey);
+  renderComposerPreviews();
+}
+
 export function chooseFiles(fileList) {
   const incoming = [...(fileList || [])];
   if (!incoming.length) return;
+  if (!state.activeRoom) {
+    showToast('채팅방 또는 대화 상대를 먼저 선택해 주세요.', 'warning');
+    return;
+  }
   const currentKey = `${state.activeRoom.type}:${state.activeRoom.id}`;
   const states = pendingAttachments.get(currentKey) || [];
   for (const file of incoming) {
@@ -754,11 +885,21 @@ export function chooseFiles(fileList) {
       showToast(`${file.name}: 50MB를 초과했습니다.`, 'error');
       continue;
     }
+    const isImg = isImageFile(file, file.name);
+    let previewUrl = null;
+    try {
+      if (isImg && file instanceof Blob) {
+        previewUrl = URL.createObjectURL(file);
+      }
+    } catch { /* ignore */ }
+
     states.push({
       clientId: ++attachmentSequence,
       status: 'queued',
       name: file.name,
       file,
+      isImage: isImg,
+      previewUrl,
       progress: 0,
       xhr: null,
       meta: null,
@@ -804,6 +945,10 @@ export function startAttachmentUpload(convKey, st) {
       st.status = 'ready';
       st.progress = 100;
       st.meta = response;
+      if (!st.previewUrl && response.previewable && response.url) {
+        st.previewUrl = response.url;
+        st.isImage = true;
+      }
       st.file = null;
       refreshStorageWarning();
     } else {
@@ -925,6 +1070,60 @@ export function initChatListeners(onSendMessage) {
     });
 
     msgInput.addEventListener('click', updateMentionMenu);
+    msgInput.addEventListener('paste', handleClipboardPaste);
+  }
+
+  function handleClipboardPaste(e) {
+    if (!state.activeRoom) return;
+    const cd = e.clipboardData;
+    if (!cd) return;
+
+    const filesToUpload = [];
+    if (cd.files && cd.files.length > 0) {
+      for (let i = 0; i < cd.files.length; i++) {
+        const file = cd.files[i];
+        if (file && (file.type.startsWith('image/') || file.size > 0)) {
+          filesToUpload.push(file);
+        }
+      }
+    } else if (cd.items && cd.items.length > 0) {
+      for (let i = 0; i < cd.items.length; i++) {
+        const item = cd.items[i];
+        if (item && item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) filesToUpload.push(file);
+        }
+      }
+    }
+
+    if (filesToUpload.length === 0) return;
+
+    e.preventDefault();
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+    const formattedFiles = filesToUpload.map((f, idx) => {
+      const isGeneric = !f.name || f.name === 'image.png' || f.name === 'blob' || !f.name.includes('.');
+      if (!isGeneric) return f;
+
+      let ext = '.png';
+      if (f.type === 'image/jpeg') ext = '.jpg';
+      else if (f.type === 'image/gif') ext = '.gif';
+      else if (f.type === 'image/webp') ext = '.webp';
+      else if (f.type === 'image/svg+xml') ext = '.svg';
+
+      const suffix = filesToUpload.length > 1 ? `_${idx + 1}` : '';
+      const newName = `screenshot_${ts}${suffix}${ext}`;
+      return new File([f], newName, { type: f.type || 'image/png' });
+    });
+
+    chooseFiles(formattedFiles);
+    showToast(`클립보드 이미지(${formattedFiles.length}개)가 첨부되었습니다.`, 'info');
+    if (msgInput && document.activeElement !== msgInput) {
+      msgInput.focus();
+    }
   }
 
   if (sendBtn) sendBtn.addEventListener('click', onSendMessage);
@@ -967,7 +1166,31 @@ export function initChatListeners(onSendMessage) {
       dropOverlay.classList.add('hidden');
       chooseFiles(e.dataTransfer?.files);
     });
+
+    chatArea.addEventListener('paste', (e) => {
+      if (e.target === msgInput) return;
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
+        return;
+      }
+      handleClipboardPaste(e);
+    });
   }
+
+  const lightboxModal = document.getElementById('image-lightbox-modal');
+  const lightboxClose = document.getElementById('image-lightbox-close');
+  if (lightboxClose) {
+    lightboxClose.addEventListener('click', closeImageLightbox);
+  }
+  if (lightboxModal) {
+    lightboxModal.addEventListener('click', (e) => {
+      if (e.target === lightboxModal) closeImageLightbox();
+    });
+  }
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && lightboxModal && !lightboxModal.classList.contains('hidden')) {
+      closeImageLightbox();
+    }
+  });
 }
 
 // ============================================================

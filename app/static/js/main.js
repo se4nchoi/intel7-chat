@@ -25,6 +25,7 @@ import {
   initChatListeners,
   replyTargets,
   pendingAttachments,
+  clearAllPendingAttachments,
 } from './chat.js';
 import { initWebSocket, sendWebSocketMessage, applyServerUnreadCounts } from './ws.js';
 import { initSearchListeners, showSearchHint } from './search.js';
@@ -258,10 +259,9 @@ function handleSendMessage() {
     msgInput.value = '';
     clearCurrentDraft(currentKey);
     replyTargets.delete(currentKey);
-    pendingAttachments.delete(currentKey);
+    clearAllPendingAttachments(currentKey);
     resizeComposer();
     updateCharCount();
-    renderComposerPreviews();
     msgInput.focus();
   }
 }

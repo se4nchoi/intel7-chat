@@ -786,10 +786,11 @@ function renderBoard() {
     }
   }
 
-  const isMyTurn = currentRoom.game_started && !currentRoom.result && myColor && localGame.turn() === myColor;
+  const isMyTurn = isLatest && currentRoom.game_started && !currentRoom.result && myColor && localGame.turn() === myColor;
   const boardFrame = $('chBoardFrame');
   if (boardFrame) {
     boardFrame.classList.toggle('my-turn-active', isMyTurn);
+    boardFrame.classList.toggle('inspect-active', !isLatest);
   }
 }
 

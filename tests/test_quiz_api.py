@@ -440,4 +440,51 @@ def test_quiz_author_api_flow():
     assert target_in_today["author_name"] == "김로봇"
 
 
+def test_category_quiz_api_pagination_with_exclude():
+    ORIGIN = {"Origin": "http://testserver"}
+    admin, _ = session_client("admin_user", role="admin")
+    student, _ = session_client("student_user", role="student")
+
+    # Create 10 quizzes under '넌센스'
+    for i in range(10):
+        resp = admin.post(
+            "/api/admin/quiz",
+            json={
+                "category": "넌센스",
+                "difficulty": "easy",
+                "question_type": "short_answer",
+                "question": f"넌센스 퀴즈 {i + 1}",
+                "correct_answers": ["정답"],
+                "author_name": "센스쟁이",
+            },
+            headers=ORIGIN,
+        )
+        assert resp.status_code == 200
+
+    # Student fetches first 5
+    r1 = student.get("/api/quiz/today?category=넌센스&count=5")
+    assert r1.status_code == 200
+    b1 = r1.json()["quizzes"]
+    assert len(b1) == 5
+    b1_ids = [q["id"] for q in b1]
+
+    # Student solves all 5
+    for qid in b1_ids:
+        sub = student.post("/api/quiz/submit", json={"quiz_id": qid, "answer": "정답"}, headers=ORIGIN)
+        assert sub.status_code == 200
+
+    # Student fetches next 5 with exclude
+    exclude_str = ",".join(str(i) for i in b1_ids)
+    r2 = student.get(f"/api/quiz/today?category=넌센스&count=5&exclude={exclude_str}")
+    assert r2.status_code == 200
+    b2 = r2.json()["quizzes"]
+    assert len(b2) == 5
+    b2_ids = [q["id"] for q in b2]
+
+    # Verify no overlap and all are unsolved
+    assert set(b1_ids).isdisjoint(set(b2_ids))
+    assert all(q["is_solved"] is False for q in b2)
+
+
+
 

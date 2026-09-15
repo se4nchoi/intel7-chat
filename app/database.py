@@ -1867,8 +1867,8 @@ POSITION_MODULE_SAMPLE_QUIZZES = [
 ]
 
 QUIZ_EXPERTISES = (
-    "PLC", "전기", "전자", "자동화설비",
-    "전기기능사", "전기기사", "디지털공학", "공압/유압", "로봇 Python",
+    "PLC", "전기", "전자", 
+    "전기기능사", "전기기사", "산업안전기사", "로봇 Python",
 )
 
 def normalize_quiz_expertise(value: Any) -> str:
@@ -1883,17 +1883,14 @@ def normalize_quiz_expertise(value: Any) -> str:
 # Subject ranks use score, then the time that score was reached. Practice retries
 # award no score, so they do not inflate rankings.
 QUIZ_SUBJECT_TITLES = {
-    "PLC": ("⚡", "접점 찍먹", "래더 좀 함", "PLC 고인물"),
-    "전기": ("🔌", "회로 찍먹", "전류 좀 봄", "전기 고인물"),
-    "전자": ("🔧", "저항 찍먹", "회로 좀 봄", "전자 고인물"),
-    "자동화설비": ("🏭", "버튼 찍먹", "설비 좀 함", "공장 고인물"),
-    "전기기능사": ("🧰", "공구 찍먹", "배선 좀 함", "기능사 고인물"),
-    "전기기사": ("📐", "공식 찍먹", "설계 좀 함", "전기기사 고인물"),
-    "디지털공학": ("⚙️", "비트 찍먹", "논리 좀 함", "디지털 고인물"),
-    "공압/유압": ("💨", "압력 찍먹", "밸브 좀 함", "유공압 고인물"),
-    "로봇 Python": ("🤖", "로봇 찍먹", "코드 좀 함", "로봇 고인물"),
-    "상식": ("🌏", "몰상식하진않음", "상식적인사람", "상식의 왕"),
-    "넌센스퀴즈": ("💡", "센스있는사람", "틀을 깨는자", "센스의 왕"),
+    "PLC": ("⚡", "PLC조교", "래더고인물", "PLC의 신"),
+    "전기": ("🔌", "전기조교", "전기고인물", "전기의 신"),
+    "전자": ("🔋", "전자조교", "전자고인물", "전자의 신"),
+    "전기기사": ("📐", "기사필기합격기원", "기사실기한방퍄수", "전기기사"),
+    "산업안전기사": ("⛑️", "안전한사람", "산업안전고인물", "산업안전의 신"),
+    "로봇 Python": ("🤖", "로봇조교", "파이썬고인물", "로봇의 신"),
+    "상식": ("🌏", "몰상식하진않음", "상식적인사람", "상식의 신"),
+    "넌센스퀴즈": ("💡", "센스있는사람", "틀을깨는자", "센스의 신"),
 }
 
 
@@ -2718,7 +2715,12 @@ def get_daily_quizzes(
                 order_by = "ORDER BY CASE WHEN qs.id IS NULL THEN 0 ELSE 1 END, RANDOM()"
             else:
                 order_by = "ORDER BY CASE WHEN qs.id IS NULL THEN 0 ELSE 1 END, CASE q.difficulty WHEN 'easy' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, q.id ASC"
-        params.extend([count, max(0, int(offset))])
+        # Defensive check: if exclude_ids was provided and offset equals len(exclude_ids),
+        # the caller is passing cumulative exclude alongside cumulative offset.
+        actual_offset = max(0, int(offset))
+        if excluded and actual_offset == len(excluded):
+            actual_offset = 0
+        params.extend([count, actual_offset])
 
         query = f"""
             SELECT q.id, q.category, q.difficulty, q.question_type, q.question,

@@ -21,11 +21,11 @@
     <input id="file-input" type="file" class="hidden" multiple data-max-file-mb="{{ max_file_mb }}" data-max-files="{{ max_files }}" />
     <button id="attach-btn" class="composer-icon-btn" type="button" aria-label="파일 첨부" title="파일 첨부 (파일당 {{ max_file_mb }}MB, 최대 {{ max_files }}개)">＋</button>
     <label class="sr-only" for="msg-input">메시지</label>
-    <textarea id="msg-input" rows="1" maxlength="{{ max_message_len }}" placeholder="메시지를 입력하세요" autocomplete="off"></textarea>
+    <textarea id="msg-input" rows="1" maxlength="{{ max_message_len }}" placeholder="메시지를 입력하세요 (이미지 Ctrl+V 붙여넣기 지원)" autocomplete="off"></textarea>
     <button id="send-btn" type="button" aria-label="메시지 전송">전송</button>
   </div>
   <div class="composer-footer">
-    <span class="composer-hint"><kbd>Enter</kbd> 전송 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 · Markdown 지원</span>
+    <span class="composer-hint"><kbd>Enter</kbd> 전송 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 · 이미지 붙여넣기(<kbd>Ctrl</kbd>+<kbd>V</kbd>)</span>
     <span id="char-count" class="char-count">0 / {{ max_message_len }}</span>
   </div>
 </footer>

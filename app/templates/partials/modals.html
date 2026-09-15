@@ -329,3 +329,24 @@
     </div>
   </div>
 </div>
+
+<!-- 이미지 라이트박스(미리보기 확대) 모달 -->
+<div id="image-lightbox-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="image-lightbox-title">
+  <div class="image-lightbox-box">
+    <div class="image-lightbox-header">
+      <div class="image-lightbox-title-wrap">
+        <span class="image-lightbox-icon">🖼️</span>
+        <span id="image-lightbox-title" class="image-lightbox-title">이미지 미리보기</span>
+      </div>
+      <button id="image-lightbox-close" class="admin-close" type="button" aria-label="닫기">×</button>
+    </div>
+    <div class="image-lightbox-body">
+      <img id="image-lightbox-img" src="" alt="미리보기 이미지" />
+    </div>
+    <div class="image-lightbox-footer">
+      <span id="image-lightbox-meta" class="image-lightbox-meta"></span>
+      <a id="image-lightbox-download" href="#" target="_blank" download class="secondary-btn image-lightbox-btn">새 탭에서 원본 보기 / 저장</a>
+    </div>
+  </div>
+</div>
+

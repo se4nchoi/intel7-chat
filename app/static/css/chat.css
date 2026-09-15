@@ -762,33 +762,136 @@ kbd {
 
 .attachment-queue {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .attachment-queue-item {
   align-items: center;
-  border-radius: 7px;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 9px;
   display: flex;
-  gap: 9px;
-  padding: 5px 4px;
+  gap: 10px;
+  padding: 6px 8px;
+  max-width: 380px;
+  min-width: 220px;
+  flex: 1 1 240px;
+  transition: border-color .15s ease, background .15s ease;
 }
-.attachment-queue-item.error { background: rgba(210, 54, 54, .1); }
-.attachment-queue-item > div:not(.attachment-preview-icon) {
+.attachment-queue-item:hover {
+  background: rgba(255, 255, 255, .07);
+  border-color: rgba(79, 142, 247, .35);
+}
+.attachment-queue-item.ready { border-color: rgba(52, 211, 153, .3); }
+.attachment-queue-item.uploading { border-color: rgba(79, 142, 247, .4); }
+.attachment-queue-item.error { background: rgba(210, 54, 54, .12); border-color: rgba(248, 113, 113, .3); }
+
+/* Thumbnail preview */
+.attachment-preview-thumb-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 7px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, .35);
+  border: 1px solid rgba(255, 255, 255, .12);
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.attachment-preview-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .18s ease;
+}
+.attachment-preview-thumb-wrap:hover .attachment-preview-thumb {
+  transform: scale(1.06);
+}
+.attachment-thumb-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .4);
+  opacity: 0;
+  transition: opacity .15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .7rem;
+  color: #fff;
+  font-weight: 600;
+}
+.attachment-preview-thumb-wrap:hover .attachment-thumb-overlay {
+  opacity: 1;
+}
+
+/* File icon badge */
+.attachment-preview-file-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.attachment-preview-ext {
+  font-size: .56rem;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+/* Info column */
+.attachment-queue-info {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
+  gap: 2px;
 }
-.attachment-queue-item strong { color: var(--accent); font-size: .76rem; }
-.attachment-queue-item.error strong { color: #ff9b9b; }
-.attachment-queue-item span {
-  color: var(--text-muted);
-  font-size: .73rem;
+.attachment-queue-name {
+  color: var(--text);
+  font-size: .78rem;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.attachment-preview-icon { font-size: 1.25rem; }
+.attachment-queue-meta {
+  color: var(--text-muted);
+  font-size: .71rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-queue-meta.ready { color: #34d399; }
+.attachment-queue-meta.error { color: #f87171; }
+
+/* Progress bar inside queue item */
+.attachment-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, .1);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 3px;
+}
+.attachment-progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width .15s ease;
+}
 .preview-remove {
   flex-shrink: 0;
   background: transparent;
@@ -1152,3 +1255,125 @@ kbd {
   .message-search-form { grid-template-columns: 1fr auto; }
   .message-search-form input { grid-column: 1 / -1; }
 }
+
+/* ========================================
+   Image Lightbox (Image Preview Modal)
+   ======================================== */
+.image-lightbox-box {
+  background: rgba(18, 22, 34, 0.96);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  max-width: min(94vw, 980px);
+  max-height: min(90vh, 860px);
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: lightboxPop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes lightboxPop {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.image-lightbox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  gap: 12px;
+}
+
+.image-lightbox-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text);
+  overflow: hidden;
+}
+
+.image-lightbox-icon {
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.image-lightbox-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 500px;
+}
+
+.image-lightbox-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: auto;
+  min-height: 180px;
+  max-height: calc(85vh - 120px);
+  background: radial-gradient(circle at center, rgba(30, 36, 56, 0.7) 0%, rgba(10, 13, 22, 0.9) 100%);
+}
+
+#image-lightbox-img {
+  max-width: 100%;
+  max-height: calc(85vh - 150px);
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.6);
+  user-select: none;
+}
+
+.image-lightbox-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  gap: 12px;
+}
+
+.image-lightbox-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-lightbox-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: all .15s ease;
+  flex-shrink: 0;
+}
+
+.image-lightbox-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: var(--accent);
+  color: #fff;
+}
+

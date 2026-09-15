@@ -98,6 +98,61 @@ def test_random_prefers_unsolved_and_subjects_page_in_fives(temp_db):
     assert {item["id"] for item in plc_first}.isdisjoint({item["id"] for item in plc_next})
 
 
+def test_category_pagination_after_solving_first_batch(temp_db):
+    user = database.create_user("quiz_master", "hash")
+    # Seed 10 questions in a custom category
+    for i in range(10):
+        database.create_quiz(
+            category="테스트주제",
+            difficulty="easy",
+            question_type="short_answer",
+            question=f"문제 {i + 1}",
+            correct_answers=["정답"],
+            options=None,
+            explanation="해설",
+            hint="힌트",
+            source_ref="교재",
+            author_name="출제자",
+        )
+
+    # Fetch batch 1 (5 questions)
+    batch1 = database.get_daily_quizzes(user["id"], count=5, category="테스트주제")
+    assert len(batch1) == 5
+    batch1_ids = [q["id"] for q in batch1]
+
+    # User solves all 5 questions in batch 1
+    for qid in batch1_ids:
+        database.submit_quiz_answer(user["id"], qid, "정답")
+
+    # Fetch batch 2 with exclude_ids
+    batch2 = database.get_daily_quizzes(user["id"], count=5, category="테스트주제", exclude_ids=batch1_ids)
+    assert len(batch2) == 5
+    batch2_ids = [q["id"] for q in batch2]
+
+    # Verify no overlap between batch 1 and batch 2
+    assert set(batch1_ids).isdisjoint(set(batch2_ids))
+    # Verify all batch 2 questions are unsolved (not the old solved ones)
+    for q in batch2:
+        assert q["is_solved"] is False
+
+    # Also verify that passing cumulative offset=5 alongside exclude_ids does not double-skip
+    batch2_with_offset = database.get_daily_quizzes(
+        user["id"], count=5, category="테스트주제", offset=5, exclude_ids=batch1_ids
+    )
+    assert [q["id"] for q in batch2_with_offset] == batch2_ids
+
+    # User solves batch 2
+    for qid in batch2_ids:
+        database.submit_quiz_answer(user["id"], qid, "정답")
+
+    # Batch 3: all 10 are excluded, so it should return empty
+    batch3 = database.get_daily_quizzes(
+        user["id"], count=5, category="테스트주제", exclude_ids=batch1_ids + batch2_ids
+    )
+    assert len(batch3) == 0
+
+
+
 def test_quiz_seeding_and_retrieval(temp_db):
     u1 = database.create_user("student1", auth.hash_secret("pass123"))
     quizzes = database.get_daily_quizzes(u1["id"], count=10)

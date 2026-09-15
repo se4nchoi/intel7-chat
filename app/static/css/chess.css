@@ -417,19 +417,13 @@
 }
 
 .clock-chip.my-turn {
-  border-color: #2ed573 !important;
-  background: rgba(46, 213, 115, 0.12) !important;
-  box-shadow: 0 0 12px rgba(46, 213, 115, 0.45) inset, 0 0 8px rgba(46, 213, 115, 0.3) !important;
-  animation: turn-chip-pulse 1.8s infinite ease-in-out;
+  border-color: #38a169 !important;
+  background: rgba(56, 161, 105, 0.1) !important;
+  box-shadow: 0 0 8px rgba(56, 161, 105, 0.22) inset !important;
 }
 
 .clock-chip.my-turn .time {
-  color: #2ed573 !important;
-}
-
-@keyframes turn-chip-pulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(46, 213, 115, 0.35) inset; }
-  50% { box-shadow: 0 0 16px rgba(46, 213, 115, 0.7) inset, 0 0 10px rgba(46, 213, 115, 0.4); }
+  color: #68d391 !important;
 }
 
 .chess-inspect-banner {
@@ -440,7 +434,8 @@
   border: 1px solid var(--ch-gold);
   border-radius: 7px;
   padding: 6px 12px;
-  margin-bottom: 8px;
+  margin-top: 8px;
+  margin-bottom: 4px;
   font-size: 12px;
   color: var(--ch-gold-soft);
 }
@@ -455,7 +450,8 @@
   border: 1px solid #00d2ff;
   border-radius: 7px;
   padding: 6px 12px;
-  margin-bottom: 8px;
+  margin-top: 8px;
+  margin-bottom: 4px;
   font-size: 12px;
   color: #70edff;
 }
@@ -510,19 +506,13 @@
 }
 
 .board-frame.my-turn-active {
-  border-color: #2ed573;
-  animation: my-turn-pulse 1.8s infinite ease-in-out;
+  border-color: #38a169;
+  box-shadow: 0 0 10px rgba(56, 161, 105, 0.35), 0 8px 25px rgba(0,0,0,0.5);
 }
 
-@keyframes my-turn-pulse {
-  0%, 100% {
-    box-shadow: 0 0 15px rgba(46, 213, 115, 0.45), 0 8px 25px rgba(0,0,0,0.5);
-    border-color: #2ed573;
-  }
-  50% {
-    box-shadow: 0 0 30px rgba(46, 213, 115, 0.85), 0 8px 30px rgba(46, 213, 115, 0.4);
-    border-color: #7bed9f;
-  }
+.board-frame.inspect-active {
+  border-color: var(--ch-gold-soft);
+  box-shadow: 0 0 12px rgba(204, 159, 69, 0.3), 0 8px 25px rgba(0,0,0,0.5);
 }
 
 .board-freeze-overlay {
@@ -593,7 +583,8 @@
 }
 
 .sq.last-from, .sq.last-to {
-  box-shadow: inset 0 0 0 3px rgba(204,159,69,0.55);
+  background-color: rgba(204, 159, 69, 0.35) !important;
+  box-shadow: inset 0 0 0 2.5px rgba(204, 159, 69, 0.85) !important;
 }
 
 .sq.premove-from, .sq.premove-to {
@@ -670,21 +661,15 @@
 .badge.check  { background: var(--ch-danger); color: #fff; }
 .badge.over   { background: var(--ch-good); color: #0e1a10; font-size: 13px; }
 .badge.my-turn-badge {
-  background: #2ed573;
-  color: #0c2b16;
-  font-weight: 800;
-  box-shadow: 0 0 12px rgba(46, 213, 115, 0.5);
-  animation: turn-badge-bounce 1.6s infinite ease-in-out;
+  background: #276749;
+  color: #f0fff4;
+  font-weight: 700;
+  border: 1px solid rgba(72, 187, 120, 0.45);
 }
 .badge.turn-wait {
   background: rgba(204, 159, 69, 0.15);
   color: var(--ch-gold-soft);
   border: 1px solid rgba(204, 159, 69, 0.35);
-}
-
-@keyframes turn-badge-bounce {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
 }
 
 /* Move History */
