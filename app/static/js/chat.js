@@ -711,7 +711,7 @@ export function getFileBadge(filename, isImg) {
   return { icon: '📄', ext: (ext || 'FILE').toUpperCase().slice(0, 4) };
 }
 
-export function openImageLightbox(src, title, meta) {
+export function openImageLightbox(src, title, meta, serverUrl) {
   const modal = document.getElementById('image-lightbox-modal');
   const img = document.getElementById('image-lightbox-img');
   const titleEl = document.getElementById('image-lightbox-title');
@@ -719,12 +719,18 @@ export function openImageLightbox(src, title, meta) {
   const downloadLink = document.getElementById('image-lightbox-download');
   if (!modal || !img) return;
 
-  img.src = src;
+  const effectiveUrl = src || serverUrl;
+  img.src = effectiveUrl;
   img.alt = title || '이미지 미리보기';
+  img.onerror = () => {
+    if (serverUrl && img.src !== serverUrl) {
+      img.src = serverUrl;
+    }
+  };
   if (titleEl) titleEl.textContent = title || '이미지 미리보기';
   if (metaEl) metaEl.textContent = meta || '';
   if (downloadLink) {
-    downloadLink.href = src;
+    downloadLink.href = serverUrl || effectiveUrl;
     if (title) downloadLink.download = title;
   }
   modal.classList.remove('hidden');
@@ -765,15 +771,21 @@ export function renderComposerPreviews() {
 
       const sizeStr = st.file ? formatBytes(st.file.size) : (st.meta ? formatBytes(st.meta.size) : '');
 
-      if (st.isImage && st.previewUrl) {
+      const displayUrl = st.previewUrl || (st.isImage && st.meta?.url ? st.meta.url : null);
+      if (st.isImage && displayUrl) {
         const thumbWrap = document.createElement('div');
         thumbWrap.className = 'attachment-preview-thumb-wrap';
         thumbWrap.title = '클릭하여 크게 보기';
 
         const img = document.createElement('img');
         img.className = 'attachment-preview-thumb';
-        img.src = st.previewUrl;
+        img.src = displayUrl;
         img.alt = st.name;
+        img.onerror = () => {
+          if (st.meta?.url && img.src !== st.meta.url) {
+            img.src = st.meta.url;
+          }
+        };
 
         const overlay = document.createElement('div');
         overlay.className = 'attachment-thumb-overlay';
@@ -782,7 +794,7 @@ export function renderComposerPreviews() {
         thumbWrap.append(img, overlay);
         thumbWrap.addEventListener('click', (e) => {
           e.stopPropagation();
-          openImageLightbox(st.previewUrl, st.name, sizeStr);
+          openImageLightbox(displayUrl, st.name, sizeStr, st.meta?.url);
         });
         row.appendChild(thumbWrap);
       } else {
@@ -893,7 +905,7 @@ export function chooseFiles(fileList) {
       }
     } catch { /* ignore */ }
 
-    states.push({
+    const st = {
       clientId: ++attachmentSequence,
       status: 'queued',
       name: file.name,
@@ -903,7 +915,23 @@ export function chooseFiles(fileList) {
       progress: 0,
       xhr: null,
       meta: null,
-    });
+    };
+    states.push(st);
+
+    // Read as Data URL (guaranteed allowed by CSP "img-src data:")
+    if (isImg && file instanceof Blob) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (!st.meta?.url && e.target?.result) {
+          if (st.previewUrl && st.previewUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(st.previewUrl);
+          }
+          st.previewUrl = e.target.result;
+          renderComposerPreviews();
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   }
   pendingAttachments.set(currentKey, states);
   renderComposerPreviews();
@@ -945,7 +973,10 @@ export function startAttachmentUpload(convKey, st) {
       st.status = 'ready';
       st.progress = 100;
       st.meta = response;
-      if (!st.previewUrl && response.previewable && response.url) {
+      if (response.previewable && response.url) {
+        if (st.previewUrl && st.previewUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(st.previewUrl);
+        }
         st.previewUrl = response.url;
         st.isImage = true;
       }
