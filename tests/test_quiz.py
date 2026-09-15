@@ -355,4 +355,86 @@ def test_quiz_flagging_and_admin_management(temp_db):
     assert len(open_flags_after) == 0
 
 
+def test_streak_weekend_and_holiday_attendance():
+    # 1. School day checks
+    assert database.is_school_day("2026-05-02") is False  # Saturday
+    assert database.is_school_day("2026-05-03") is False  # Sunday
+    assert database.is_school_day("2026-05-05") is False  # 어린이날 (statutory holiday)
+    assert database.is_school_day("2026-05-04") is True   # Monday (regular school day)
+
+    # 2. should_continue_streak
+    # Same day
+    assert database.should_continue_streak("2026-05-01", "2026-05-01") is True
+    # Consecutive days
+    assert database.should_continue_streak("2026-05-04", "2026-05-05") is True
+    # Friday to Monday (only weekend in between, no missed school day)
+    assert database.should_continue_streak("2026-05-01", "2026-05-04") is True
+    # Friday to Tuesday when Monday was a missed school day -> False
+    assert database.should_continue_streak("2026-05-01", "2026-05-05") is False
+    # Thursday to Monday (Friday was missed school day) -> False
+    assert database.should_continue_streak("2026-04-30", "2026-05-04") is False
+
+    # Spanning statutory holidays: 2025-05-02 (Fri) to 2025-05-07 (Wed)
+    # 2025-05-03: Sat, 2025-05-04: Sun, 2025-05-05: 어린이날, 2025-05-06: 석가탄신일
+    assert database.should_continue_streak("2025-05-02", "2025-05-07") is True
+
+    # 3. is_streak_active
+    # If last solved on Friday (2026-05-01), streak remains active on Saturday, Sunday, and Monday
+    assert database.is_streak_active("2026-05-01", "2026-05-02") is True
+    assert database.is_streak_active("2026-05-01", "2026-05-03") is True
+    assert database.is_streak_active("2026-05-01", "2026-05-04") is True
+    # On Tuesday, Monday was a school day that was not solved -> streak is lost
+    assert database.is_streak_active("2026-05-01", "2026-05-05") is False
+
+
+def test_quiz_author_support(temp_db):
+    author = database.create_user("teacher_lee", auth.hash_secret("pass123"))
+    with database.get_connection() as conn:
+        conn.execute("UPDATE users SET display_name = '이선생님' WHERE id = ?", (author["id"],))
+    student = database.create_user("student_park", auth.hash_secret("pass123"))
+
+    # Create quiz with author_name and author_id
+    q_data = {
+        "category": "PLC",
+        "difficulty": "medium",
+        "question_type": "short_answer",
+        "question": "PLC 타이머 접점 T0의 단위는?",
+        "correct_answers": ["100ms", "0.1초"],
+        "author_name": "이선생님",
+    }
+    q_ids = database.create_quiz_batch([q_data], author_id=author["id"], author_name="이선생님")
+    assert len(q_ids) == 1
+    quiz_id = q_ids[0]
+
+    # Daily quizzes returns author_name
+    daily = database.get_daily_quizzes(student["id"], count=100)
+    target = next((q for q in daily if q["id"] == quiz_id), None)
+    assert target is not None
+    assert target["author_name"] == "이선생님"
+
+    # Solve and check review list
+    database.submit_quiz_answer(student["id"], quiz_id, "100ms")
+    review = database.get_quiz_review_list(student["id"], mode="history")
+    reviewed_item = next(q for q in review if q["id"] == quiz_id)
+    assert reviewed_item["author_name"] == "이선생님"
+
+    # Admin all quizzes returns author_name
+    admin_list = database.get_all_quizzes_admin(search=str(quiz_id))
+    assert len(admin_list) == 1
+    assert admin_list[0]["author_name"] == "이선생님"
+
+    # Update quiz author_name
+    database.update_quiz(quiz_id, {
+        "category": "PLC",
+        "difficulty": "hard",
+        "question_type": "short_answer",
+        "question": "PLC 타이머 접점 T0의 단위는? (수정)",
+        "correct_answers": ["100ms"],
+        "author_name": "이명예교수",
+    })
+    updated = database.get_quiz_by_id_admin(quiz_id)
+    assert updated["author_name"] == "이명예교수"
+
+
+
 

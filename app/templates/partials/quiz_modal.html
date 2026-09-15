@@ -9,8 +9,8 @@
         </div>
       </div>
       <div class="cbt-header-right">
-        <div id="quiz-streak-pill" class="cbt-streak-pill" title="오늘의 퀴즈를 풀면 STREAK이 유지됩니다."
-          aria-label="오늘의 퀴즈를 풀면 스트릭이 유지됩니다">
+        <div id="quiz-streak-pill" class="cbt-streak-pill" title="오늘의 퀴즈를 풀면 STREAK이 유지됩니다 (주말·공휴일 제외)"
+          aria-label="오늘의 퀴즈를 풀면 스트릭이 유지됩니다 (주말·공휴일 제외)">
           <span class="cbt-streak-flame">🔥</span>
           <span id="quiz-stat-streak">0일 연속 🔥</span>
         </div>
@@ -139,7 +139,10 @@
             <div id="quiz-card" class="cbt-card">
               <!-- Card Header: Category & Action Badges -->
               <div class="cbt-card-header">
-                <span id="quiz-category-tag" class="cbt-category-tag">PLC</span>
+                <div class="cbt-header-meta">
+                  <span id="quiz-category-tag" class="cbt-category-tag">PLC</span>
+                  <span id="quiz-author-tag" class="cbt-author-badge" title="출제자">✍️ 대나무숲 공식</span>
+                </div>
                 <div class="cbt-header-badges">
                   <button id="quiz-star-btn" class="cbt-star-btn" type="button" title="문제 보관/북마크">⭐ <span
                       id="quiz-star-label">보관</span></button>
@@ -193,16 +196,7 @@
                     <button id="quiz-submit-btn" class="cbt-submit-btn" type="button">정답 제출</button>
                   </div>
                   <div class="cbt-input-guide">대소문자, 띄어쓰기, 단위(초/S, V 등), 보편적인 유의어는 자동으로 인정됩니다. Enter 제출</div>
-                  <div class="cbt-symbol-chips">
-                    <span class="cbt-chip-label">빠른 기호 입력:</span>
-                    <button type="button" class="cbt-chip-btn" data-sym="X0">X0</button>
-                    <button type="button" class="cbt-chip-btn" data-sym="Y0">Y0</button>
-                    <button type="button" class="cbt-chip-btn" data-sym="M0">M0</button>
-                    <button type="button" class="cbt-chip-btn" data-sym="T0">T0</button>
-                    <button type="button" class="cbt-chip-btn" data-sym="AND">AND</button>
-                    <button type="button" class="cbt-chip-btn" data-sym="OR">OR</button>
-                    <button type="button" class="cbt-chip-btn" data-sym="LDI">LDI</button>
-                  </div>
+                  <div id="quiz-symbol-chips" class="cbt-symbol-chips hidden"></div>
                 </div>
               </div>
 
@@ -218,7 +212,10 @@
                 <div class="cbt-explanation-card">
                   <div class="cbt-explanation-title">💡 상세 해설</div>
                   <p id="quiz-explanation-text" class="cbt-explanation-text"></p>
-                  <div id="quiz-source-ref" class="cbt-source-ref">출처: 교재 4강 p.12</div>
+                  <div class="cbt-meta-footer">
+                    <span id="quiz-author-ref" class="cbt-author-ref">출제: 대나무숲 공식</span>
+                    <span id="quiz-source-ref" class="cbt-source-ref">출처: 교재 4강 p.12</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -480,6 +477,10 @@
                   <div><label for="admin-quiz-hint">힌트</label><textarea id="admin-quiz-hint" rows="2"></textarea></div>
                   <div><label for="admin-quiz-source">출처</label><textarea id="admin-quiz-source" rows="2"></textarea>
                   </div>
+                </div>
+                <div>
+                  <label for="admin-quiz-author">출제자 (비워두면 기본값/현재 사용자)</label>
+                  <input id="admin-quiz-author" type="text" class="cbt-text-input" placeholder="예: 홍길동, 대나무숲 공식" />
                 </div>
                 <label for="admin-quiz-explanation">해설</label><textarea id="admin-quiz-explanation" rows="3"></textarea>
                 <p id="admin-quiz-editor-status" class="admin-status-msg"></p>

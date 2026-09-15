@@ -37,25 +37,35 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .header-logo {
   height: 28px;
-  width: auto;
+  width: 28px;
   object-fit: contain;
+  flex-shrink: 0;
 }
 
 .service-name {
-  font-size: 1rem;
+  font-size: 0.98rem;
   font-weight: 700;
   color: var(--accent);
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+  line-height: 1.2;
+  flex-shrink: 0;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .my-nick-badge-container {
@@ -554,19 +564,58 @@
   z-index: 150;
 }
 
+@media (max-width: 1120px) {
+  .service-name {
+    max-width: 130px;
+  }
+  .conn-status {
+    width: 8px;
+    height: 8px;
+    min-width: 8px;
+    padding: 0;
+    font-size: 0;
+    border-radius: 50%;
+    margin: 0 2px;
+  }
+  .chess-btn-container .quiz-btn-text {
+    display: none;
+  }
+  .my-nick-badge {
+    max-width: 90px;
+  }
+}
+
+@media (max-width: 950px) {
+  .app-header {
+    gap: 6px;
+    padding: 0 10px;
+  }
+  .header-right {
+    gap: 5px;
+  }
+  .service-name {
+    max-width: 100px;
+  }
+  .quiz-btn-text {
+    display: none;
+  }
+  .my-nick-badge {
+    max-width: 75px;
+  }
+}
+
 @media (max-width: 768px) {
   .sidebar-toggle-btn { display: inline-flex; }
   .app-header { gap: 6px; padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
-  .header-right { gap: 6px; }
-  .service-name,
-  .my-nick-badge-container,
+  .header-right { gap: 5px; }
+  .service-name { max-width: 80px; font-size: 0.88rem; }
+  .my-nick-badge-container { display: none; }
   .quiz-btn-text,
   .conn-status { display: none; }
-  .header-logo-container { flex: 1; min-width: 0; }
   .admin-btn,
-  .logout-btn { width: 32px; min-width: 32px; padding: 0; font-size: 0; }
-  .admin-btn::before { content: "⚙"; font-size: 16px; }
-  .logout-btn::before { content: "↪"; font-size: 18px; }
+  .logout-btn { width: 30px; min-width: 30px; height: 30px; padding: 0; font-size: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .admin-btn::before { content: "⚙"; font-size: 15px; }
+  .logout-btn::before { content: "↪"; font-size: 16px; }
   .sidebar {
     position: fixed;
     top: var(--header-h);
@@ -585,6 +634,8 @@
 }
 
 @media (max-width: 480px) {
-  .header-logo { height: 24px; }
+  .header-logo { height: 24px; width: 24px; }
+  .service-name { display: none; }
   .nickname-hint-popover { display: none; }
+  .help-btn { display: none; }
 }

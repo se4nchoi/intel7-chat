@@ -638,10 +638,34 @@
   gap: 10px;
 }
 
+.cbt-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .cbt-category-tag {
   font-size: 0.88rem;
   font-weight: 700;
   color: #94a3b8;
+}
+
+.cbt-author-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #7dd3fc;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cbt-header-badges {
@@ -1036,6 +1060,23 @@
   color: #e2e8f0;
   line-height: 1.65;
   margin: 0 0 10px 0;
+}
+
+.cbt-meta-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.15);
+}
+
+.cbt-author-ref {
+  font-size: 0.76rem;
+  color: #7dd3fc;
+  font-weight: 600;
 }
 
 .cbt-source-ref {
@@ -1819,6 +1860,16 @@
   margin-top: 4px;
 }
 
+.cbt-hist-author {
+  font-size: 0.74rem;
+  color: #7dd3fc;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
 /* ============================================================
    Flagging & Quiz Admin Overhaul Styles
    ============================================================ */
@@ -2274,6 +2325,16 @@
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 4px;
+}
+
+.admin-quiz-author-badge {
+  font-size: 0.72rem;
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
 }
 
 .admin-quiz-flag-badge {

@@ -374,6 +374,11 @@ export function renderSolvedHistoryAccordion() {
       detailQ.textContent = `Q. ${q.question}`;
       detail.appendChild(detailQ);
 
+      const authorDiv = document.createElement('div');
+      authorDiv.className = 'cbt-hist-author';
+      authorDiv.textContent = `✍️ 출제: ${q.author_name || '대나무숲 공식'}`;
+      detail.appendChild(authorDiv);
+
       if (q.image_filename) {
         const img = document.createElement('img');
         img.src = `/api/quiz/images/${encodeURIComponent(q.image_filename)}`;
@@ -655,11 +660,67 @@ function renderSidebarQuestionList(items = sidebarCategoryQuizzes || todayQuizze
   });
 }
 
+function getSuggestionChipsForQuiz(q) {
+  if (!q) return [];
+  const cat = (q.category || '').toLowerCase();
+  const qText = (q.question || '').toLowerCase();
+  const type = q.question_type || '';
+
+  if (type === 'ladder_input' || cat.includes('plc') || cat.includes('시퀀스') || qText.includes('래더') || qText.includes('ladder')) {
+    return ['X0', 'Y0', 'M0', 'T0', 'C0', 'AND', 'OR', 'OUT', 'LDI', 'SET', 'RST'];
+  }
+  if (cat.includes('전기') || cat.includes('회로') || qText.includes('저항') || qText.includes('전압') || qText.includes('전류')) {
+    return ['V', 'A', 'Ω', 'W', 'Hz', 'F', 'H', 'kW', 'kΩ', 'μF'];
+  }
+  if (cat.includes('디지털') || cat.includes('논리') || cat.includes('전자') || qText.includes('게이트') || qText.includes('logic')) {
+    return ['0', '1', 'AND', 'OR', 'NOT', 'NAND', 'NOR', 'XOR'];
+  }
+  if (cat.includes('로봇') || cat.includes('python') || cat.includes('파이썬') || qText.includes('def ') || qText.includes('import')) {
+    return ['def', 'return', 'import', 'True', 'False', 'None', 'len', 'range'];
+  }
+  return [];
+}
+
+function renderSymbolChips(q, inputEl) {
+  const chipsContainer = document.getElementById('quiz-symbol-chips');
+  if (!chipsContainer || !inputEl) return;
+  chipsContainer.replaceChildren();
+
+  const symbols = getSuggestionChipsForQuiz(q);
+  if (!symbols || symbols.length === 0) {
+    chipsContainer.classList.add('hidden');
+    return;
+  }
+
+  chipsContainer.classList.remove('hidden');
+  const label = document.createElement('span');
+  label.className = 'cbt-chip-label';
+  label.textContent = '빠른 기호 입력:';
+  chipsContainer.appendChild(label);
+
+  symbols.forEach(sym => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cbt-chip-btn';
+    btn.textContent = sym;
+    btn.addEventListener('click', () => {
+      const start = inputEl.selectionStart ?? inputEl.value.length;
+      const end = inputEl.selectionEnd ?? inputEl.value.length;
+      inputEl.setRangeText(sym, start, end, 'end');
+      inputEl.focus();
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    chipsContainer.appendChild(btn);
+  });
+}
+
 export function renderActiveQuiz() {
   const q = todayQuizzes[currentQuizIndex];
   if (!q) return;
 
   const quizCategoryTag = document.getElementById('quiz-category-tag');
+  const quizAuthorTag = document.getElementById('quiz-author-tag');
+  const quizAuthorRef = document.getElementById('quiz-author-ref');
   const quizDifficultyTag = document.getElementById('quiz-difficulty-tag');
   const quizTypeTag = document.getElementById('quiz-type-tag');
   const quizScoreBadge = document.getElementById('quiz-score-badge');
@@ -678,6 +739,14 @@ export function renderActiveQuiz() {
 
   currentSelectedOption = null;
   if (quizCategoryTag) quizCategoryTag.textContent = q.category || 'PLC';
+  const authorDisplay = q.author_name ? q.author_name : '대나무숲 공식';
+  if (quizAuthorTag) {
+    quizAuthorTag.textContent = `✍️ ${authorDisplay}`;
+    quizAuthorTag.title = `출제자: ${authorDisplay}`;
+  }
+  if (quizAuthorRef) {
+    quizAuthorRef.textContent = `출제: ${authorDisplay}`;
+  }
   if (quizDifficultyTag) {
     const diffMap = { easy: '쉬움', medium: '보통', hard: '어려움' };
     quizDifficultyTag.textContent = diffMap[q.difficulty] || q.difficulty;
@@ -717,6 +786,7 @@ export function renderActiveQuiz() {
   if (isMultiple) {
     quizOptionsList?.classList.remove('hidden');
     quizInputContainer?.classList.add('hidden');
+    document.getElementById('quiz-symbol-chips')?.classList.add('hidden');
     renderMultipleChoiceOptions(q);
   } else {
     quizOptionsList?.classList.add('hidden');
@@ -724,6 +794,7 @@ export function renderActiveQuiz() {
     if (quizAnswerInput) {
       quizAnswerInput.value = q.user_answer || '';
       quizAnswerInput.disabled = Boolean(q.is_solved && !isPracticeMode);
+      renderSymbolChips(q, quizAnswerInput);
     }
     if (quizSubmitBtn) {
       quizSubmitBtn.disabled = Boolean(q.is_solved && !isPracticeMode);
@@ -1264,6 +1335,8 @@ export async function openAdminQuizEditor(quiz = null) {
   document.getElementById('admin-quiz-answers').value = Array.isArray(quiz?.correct_answers) ? quiz.correct_answers.join('\n') : '';
   document.getElementById('admin-quiz-hint').value = quiz?.hint || '';
   document.getElementById('admin-quiz-source').value = quiz?.source_ref || '';
+  const authorInput = document.getElementById('admin-quiz-author');
+  if (authorInput) authorInput.value = quiz?.author_name || '';
   document.getElementById('admin-quiz-explanation').value = quiz?.explanation || '';
   document.getElementById('admin-quiz-editor-status').textContent = quiz ? `#${quiz.id} 문항을 수정합니다.` : '새 문항을 작성합니다.';
 
@@ -1460,7 +1533,11 @@ export async function fetchAdminQuizzes() {
       const typeMap = { multiple_choice: '4지선다', short_answer: '단답형', ladder_input: '래더' };
       typeBadge.textContent = typeMap[q.question_type] || q.question_type;
 
-      header.append(catBadge, diffBadge, typeBadge);
+      const authorBadge = document.createElement('span');
+      authorBadge.className = 'admin-quiz-author-badge';
+      authorBadge.textContent = `✍️ ${q.author_name || '대나무숲 공식'}`;
+
+      header.append(catBadge, diffBadge, typeBadge, authorBadge);
 
       if (q.open_flags_count > 0) {
         const flagBadge = document.createElement('span');
@@ -1645,6 +1722,7 @@ export function initQuizListeners() {
     try {
       const type = document.getElementById('admin-quiz-type').value;
       const lines = id => document.getElementById(id).value.split('\n').map(value => value.trim()).filter(Boolean);
+      const authorVal = document.getElementById('admin-quiz-author')?.value.trim();
       const payload = {
         category: document.getElementById('admin-quiz-category').value.trim(),
         difficulty: document.getElementById('admin-quiz-difficulty').value,
@@ -1656,6 +1734,7 @@ export function initQuizListeners() {
         source_ref: document.getElementById('admin-quiz-source').value.trim(),
         explanation: document.getElementById('admin-quiz-explanation').value.trim(),
       };
+      if (authorVal) payload.author_name = authorVal;
       const id = document.getElementById('admin-quiz-edit-id').value;
       const response = await fetch(id ? `/api/admin/quiz/${id}` : '/api/admin/quiz', {
         method: id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),

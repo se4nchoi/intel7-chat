@@ -1595,7 +1595,8 @@ async def api_admin_quiz_ai_generate(request: Request):
     except Exception as exc:
         raise HTTPException(500, f"AI 퀴즈 생성 중 오류 발생: {exc}") from exc
 
-    created_ids = create_quiz_batch(quizzes, source_doc_id=doc_id)
+    admin_name = admin.get("display_name") or admin.get("username") or "관리자"
+    created_ids = create_quiz_batch(quizzes, source_doc_id=doc_id, author_id=admin["id"], author_name=f"{admin_name} (AI)")
     return {
         "status": "ok",
         "created_count": len(created_ids),
@@ -1608,7 +1609,8 @@ async def api_admin_quiz_ai_generate(request: Request):
 async def api_admin_quiz_import_json(request: Request):
     if not request_origin_is_allowed(request):
         raise HTTPException(403, "허용되지 않은 요청입니다.")
-    require_admin(request)
+    admin = require_admin(request)
+    admin_name = admin.get("display_name") or admin.get("username") or "관리자"
     data = await read_json_body(request)
     raw_quizzes = data.get("quizzes", [])
     if isinstance(raw_quizzes, str):
@@ -1619,7 +1621,7 @@ async def api_admin_quiz_import_json(request: Request):
     if not isinstance(raw_quizzes, list) or not raw_quizzes:
         raise HTTPException(400, "퀴즈 목록(배열)이 비어 있거나 올바르지 않습니다.")
 
-    created_ids = create_quiz_batch(raw_quizzes)
+    created_ids = create_quiz_batch(raw_quizzes, author_id=admin["id"], author_name=admin_name)
     return {"status": "ok", "created_count": len(created_ids), "ids": created_ids}
 
 
@@ -1682,17 +1684,20 @@ async def api_admin_quiz_flag_resolve(flag_id: int, request: Request):
 async def api_admin_quiz_create(request: Request):
     if not request_origin_is_allowed(request):
         raise HTTPException(403, "허용되지 않은 요청입니다.")
-    require_admin(request)
+    admin = require_admin(request)
+    admin_name = admin.get("display_name") or admin.get("username") or "관리자"
     data = await read_json_body(request)
     category = str(data.get("category", "")).strip()
+    author_name = str(data.get("author_name") or "").strip() or admin_name
     if not category or len(category) > 80:
         raise HTTPException(400, "과목은 1~80자여야 합니다.")
     try:
         normalized = normalize_quiz_import([data], "PLC")[0]
         normalized["category"] = category
+        normalized["author_name"] = author_name
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    created_ids = create_quiz_batch([normalized])
+    created_ids = create_quiz_batch([normalized], author_id=admin["id"], author_name=author_name)
     return {"status": "ok", "quiz_id": created_ids[0]}
 
 @app.patch("/api/admin/quiz/{quiz_id}")

@@ -25,6 +25,117 @@ def configure_storage(data_dir: Path | str, max_db_bytes: int) -> None:
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+# South Korean Statutory Holidays & Substitute Holidays (2025-2028)
+KOREAN_PUBLIC_HOLIDAYS: Set[str] = {
+    # 2025
+    "2025-01-01",  # 신정
+    "2025-01-27", "2025-01-28", "2025-01-29", "2025-01-30",  # 설날 연휴 및 대체공휴일
+    "2025-03-01", "2025-03-03",  # 삼일절 및 대체공휴일
+    "2025-05-05", "2025-05-06",  # 어린이날 및 부처님오신날 대체공휴일
+    "2025-06-06",  # 현충일
+    "2025-08-15",  # 광복절
+    "2025-10-03",  # 개천절
+    "2025-10-05", "2025-10-06", "2025-10-07", "2025-10-08",  # 추석 연휴 및 대체공휴일
+    "2025-10-09",  # 한글날
+    "2025-12-25",  # 성탄절
+
+    # 2026
+    "2026-01-01",  # 신정
+    "2026-02-16", "2026-02-17", "2026-02-18",  # 설날 연휴
+    "2026-03-01", "2026-03-02",  # 삼일절 및 대체공휴일
+    "2026-05-05",  # 어린이날
+    "2026-05-24", "2026-05-25",  # 부처님오신날 및 대체공휴일
+    "2026-06-06",  # 현충일
+    "2026-08-15", "2026-08-17",  # 광복절 및 대체공휴일
+    "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27",  # 추석 연휴
+    "2026-10-03", "2026-10-05",  # 개천절 및 대체공휴일
+    "2026-10-09",  # 한글날
+    "2026-12-25",  # 성탄절
+
+    # 2027
+    "2027-01-01",  # 신정
+    "2027-02-06", "2027-02-07", "2027-02-08", "2027-02-09",  # 설날 연휴 및 대체공휴일
+    "2027-03-01",  # 삼일절
+    "2027-05-05",  # 어린이날
+    "2027-05-13",  # 부처님오신날
+    "2027-06-06",  # 현충일
+    "2027-08-15", "2027-08-16",  # 광복절 및 대체공휴일
+    "2027-09-14", "2027-09-15", "2027-09-16",  # 추석 연휴
+    "2027-10-03", "2027-10-04",  # 개천절 및 대체공휴일
+    "2027-10-09", "2027-10-11",  # 한글날 및 대체공휴일
+    "2027-12-25", "2027-12-27",  # 성탄절 및 대체공휴일
+
+    # 2028
+    "2028-01-01",  # 신정
+    "2028-01-26", "2028-01-27", "2028-01-28",  # 설날 연휴
+    "2028-03-01",  # 삼일절
+    "2028-05-02",  # 부처님오신날
+    "2028-05-05",  # 어린이날
+    "2028-06-06",  # 현충일
+    "2028-08-15",  # 광복절
+    "2028-10-02", "2028-10-03", "2028-10-04", "2028-10-05",  # 추석 연휴 및 개천절
+    "2028-10-09",  # 한글날
+    "2028-12-25",  # 성탄절
+}
+
+_SOLAR_FIXED_HOLIDAYS = {(1, 1), (3, 1), (5, 5), (6, 6), (8, 15), (10, 3), (10, 9), (12, 25)}
+
+def is_school_day(d: Union[date, str]) -> bool:
+    """Returns True if the date is a regular classroom attendance day (weekday and not a public holiday)."""
+    if isinstance(d, str):
+        d = date.fromisoformat(d)
+    if d.weekday() >= 5:  # Saturday (5) or Sunday (6)
+        return False
+    d_str = d.strftime("%Y-%m-%d")
+    if d_str in KOREAN_PUBLIC_HOLIDAYS:
+        return False
+    if (d.month, d.day) in _SOLAR_FIXED_HOLIDAYS:
+        return False
+    return True
+
+def should_continue_streak(last_date_str: str, today_str: str) -> bool:
+    """Returns True if all days strictly between last_date and today are non-school days
+    (weekends or public holidays), meaning today is the next required attendance day."""
+    if not last_date_str:
+        return False
+    try:
+        last_d = date.fromisoformat(last_date_str)
+        today_d = date.fromisoformat(today_str)
+    except ValueError:
+        return False
+
+    if today_d <= last_d:
+        return True
+
+    curr = last_d + timedelta(days=1)
+    while curr < today_d:
+        if is_school_day(curr):
+            return False
+        curr += timedelta(days=1)
+    return True
+
+def is_streak_active(last_date_str: Optional[str], today_str: Optional[str] = None) -> bool:
+    """Returns True if user's streak is still alive for today (not expired by a missed school day)."""
+    if not last_date_str:
+        return False
+    if today_str is None:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+    if last_date_str == today_str:
+        return True
+    return should_continue_streak(last_date_str, today_str)
+
+def get_active_streak_cutoff_date(reference_date: Optional[date] = None) -> str:
+    """Calculates the earliest acceptable last_solved_date for a streak to be considered active.
+    Walks backwards from today over weekends and holidays to find the previous required attendance day."""
+    ref = reference_date or date.today()
+    curr = ref - timedelta(days=1)
+    while curr > ref - timedelta(days=14):
+        if is_school_day(curr):
+            return curr.strftime("%Y-%m-%d")
+        curr -= timedelta(days=1)
+    return (ref - timedelta(days=3)).strftime("%Y-%m-%d")
+
+
 def get_connection() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=5)
@@ -494,6 +605,37 @@ def _migrate_v24(conn: sqlite3.Connection) -> None:
             VALUES ('screenshare', '🖥️ 화면 공유', '실시간 LAN 화면 공유 및 질의응답 채널', ?, 1, 0, ?)""",
             (chan_uuid, now))
 
+def _migrate_v25(conn: sqlite3.Connection) -> None:
+    """Add author_id and author_name columns to quizzes table and backfill existing questions."""
+    _add_column_if_missing(conn, "quizzes", "author_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL")
+    _add_column_if_missing(conn, "quizzes", "author_name", "TEXT NOT NULL DEFAULT ''")
+
+    # 1. Backfill community approved questions from user_quiz_sets
+    conn.execute("""
+        UPDATE quizzes SET
+            author_id = (SELECT s.owner_user_id FROM user_quiz_sets s WHERE s.id = quizzes.source_submission_set_id),
+            author_name = COALESCE(
+                (SELECT NULLIF(u.display_name, '') FROM user_quiz_sets s JOIN users u ON u.id = s.owner_user_id WHERE s.id = quizzes.source_submission_set_id),
+                (SELECT u.username FROM user_quiz_sets s JOIN users u ON u.id = s.owner_user_id WHERE s.id = quizzes.source_submission_set_id),
+                '대나무숲 회원'
+            )
+        WHERE source_submission_set_id IS NOT NULL AND (author_name = '' OR author_name IS NULL)
+    """)
+
+    # 2. Backfill questions generated from source documents
+    conn.execute("""
+        UPDATE quizzes SET
+            author_id = (SELECT d.uploaded_by_user_id FROM quiz_source_documents d WHERE d.id = quizzes.source_doc_id),
+            author_name = COALESCE(
+                (SELECT COALESCE(NULLIF(u.display_name, ''), u.username) || ' (AI 생성)' FROM quiz_source_documents d JOIN users u ON u.id = d.uploaded_by_user_id WHERE d.id = quizzes.source_doc_id),
+                '교재 기반 AI'
+            )
+        WHERE source_doc_id IS NOT NULL AND (author_name = '' OR author_name IS NULL)
+    """)
+
+    # 3. Default fallback for official seeded quizzes
+    conn.execute("UPDATE quizzes SET author_name = '대나무숲 공식' WHERE author_name = '' OR author_name IS NULL")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -519,7 +661,9 @@ _MIGRATIONS = [
     _migrate_v22,
     _migrate_v23,
     _migrate_v24,
+    _migrate_v25,
 ]
+
 
 
 
@@ -1843,6 +1987,7 @@ def normalize_quiz_import(items: Any, expertise: str) -> List[Dict[str, Any]]:
             "hint": str(raw.get("hint", "")).strip()[:1000],
             "explanation": str(raw.get("explanation", "")).strip()[:4000],
             "source_ref": str(raw.get("source_ref", "")).strip()[:500],
+            "author_name": str(raw.get("author_name") or raw.get("author") or "").strip()[:80],
         })
     return normalized
 
@@ -2011,6 +2156,14 @@ def review_user_quiz_set(set_id: int, admin_user_id: int, approve: bool, note: s
         created_ids: List[int] = []
         now=utc_now(); status="approved" if approve else "rejected"
         if approve:
+            owner_row = conn.execute(
+                "SELECT id, username, display_name FROM users WHERE id=?", (row["owner_user_id"],)
+            ).fetchone()
+            owner_name = (
+                (owner_row["display_name"] or owner_row["username"])
+                if owner_row
+                else "대나무숲 회원"
+            )
             for quiz in quizzes:
                 duplicate = conn.execute(
                     "SELECT 1 FROM quizzes WHERE category=? AND lower(trim(question))=lower(trim(?)) LIMIT 1",
@@ -2018,14 +2171,17 @@ def review_user_quiz_set(set_id: int, admin_user_id: int, approve: bool, note: s
                 ).fetchone()
                 if duplicate:
                     raise ValueError(f"공용 풀에 이미 존재하는 문항입니다: {quiz['question'][:80]}")
+                item_author = quiz.get("author_name") or owner_name
                 cur = conn.execute("""INSERT INTO quizzes
                     (category,difficulty,question_type,question,image_filename,options_json,
-                     correct_answers_json,hint,explanation,source_ref,is_active,created_at,source_submission_set_id)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)""", (
+                     correct_answers_json,hint,explanation,source_ref,is_active,created_at,source_submission_set_id,
+                     author_id, author_name)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)""", (
                     quiz["category"], quiz["difficulty"], quiz["question_type"], quiz["question"], "",
                     json.dumps(quiz.get("options"), ensure_ascii=False) if quiz.get("options") else None,
                     json.dumps(quiz["correct_answers"], ensure_ascii=False), quiz.get("hint", ""),
                     quiz.get("explanation", ""), quiz.get("source_ref", ""), now, set_id,
+                    row["owner_user_id"], item_author,
                 ))
                 created_ids.append(int(cur.lastrowid))
         conn.execute("UPDATE user_quiz_sets SET status=?, review_note=?, approved_by_user_id=?, approved_at=?, updated_at=? WHERE id=?",
@@ -2198,6 +2354,8 @@ def create_quiz(
     source_doc_id: Optional[int] = None,
     source_ref: str = "",
     daily_date: Optional[str] = None,
+    author_id: Optional[int] = None,
+    author_name: str = "대나무숲 공식",
 ) -> int:
     """Creates a new quiz item."""
     now = utc_now()
@@ -2207,8 +2365,8 @@ def create_quiz(
         cur = conn.execute("""INSERT INTO quizzes
             (category, difficulty, question_type, question, image_filename,
              options_json, correct_answers_json, hint, explanation, source_doc_id,
-             source_ref, daily_date, is_active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+             source_ref, daily_date, is_active, created_at, author_id, author_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
             (
                 category,
                 difficulty,
@@ -2223,6 +2381,8 @@ def create_quiz(
                 source_ref,
                 daily_date,
                 now,
+                author_id,
+                author_name or "대나무숲 공식",
             ))
         return int(cur.lastrowid)
 
@@ -2230,6 +2390,8 @@ def create_quiz(
 def create_quiz_batch(
     quizzes_data: List[Dict[str, Any]],
     source_doc_id: Optional[int] = None,
+    author_id: Optional[int] = None,
+    author_name: str = "",
 ) -> List[int]:
     """Bulk creates multiple quizzes from AI or JSON import."""
     now = utc_now()
@@ -2242,11 +2404,13 @@ def create_quiz_batch(
             if isinstance(corrects, str):
                 corrects = [corrects]
             corrects_json = json.dumps(corrects, ensure_ascii=False)
+            item_author = q.get("author_name") or author_name or "대나무숲 공식"
+            item_author_id = q.get("author_id") or author_id
             cur = conn.execute("""INSERT INTO quizzes
                 (category, difficulty, question_type, question, image_filename,
                  options_json, correct_answers_json, hint, explanation, source_doc_id,
-                 source_ref, daily_date, is_active, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                 source_ref, daily_date, is_active, created_at, author_id, author_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
                 (
                     q.get("category", "PLC"),
                     q.get("difficulty", "medium"),
@@ -2261,6 +2425,8 @@ def create_quiz_batch(
                     q.get("source_ref", ""),
                     q.get("daily_date"),
                     now,
+                    item_author_id,
+                    item_author,
                 ))
             created_ids.append(int(cur.lastrowid))
     return created_ids
@@ -2274,17 +2440,23 @@ def update_quiz(quiz_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     normalized["category"] = category
     image_filename = str(data.get("image_filename", "")).strip()[:500]
     is_active = 1 if data.get("is_active", True) else 0
+    author_name = str(data.get("author_name") or normalized.get("author_name") or "").strip()[:80]
     with get_connection() as conn:
-        cur = conn.execute("""UPDATE quizzes SET
-            category=?, difficulty=?, question_type=?, question=?, image_filename=?,
-            options_json=?, correct_answers_json=?, hint=?, explanation=?, source_ref=?, is_active=?
-            WHERE id=?""", (
+        update_author_sql = ", author_name=?" if author_name else ""
+        params = [
             normalized["category"], normalized["difficulty"], normalized["question_type"],
             normalized["question"], image_filename,
             json.dumps(normalized.get("options"), ensure_ascii=False) if normalized.get("options") else None,
             json.dumps(normalized["correct_answers"], ensure_ascii=False), normalized.get("hint", ""),
-            normalized.get("explanation", ""), normalized.get("source_ref", ""), is_active, quiz_id,
-        ))
+            normalized.get("explanation", ""), normalized.get("source_ref", ""), is_active,
+        ]
+        if author_name:
+            params.append(author_name)
+        params.append(quiz_id)
+        cur = conn.execute(f"""UPDATE quizzes SET
+            category=?, difficulty=?, question_type=?, question=?, image_filename=?,
+            options_json=?, correct_answers_json=?, hint=?, explanation=?, source_ref=?, is_active=?{update_author_sql}
+            WHERE id=?""", params)
         conn.commit()
         if not cur.rowcount:
             return None
@@ -2355,6 +2527,7 @@ def get_all_quizzes_admin(
             d["options"] = json.loads(d["options_json"]) if d["options_json"] else None
             d["correct_answers"] = json.loads(d["correct_answers_json"]) if d["correct_answers_json"] else []
             d["open_flags_count"] = d.get("open_flags_count", 0) or 0
+            d["author_name"] = d.get("author_name") or "대나무숲 공식"
             results.append(d)
         return results
 
@@ -2551,6 +2724,7 @@ def get_daily_quizzes(
             SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
                    q.image_filename, q.options_json, q.correct_answers_json,
                    q.hint, q.explanation, q.source_ref, q.daily_date,
+                   q.author_name, q.author_id,
                    qs.id as submission_id, qs.user_answer, qs.is_correct,
                    qs.score_earned, qs.submitted_at
             FROM quizzes q
@@ -2576,6 +2750,8 @@ def get_daily_quizzes(
                 "options": options,
                 "hint": r["hint"] or "",
                 "source_ref": r["source_ref"] or "",
+                "author_name": r["author_name"] or "대나무숲 공식",
+                "author_id": r["author_id"],
                 "is_solved": is_solved,
                 "is_starred": r["id"] in starred_set,
             }
@@ -2602,7 +2778,7 @@ def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, An
             rows = conn.execute("""
                 SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
                        q.image_filename, q.options_json, q.correct_answers_json,
-                       q.hint, q.explanation, q.source_ref,
+                       q.hint, q.explanation, q.source_ref, q.author_name, q.author_id,
                        qs.id as submission_id, qs.user_answer, qs.is_correct,
                        qs.score_earned, qs.submitted_at, qs.had_wrong_attempt
                 FROM quiz_submissions qs
@@ -2614,7 +2790,7 @@ def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, An
             rows = conn.execute("""
                 SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
                        q.image_filename, q.options_json, q.correct_answers_json,
-                       q.hint, q.explanation, q.source_ref,
+                       q.hint, q.explanation, q.source_ref, q.author_name, q.author_id,
                        qs.id as submission_id, qs.user_answer, qs.is_correct,
                        qs.score_earned, qs.submitted_at, qs.had_wrong_attempt
                 FROM quiz_bookmarks qb
@@ -2627,7 +2803,7 @@ def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, An
             rows = conn.execute("""
                 SELECT q.id, q.category, q.difficulty, q.question_type, q.question,
                        q.image_filename, q.options_json, q.correct_answers_json,
-                       q.hint, q.explanation, q.source_ref,
+                       q.hint, q.explanation, q.source_ref, q.author_name, q.author_id,
                        qs.id as submission_id, qs.user_answer, qs.is_correct,
                        qs.score_earned, qs.submitted_at, qs.had_wrong_attempt
                 FROM quiz_submissions qs
@@ -2651,6 +2827,8 @@ def get_quiz_review_list(user_id: int, mode: str = "wrong") -> List[Dict[str, An
                 "options": options,
                 "hint": r["hint"] or "",
                 "source_ref": r["source_ref"] or "",
+                "author_name": r["author_name"] or "대나무숲 공식",
+                "author_id": r["author_id"],
                 "is_solved": is_solved,
                 "is_starred": r["id"] in starred_set,
                 "had_wrong": had_wrong,
@@ -2714,7 +2892,6 @@ def submit_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str
     from app.quiz_ai import check_quiz_answer
 
     today_str = datetime.now().strftime("%Y-%m-%d")
-    yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     now = utc_now()
 
     with get_connection() as conn:
@@ -2768,7 +2945,7 @@ def submit_quiz_answer(user_id: int, quiz_id: int, user_answer: str) -> Dict[str
             if is_daily_quiz:
                 if last_date == today_str:
                     streak = curr_streak
-                elif last_date == yesterday_str:
+                elif should_continue_streak(last_date, today_str):
                     streak = curr_streak + 1
                 else:
                     streak = 1
@@ -2969,7 +3146,7 @@ def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[s
     today_str = datetime.now().strftime("%Y-%m-%d")
     week_start = (datetime.now() - timedelta(days=datetime.now().weekday())).strftime("%Y-%m-%d")
     if period == "streak":
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        cutoff_date = get_active_streak_cutoff_date()
         with get_connection() as conn:
             rows = conn.execute("""SELECT st.user_id, u.username, u.display_name,
                        st.total_score AS score, st.total_correct AS correct_count,
@@ -2978,8 +3155,9 @@ def get_quiz_leaderboard(period: str = "weekly", limit: int = 20) -> List[Dict[s
                 FROM user_quiz_stats st JOIN users u ON u.id=st.user_id
                 WHERE st.current_streak >= 3 AND st.last_solved_date >= ?
                 ORDER BY st.current_streak DESC, st.last_solved_date ASC, st.user_id ASC LIMIT ?""",
-                (yesterday, limit)).fetchall()
-        return [{**dict(row), "rank": rank} for rank, row in enumerate(rows, start=1)]
+                (cutoff_date, limit)).fetchall()
+        filtered = [r for r in rows if is_streak_active(r["score_reached_at"], today_str)]
+        return [{**dict(row), "rank": rank} for rank, row in enumerate(filtered, start=1)]
     with get_connection() as conn:
         date_clause, params = "", []
         if period == "daily": date_clause = "AND qs.submitted_date = ?"; params.append(today_str)
@@ -3073,10 +3251,11 @@ def get_user_quiz_title_options(user_id: int) -> List[Dict[str, Any]]:
             })
     with get_connection() as conn:
         stats = conn.execute(
-            "SELECT current_streak FROM user_quiz_stats WHERE user_id=?", (user_id,)
+            "SELECT current_streak, last_solved_date FROM user_quiz_stats WHERE user_id=?", (user_id,)
         ).fetchone()
     streak = int(stats["current_streak"]) if stats else 0
-    if streak >= 3:
+    last_solved = stats["last_solved_date"] if stats else None
+    if streak >= 3 and is_streak_active(last_solved):
         options.append({
             "type": "streak",
             "icon": "🔥",
@@ -3146,6 +3325,7 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
             f"""SELECT u.id AS user_id,
                        COALESCE(st.total_score, 0) AS total_score,
                        COALESCE(st.current_streak, 0) AS current_streak,
+                       st.last_solved_date,
                        COALESCE(u.quiz_badge_selection, 'score') AS badge_selection
                 FROM users u LEFT JOIN user_quiz_stats st ON st.user_id=u.id
                 WHERE u.id IN ({placeholders})""", user_ids
@@ -3208,7 +3388,7 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
                 badges[uid] = _chess_badge(
                     int(chess_map[uid]["chess_rank"]), int(chess_map[uid]["wins"])
                 )
-            elif selection == "streak" and st.get("current_streak", 0) >= 3:
+            elif selection == "streak" and st.get("current_streak", 0) >= 3 and is_streak_active(st.get("last_solved_date")):
                 badges[uid] = {
                     "type": "streak", "icon": "🔥", "label": "꾸준러",
                     "title": f"오늘의 퀴즈 {st['current_streak']}일 연속",

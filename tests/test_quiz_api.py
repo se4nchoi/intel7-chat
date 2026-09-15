@@ -398,3 +398,46 @@ def test_quiz_categories_and_sidebar_counts():
     assert len(rnd_resp.json()["quizzes"]) > 0
 
 
+def test_quiz_author_api_flow():
+    admin, admin_user = session_client("master_admin", role="admin")
+    student, student_user = session_client("quiz_taker", role="student")
+
+    # 1. Check default seed quizzes have author_name in /api/quiz/today
+    today_resp = student.get("/api/quiz/today")
+    assert today_resp.status_code == 200
+    quizzes = today_resp.json()["quizzes"]
+    assert len(quizzes) > 0
+    assert all("author_name" in q and q["author_name"] for q in quizzes)
+
+    # 2. Admin creates a quiz with explicit author_name
+    create_resp = admin.post(
+        "/api/admin/quiz",
+        json={
+            "category": "로봇",
+            "difficulty": "easy",
+            "question_type": "short_answer",
+            "question": "로봇 관절의 자유도를 뜻하는 약어는?",
+            "correct_answers": ["DOF", "Degree of Freedom"],
+            "author_name": "김로봇",
+        },
+        headers=ORIGIN,
+    )
+    assert create_resp.status_code == 200
+    new_id = create_resp.json()["quiz_id"]
+
+    # 3. Verify in admin quiz list
+    admin_list_resp = admin.get(f"/api/admin/quiz/list?search={new_id}")
+    assert admin_list_resp.status_code == 200
+    admin_quizzes = admin_list_resp.json()["quizzes"]
+    created_item = next(q for q in admin_quizzes if q["id"] == new_id)
+    assert created_item["author_name"] == "김로봇"
+
+    # 4. Student sees author_name in today / category query
+    robot_resp = student.get("/api/quiz/today?category=로봇")
+    assert robot_resp.status_code == 200
+    robot_quizzes = robot_resp.json()["quizzes"]
+    target_in_today = next(q for q in robot_quizzes if q["id"] == new_id)
+    assert target_in_today["author_name"] == "김로봇"
+
+
+

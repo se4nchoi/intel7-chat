@@ -56,18 +56,46 @@
 
 /* --- Header Action Button --- */
 .screenshare-header-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 11px;
-  border-radius: 6px;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  padding: 0 8px !important;
+  height: 28px !important;
+  max-height: 28px !important;
+  min-height: 28px !important;
+  box-sizing: border-box !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  border-radius: 6px !important;
   background: var(--bg-tertiary, #2b2d31);
   border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
   color: var(--text-normal, #dbdee1);
-  font-size: 0.82rem;
+  font-size: 0.8rem !important;
   font-weight: 600;
   cursor: pointer;
+  overflow: hidden !important;
   transition: all 0.15s ease-in-out;
+  line-height: 1 !important;
+}
+
+.screenshare-header-btn .screenshare-btn-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 0.9rem !important;
+  line-height: 1 !important;
+  flex-shrink: 0 !important;
+}
+
+.screenshare-header-btn #screenshare-btn-label {
+  display: inline-block !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 85px !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
 }
 
 .screenshare-header-btn:hover {
@@ -91,6 +119,18 @@
   background: rgba(16, 185, 129, 0.2);
   border-color: rgba(16, 185, 129, 0.6);
   color: #6ee7b7;
+}
+
+@media (max-width: 1050px) {
+  .screenshare-header-btn {
+    width: 28px !important;
+    min-width: 28px !important;
+    max-width: 28px !important;
+    padding: 0 !important;
+  }
+  .screenshare-header-btn #screenshare-btn-label {
+    display: none !important;
+  }
 }
 
 /* --- Presenter Sticky Floating Bar (when navigating other channels) --- */
