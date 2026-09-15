@@ -1,24 +1,26 @@
 /* ============================================================
    BambooChat Chess Modal & Board Theme (Wood & Gold Classic)
    ============================================================ */
-#chess-modal {
-  --ch-bg: #1b130d;
-  --ch-bg-2: #150f0a;
-  --ch-panel: #2a1f16;
-  --ch-panel-2: #342719;
-  --ch-board-light: #f0dfc0;
-  --ch-board-dark: #8a5a34;
-  --ch-gold: #cc9f45;
-  --ch-gold-soft: #e6c987;
-  --ch-ivory: #f3ead9;
-  --ch-muted: #b8a68a;
-  --ch-felt: #24402f;
-  --ch-felt-2: #2d4d38;
-  --ch-danger: #c1543a;
-  --ch-good: #5c8a5f;
-  --ch-hint: #4fb673;
+#chess-modal, .play-dialog.theme-chess {
+  --ch-bg: #0c0e12;
+  --ch-bg-2: #12151b;
+  --ch-panel: #181c24;
+  --ch-panel-2: #212631;
+  --ch-board-light: #e2e8f0;
+  --ch-board-dark: #334155;
+  --ch-gold: #94a3b8;
+  --ch-gold-soft: #cbd5e1;
+  --ch-ivory: #f8fafc;
+  --ch-muted: #64748b;
+  --ch-felt: #1e293b;
+  --ch-felt-2: #334155;
+  --ch-danger: #ef4444;
+  --ch-good: #10b981;
+  --ch-hint: #38bdf8;
   --ch-radius: 10px;
+}
 
+#chess-modal {
   position: fixed;
   top: 0;
   left: 0;

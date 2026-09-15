@@ -1,0 +1,357 @@
+/* ============================================================
+   BambooChat Janggi (한국 장기) Theme & Styles
+   Green-ish / Jade & Celadon Traditional Aesthetic
+   ============================================================ */
+
+:root {
+  --jg-bg: #0a1811;
+  --jg-panel: #11281d;
+  --jg-panel-2: #183627;
+  --jg-board-bg: #143224;
+  --jg-board-line: #34d399;
+  --jg-board-line-soft: rgba(52, 211, 153, 0.45);
+  --jg-palace-x: rgba(52, 211, 153, 0.6);
+  --jg-cho: #06b6d4;
+  --jg-cho-bg: radial-gradient(circle at 35% 30%, #155e75, #083344);
+  --jg-cho-border: #22d3ee;
+  --jg-han: #f43f5e;
+  --jg-han-bg: radial-gradient(circle at 35% 30%, #9f1239, #4c0519);
+  --jg-han-border: #fb7185;
+  --jg-gold: #34d399;
+  --jg-gold-soft: #a7f3d0;
+  --jg-text: #ecfdf5;
+  --jg-muted: #6ee7b7;
+  --jg-last-move: rgba(52, 211, 153, 0.25);
+  --jg-legal-dot: rgba(52, 211, 153, 0.7);
+}
+
+.janggi-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  color: var(--jg-text);
+}
+
+/* -------------------------------------------------------------
+   Lobby Screen
+   ------------------------------------------------------------- */
+.jg-lobby {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 20px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  gap: 16px;
+}
+
+.jg-lobby-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.jg-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.jg-tab-btn {
+  padding: 8px 16px;
+  background: var(--jg-panel);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 8px;
+  color: var(--jg-muted);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13.5px;
+  transition: all 0.2s ease;
+}
+
+.jg-tab-btn:hover {
+  background: var(--jg-panel-2);
+  color: var(--jg-text);
+}
+
+.jg-tab-btn.active {
+  background: #143e2b;
+  color: #a7f3d0;
+  border-color: #34d399;
+}
+
+.jg-btn-primary {
+  padding: 8px 18px;
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+.jg-btn-primary:hover {
+  opacity: 0.92;
+}
+
+.jg-btn-ghost {
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--jg-muted);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+.jg-btn-ghost:hover {
+  background: var(--jg-panel);
+  color: var(--jg-text);
+}
+
+/* Room Grid */
+.jg-room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.jg-room-card {
+  background: var(--jg-panel);
+  border: 1px solid rgba(52, 211, 153, 0.15);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jg-room-card:hover {
+  border-color: #34d399;
+  background: var(--jg-panel-2);
+  transform: translateY(-2px);
+}
+
+/* -------------------------------------------------------------
+   Game Screen
+   ------------------------------------------------------------- */
+.jg-game-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.jg-game-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(52, 211, 153, 0.15);
+  gap: 12px;
+}
+
+.jg-game-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 260px 1fr 280px;
+  overflow: hidden;
+  height: calc(100% - 46px);
+}
+
+@media (max-width: 1080px) {
+  .jg-game-body {
+    grid-template-columns: 220px 1fr;
+  }
+  .jg-chat-col {
+    display: none;
+  }
+}
+
+/* -------------------------------------------------------------
+   Board Area & SVG Lines & Intersections
+   ------------------------------------------------------------- */
+.jg-board-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.05), transparent 70%);
+  position: relative;
+  overflow: hidden;
+}
+
+.jg-board-box {
+  width: 504px;
+  height: 560px;
+  background: var(--jg-board-bg);
+  border-radius: 8px;
+  border: 3px solid #064e3b;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), inset 0 0 40px rgba(0, 0, 0, 0.4);
+  position: relative;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.jg-board-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.jg-intersections-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.jg-point {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.jg-piece {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Noto Serif KR', 'Batang', serif;
+  font-weight: 800;
+  font-size: 20px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5), inset 0 2px 3px rgba(255, 255, 255, 0.25);
+  transition: transform 0.12s ease;
+  user-select: none;
+  border: 2px solid;
+}
+
+.jg-piece.king {
+  width: 46px;
+  height: 46px;
+  font-size: 23px;
+}
+
+.jg-piece.soldier, .jg-piece.guard {
+  width: 38px;
+  height: 38px;
+  font-size: 18px;
+}
+
+.jg-piece.cho {
+  background: var(--jg-cho-bg);
+  color: #a5f3fc;
+  border-color: var(--jg-cho-border);
+  text-shadow: 0 0 6px rgba(6, 182, 212, 0.6);
+}
+
+.jg-piece.han {
+  background: var(--jg-han-bg);
+  color: #fecdd3;
+  border-color: var(--jg-han-border);
+  text-shadow: 0 0 6px rgba(244, 63, 94, 0.6);
+}
+
+.jg-point.selected .jg-piece {
+  transform: scale(1.15);
+  box-shadow: 0 0 14px #34d399;
+}
+
+.jg-point.last-move::after {
+  content: '';
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--jg-last-move);
+  border: 1.5px dashed #34d399;
+  pointer-events: none;
+}
+
+.jg-point.legal-target::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--jg-legal-dot);
+  box-shadow: 0 0 8px #34d399;
+  z-index: 5;
+}
+
+/* -------------------------------------------------------------
+   Formation Picker Dialog (원앙마, 양귀마, 왼마, 오른마)
+   ------------------------------------------------------------- */
+.jg-formation-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #0d2117;
+  border: 1px solid #34d399;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 360px;
+}
+
+.jg-formation-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.jg-formation-card {
+  background: var(--jg-panel);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.jg-formation-card:hover {
+  background: var(--jg-panel-2);
+  border-color: #34d399;
+}
+
+.jg-formation-card.selected {
+  background: #143e2b;
+  border-color: #34d399;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
+}
+
+.jg-formation-card-name {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 4px;
+  color: #a7f3d0;
+}
+
+.jg-formation-card-desc {
+  font-size: 11px;
+  color: var(--jg-muted);
+}

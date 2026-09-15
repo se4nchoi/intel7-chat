@@ -212,7 +212,7 @@ export function initChessListeners() {
 
   // Keyboard navigation for moves (ArrowLeft, ArrowRight)
   document.addEventListener('keydown', (e) => {
-    const modal = $('chess-modal');
+    const modal = $('play-modal') || $('chess-modal');
     if (!modal || modal.classList.contains('hidden')) return;
     const chatInput = $('chChatInput');
     if (document.activeElement === chatInput) return;
@@ -227,10 +227,17 @@ export function initChessListeners() {
       jumpToHistory(Math.min(maxIdx, currentHistoryIndex + 1));
     }
   });
+
+  window.bambooChessHook = {
+    onTabActive: () => {
+      ensureChessWs();
+      requestLobbyList();
+    }
+  };
 }
 
 export function openChessModal() {
-  const modal = $('chess-modal');
+  const modal = $('play-modal') || $('chess-modal');
   if (!modal) return;
   modal.classList.remove('hidden');
 
@@ -243,7 +250,7 @@ export function openChessModal() {
 }
 
 export function closeChessModal() {
-  const modal = $('chess-modal');
+  const modal = $('play-modal') || $('chess-modal');
   if (!modal) return;
   modal.classList.add('hidden');
   if (reconnectTimer) {
@@ -252,6 +259,7 @@ export function closeChessModal() {
   }
   notifyTurnIfHidden();
 }
+
 
 let reconnectTimer = null;
 

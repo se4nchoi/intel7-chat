@@ -1,0 +1,207 @@
+/* ============================================================
+   BambooChat Unified Play Hub (놀이마당) Theme & Layout
+   체스 (Black & White) / 장기 (Green-ish) / 오목 (Woody)
+   ============================================================ */
+
+#play-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(6px);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  box-sizing: border-box;
+  transition: opacity 0.2s ease;
+}
+
+#play-modal.hidden {
+  display: none !important;
+}
+
+.play-dialog {
+  width: 1260px;
+  max-width: 98vw;
+  height: 870px;
+  max-height: 95vh;
+  min-height: 620px;
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+  transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* -------------------------------------------------------------
+   Top Bar Game Selector Tabs
+   ------------------------------------------------------------- */
+.play-hub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  user-select: none;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.play-hub-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.play-hub-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.play-hub-tabs {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 4px;
+}
+
+.play-tab-btn {
+  padding: 6px 14px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.play-tab-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.play-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 6px 10px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.play-close-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.play-view-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.play-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.play-view.hidden {
+  display: none !important;
+}
+
+/* -------------------------------------------------------------
+   THEME 1: CHESS (Black & White Tone)
+   ------------------------------------------------------------- */
+.play-dialog.theme-chess {
+  background:
+    radial-gradient(circle at 15% 0%, rgba(255, 255, 255, 0.04), transparent 45%),
+    radial-gradient(circle at 85% 100%, rgba(51, 65, 85, 0.18), transparent 50%),
+    #0f1115;
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.play-dialog.theme-chess .play-hub-title {
+  color: #f8fafc;
+}
+
+.play-dialog.theme-chess .play-tab-btn.active {
+  background: #242936;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* -------------------------------------------------------------
+   THEME 2: JANGGI (Green-ish Celadon & Jade Tone)
+   ------------------------------------------------------------- */
+.play-dialog.theme-janggi {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(16, 185, 129, 0.08), transparent 45%),
+    radial-gradient(circle at 80% 100%, rgba(5, 150, 105, 0.15), transparent 50%),
+    #0a1811;
+  color: #ecfdf5;
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+.play-dialog.theme-janggi .play-hub-title {
+  color: #6ee7b7;
+}
+
+.play-dialog.theme-janggi .play-tab-btn.active {
+  background: #143827;
+  color: #a7f3d0;
+  box-shadow: 0 2px 8px rgba(10, 50, 30, 0.5);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+/* -------------------------------------------------------------
+   THEME 3: OMOK (Warm Woody Kaya & Amber Tone)
+   ------------------------------------------------------------- */
+.play-dialog.theme-omok {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(217, 119, 6, 0.09), transparent 45%),
+    radial-gradient(circle at 80% 100%, rgba(180, 83, 9, 0.16), transparent 50%),
+    #1d130a;
+  color: #fef3c7;
+  border: 1px solid rgba(217, 119, 6, 0.28);
+}
+
+.play-dialog.theme-omok .play-hub-title {
+  color: #fcd34d;
+}
+
+.play-dialog.theme-omok .play-tab-btn.active {
+  background: #382212;
+  color: #fef08a;
+  box-shadow: 0 2px 8px rgba(35, 18, 5, 0.6);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}

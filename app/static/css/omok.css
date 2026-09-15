@@ -1,0 +1,287 @@
+/* ============================================================
+   BambooChat Omok (오목) Theme & Styles
+   Woody / Warm Kaya Wood & Stone Aesthetic
+   ============================================================ */
+
+:root {
+  --om-bg: #1a1109;
+  --om-panel: #26180e;
+  --om-panel-2: #352214;
+  --om-board-wood: #cfa36b;
+  --om-board-wood-dark: #ba8e54;
+  --om-line: #3b2314;
+  --om-star-dot: #2d180d;
+  --om-gold: #f59e0b;
+  --om-gold-soft: #fde68a;
+  --om-text: #fef3c7;
+  --om-muted: #d4a373;
+}
+
+.omok-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  color: var(--om-text);
+}
+
+/* -------------------------------------------------------------
+   Lobby Screen
+   ------------------------------------------------------------- */
+.om-lobby {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 20px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  gap: 16px;
+}
+
+.om-lobby-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.om-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.om-tab-btn {
+  padding: 8px 16px;
+  background: var(--om-panel);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+  border-radius: 8px;
+  color: var(--om-muted);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13.5px;
+  transition: all 0.2s ease;
+}
+
+.om-tab-btn:hover {
+  background: var(--om-panel-2);
+  color: var(--om-text);
+}
+
+.om-tab-btn.active {
+  background: #3b2413;
+  color: #fef08a;
+  border-color: #f59e0b;
+}
+
+.om-btn-primary {
+  padding: 8px 18px;
+  background: linear-gradient(135deg, #d97706, #f59e0b);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+.om-btn-primary:hover {
+  opacity: 0.92;
+}
+
+.om-btn-ghost {
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--om-muted);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+.om-btn-ghost:hover {
+  background: var(--om-panel);
+  color: var(--om-text);
+}
+
+/* Room Grid */
+.om-room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.om-room-card {
+  background: var(--om-panel);
+  border: 1px solid rgba(217, 119, 6, 0.2);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.om-room-card:hover {
+  border-color: #f59e0b;
+  background: var(--om-panel-2);
+  transform: translateY(-2px);
+}
+
+/* -------------------------------------------------------------
+   Game Screen
+   ------------------------------------------------------------- */
+.om-game-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.om-game-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(217, 119, 6, 0.2);
+  gap: 12px;
+}
+
+.om-game-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 260px 1fr 280px;
+  overflow: hidden;
+  height: calc(100% - 46px);
+}
+
+@media (max-width: 1080px) {
+  .om-game-body {
+    grid-template-columns: 220px 1fr;
+  }
+  .om-chat-col {
+    display: none;
+  }
+}
+
+/* -------------------------------------------------------------
+   15x15 Wood Board Area
+   ------------------------------------------------------------- */
+.om-board-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: radial-gradient(circle, rgba(217, 119, 6, 0.06), transparent 70%);
+  position: relative;
+  overflow: hidden;
+}
+
+.om-board-box {
+  width: 532px;
+  height: 532px;
+  background:
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.02) 0px, rgba(0,0,0,0.02) 2px, transparent 2px, transparent 8px),
+    linear-gradient(135deg, var(--om-board-wood) 0%, var(--om-board-wood-dark) 100%);
+  border-radius: 8px;
+  border: 4px solid #5c381e;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), inset 0 0 30px rgba(0, 0, 0, 0.25);
+  position: relative;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.om-board-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.om-intersections-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.om-point {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+}
+
+/* 3D Realistic Stones */
+.om-stone {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.55), inset 0 -2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s ease;
+  user-select: none;
+}
+
+.om-stone.black {
+  background: radial-gradient(circle at 35% 30%, #52525b 0%, #18181b 50%, #09090b 100%);
+  border: 1px solid #27272a;
+}
+
+.om-stone.white {
+  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #f4f4f5 55%, #d4d4d8 100%);
+  border: 1px solid #e4e4e7;
+}
+
+/* Last move indicator */
+.om-point.last-move::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* Winning stone pulse */
+.om-point.winning-stone .om-stone {
+  box-shadow: 0 0 16px #f59e0b, 0 4px 10px rgba(0, 0, 0, 0.6);
+  animation: om-win-glow 1.5s infinite alternate;
+}
+
+@keyframes om-win-glow {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.12); }
+}
+
+/* Hover ghost stone preview */
+.om-point.hover-preview::before {
+  content: '';
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.om-point.hover-preview.preview-b::before {
+  background: #18181b;
+}
+
+.om-point.hover-preview.preview-w::before {
+  background: #ffffff;
+}

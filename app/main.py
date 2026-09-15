@@ -44,6 +44,7 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     normalize_dm_conversation_id, pin_message, unpin_message, get_pinned_messages, get_pinned_message_ids,
     get_daily_quizzes, submit_quiz_answer, get_user_quiz_stats, get_quiz_leaderboard,
     get_quiz_subject_leaderboard, get_chess_leaderboard,
+    get_janggi_leaderboard, get_omok_leaderboard,
     get_user_quiz_badge, get_user_quiz_badges_map, get_user_quiz_title_options,
     update_quiz_badge_selection, create_quiz, create_quiz_batch,
     get_all_quizzes_admin, delete_quiz, update_quiz, save_quiz_source_document, get_quiz_source_documents,
@@ -54,6 +55,8 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     review_user_quiz_set, update_pending_user_quiz_set, assign_daily_quizzes)
 from app.quiz_ai import generate_quizzes_with_gemini, check_quiz_answer, normalize_quiz_answer
 from app.chess_manager import chess_manager
+from app.janggi_manager import janggi_manager
+from app.omok_manager import omok_manager
 from app.screenshare import screenshare_manager, normalize_room_id
 
 CONFIG = load_config()
@@ -1434,6 +1437,27 @@ async def api_chess_rankings(request: Request, limit: int = 20):
     }
 
 
+@app.get("/api/janggi/rankings")
+async def api_janggi_rankings(request: Request, limit: int = 20):
+    request_user(request)
+    leaderboard = get_janggi_leaderboard(limit=limit)
+    return {
+        "leaderboard": leaderboard,
+        "rankings": leaderboard,
+    }
+
+
+@app.get("/api/omok/rankings")
+async def api_omok_rankings(request: Request, limit: int = 20):
+    request_user(request)
+    leaderboard = get_omok_leaderboard(limit=limit)
+    return {
+        "leaderboard": leaderboard,
+        "rankings": leaderboard,
+    }
+
+
+
 
 @app.get("/api/quiz/stats")
 async def api_quiz_stats(request: Request):
@@ -2051,3 +2075,128 @@ async def chess_websocket_endpoint(ws: WebSocket):
         pass
     finally:
         await chess_manager.unregister_client(ws)
+
+
+@app.websocket("/ws/janggi")
+async def janggi_websocket_endpoint(ws: WebSocket):
+    ip = get_client_ip(ws)
+    if not websocket_origin_is_allowed(ws):
+        await ws.close(code=1008, reason="허용되지 않은 WebSocket origin입니다.")
+        return
+    user = session_user_from_token(ws.cookies.get(SESSION_COOKIE, ""))
+    if not user:
+        await ws.close(code=1008, reason="로그인이 필요합니다.")
+        return
+    await ws.accept()
+    janggi_manager.register_client(ws, user)
+    janggi_manager.start_clock_monitor()
+    await ws.send_text(json.dumps({"type": "lobby_update", "rooms": janggi_manager.get_lobby_summary()}, ensure_ascii=False))
+
+    try:
+        while True:
+            raw = await ws.receive_text()
+            if len(raw) > MAX_RAW_MESSAGE_LEN:
+                await ws.close(code=1009, reason="메시지 프레임이 너무 큽니다.")
+                break
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(data, dict):
+                continue
+
+            action = data.get("action")
+            room_id = data.get("room_id")
+
+            if action == "list_rooms":
+                await ws.send_text(json.dumps({"type": "lobby_update", "rooms": janggi_manager.get_lobby_summary()}, ensure_ascii=False))
+            elif action == "create_room":
+                await janggi_manager.create_room(ws, user, data.get("title", ""), data.get("time_minutes", 10))
+            elif action == "join_room" and room_id:
+                await janggi_manager.join_room(ws, user, room_id, data.get("role_pref"))
+            elif action == "leave_room" and room_id:
+                await janggi_manager.leave_room(ws, user, room_id)
+            elif action == "pick_role" and room_id:
+                await janggi_manager.pick_role(user, room_id, data.get("role", "spectator"))
+            elif action == "set_formation" and room_id:
+                await janggi_manager.set_formation(user, room_id, str(data.get("formation", "wonangma")))
+            elif action == "start_game" and room_id:
+                await janggi_manager.start_game(user, room_id)
+            elif action == "move" and room_id:
+                await janggi_manager.make_move(user, room_id, data)
+            elif action == "pass_turn" and room_id:
+                await janggi_manager.pass_turn(user, room_id)
+            elif action == "request_score_judge" and room_id:
+                await janggi_manager.request_score_judge(user, room_id)
+            elif action == "resign" and room_id:
+                await janggi_manager.resign(user, room_id)
+            elif action == "chat" and room_id:
+                text = str(data.get("text", "")).strip()
+                if text:
+                    await janggi_manager.send_room_chat(user, room_id, text)
+            elif action == "ping":
+                await ws.send_text(json.dumps({"type": "pong"}))
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await janggi_manager.unregister_client(ws)
+
+
+@app.websocket("/ws/omok")
+async def omok_websocket_endpoint(ws: WebSocket):
+    ip = get_client_ip(ws)
+    if not websocket_origin_is_allowed(ws):
+        await ws.close(code=1008, reason="허용되지 않은 WebSocket origin입니다.")
+        return
+    user = session_user_from_token(ws.cookies.get(SESSION_COOKIE, ""))
+    if not user:
+        await ws.close(code=1008, reason="로그인이 필요합니다.")
+        return
+    await ws.accept()
+    omok_manager.register_client(ws, user)
+    omok_manager.start_clock_monitor()
+    await ws.send_text(json.dumps({"type": "lobby_update", "rooms": omok_manager.get_lobby_summary()}, ensure_ascii=False))
+
+    try:
+        while True:
+            raw = await ws.receive_text()
+            if len(raw) > MAX_RAW_MESSAGE_LEN:
+                await ws.close(code=1009, reason="메시지 프레임이 너무 큽니다.")
+                break
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(data, dict):
+                continue
+
+            action = data.get("action")
+            room_id = data.get("room_id")
+
+            if action == "list_rooms":
+                await ws.send_text(json.dumps({"type": "lobby_update", "rooms": omok_manager.get_lobby_summary()}, ensure_ascii=False))
+            elif action == "create_room":
+                await omok_manager.create_room(ws, user, data.get("title", ""), data.get("time_minutes", 10))
+            elif action == "join_room" and room_id:
+                await omok_manager.join_room(ws, user, room_id, data.get("role_pref"))
+            elif action == "leave_room" and room_id:
+                await omok_manager.leave_room(ws, user, room_id)
+            elif action == "pick_role" and room_id:
+                await omok_manager.pick_role(user, room_id, data.get("role", "spectator"))
+            elif action == "start_game" and room_id:
+                await omok_manager.start_game(user, room_id)
+            elif action == "move" and room_id:
+                await omok_manager.make_move(user, room_id, data)
+            elif action == "resign" and room_id:
+                await omok_manager.resign(user, room_id)
+            elif action == "chat" and room_id:
+                text = str(data.get("text", "")).strip()
+                if text:
+                    await omok_manager.send_room_chat(user, room_id, text)
+            elif action == "ping":
+                await ws.send_text(json.dumps({"type": "pong"}))
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await omok_manager.unregister_client(ws)
+

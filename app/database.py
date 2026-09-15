@@ -636,6 +636,25 @@ def _migrate_v25(conn: sqlite3.Connection) -> None:
     # 3. Default fallback for official seeded quizzes
     conn.execute("UPDATE quizzes SET author_name = '대나무숲 공식' WHERE author_name = '' OR author_name IS NULL")
 
+def _migrate_v26(conn: sqlite3.Connection) -> None:
+    """Create janggi_player_stats and omok_player_stats tables for Korean Chess and Gomoku."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS janggi_player_stats (
+        user_id INTEGER PRIMARY KEY,
+        wins INTEGER NOT NULL DEFAULT 0,
+        draws INTEGER NOT NULL DEFAULT 0,
+        losses INTEGER NOT NULL DEFAULT 0,
+        last_win_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS omok_player_stats (
+        user_id INTEGER PRIMARY KEY,
+        wins INTEGER NOT NULL DEFAULT 0,
+        draws INTEGER NOT NULL DEFAULT 0,
+        losses INTEGER NOT NULL DEFAULT 0,
+        last_win_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -662,7 +681,9 @@ _MIGRATIONS = [
     _migrate_v23,
     _migrate_v24,
     _migrate_v25,
+    _migrate_v26,
 ]
+
 
 
 
@@ -1934,6 +1955,43 @@ def _chess_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:
     }
 
 
+JANGGI_TITLES = {
+    1: ("🀄", "장기국수"),
+    2: ("🀄", "장기명인"),
+    3: ("🀄", "장기고수"),
+}
+
+def _janggi_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:
+    if rank not in JANGGI_TITLES:
+        return None
+    icon, label = JANGGI_TITLES[rank]
+    return {
+        "type": "janggi",
+        "icon": icon,
+        "label": label,
+        "title": f"장기 {rank}위 · {wins}승",
+    }
+
+
+OMOK_TITLES = {
+    1: ("⚫", "오목신"),
+    2: ("⚪", "오목달인"),
+    3: ("⚫", "오목고수"),
+}
+
+def _omok_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:
+    if rank not in OMOK_TITLES:
+        return None
+    icon, label = OMOK_TITLES[rank]
+    return {
+        "type": "omok",
+        "icon": icon,
+        "label": label,
+        "title": f"오목 {rank}위 · {wins}승",
+    }
+
+
+
 def normalize_quiz_import(items: Any, expertise: str) -> List[Dict[str, Any]]:
     expertise = normalize_quiz_expertise(expertise)
     if not isinstance(items, list) or not 1 <= len(items) <= 50:
@@ -3101,6 +3159,167 @@ def get_chess_leaderboard(limit: int = 20) -> List[Dict[str, Any]]:
             "last_win_at": r.get("last_win_at"),
         })
     return results
+
+
+# ---------------------------------------------------------------------------
+# Janggi (Korean Chess) Player Stats & Leaderboard
+# ---------------------------------------------------------------------------
+
+def record_janggi_result(cho_id: int, han_id: int, winner: Optional[str]) -> None:
+    """Persist one completed janggi result for both players. Winner: 'cho', 'han', or None."""
+    now = utc_now()
+    with get_connection() as conn:
+        for user_id in (cho_id, han_id):
+            conn.execute("INSERT OR IGNORE INTO janggi_player_stats (user_id) VALUES (?)", (user_id,))
+        if winner in ("cho", "han", "w", "b"):
+            winner_id = cho_id if winner in ("cho", "w") else han_id
+            loser_id = han_id if winner in ("cho", "w") else cho_id
+            conn.execute(
+                "UPDATE janggi_player_stats SET wins = wins + 1, last_win_at = ? WHERE user_id = ?",
+                (now, winner_id),
+            )
+            conn.execute(
+                "UPDATE janggi_player_stats SET losses = losses + 1 WHERE user_id = ?",
+                (loser_id,),
+            )
+        else:
+            conn.execute("UPDATE janggi_player_stats SET draws = draws + 1 WHERE user_id IN (?, ?)", (cho_id, han_id))
+
+
+def get_janggi_stats(user_id: int) -> Dict[str, int]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT wins, draws, losses FROM janggi_player_stats WHERE user_id = ?", (user_id,)).fetchone()
+    return dict(row) if row else {"wins": 0, "draws": 0, "losses": 0}
+
+
+def get_janggi_rankings(limit: int = 20) -> List[Dict[str, Any]]:
+    """Return top janggi players sorted by wins (desc) and time achieved (asc)."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT ps.user_id, u.username, u.display_name,
+                   ps.wins, ps.draws, ps.losses, ps.last_win_at,
+                   ROW_NUMBER() OVER (
+                       ORDER BY ps.wins DESC, ps.last_win_at ASC, ps.user_id ASC
+                   ) AS rank
+            FROM janggi_player_stats ps
+            JOIN users u ON u.id = ps.user_id
+            WHERE ps.wins > 0
+            ORDER BY rank ASC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def reset_janggi_records() -> None:
+    """Resets all janggi player stats."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM janggi_player_stats")
+
+
+def get_janggi_leaderboard(limit: int = 20) -> List[Dict[str, Any]]:
+    """Return enriched janggi rankings with win rates and badges."""
+    rankings = get_janggi_rankings(limit=limit)
+    results = []
+    for r in rankings:
+        rank = int(r["rank"])
+        badge = _janggi_badge(rank, int(r["wins"]))
+        total = r["wins"] + r.get("draws", 0) + r.get("losses", 0)
+        win_rate = round((r["wins"] / total * 100), 1) if total > 0 else 0.0
+        results.append({
+            "user_id": r["user_id"],
+            "username": r["username"],
+            "display_name": r["display_name"],
+            "rank": rank,
+            "score": r["wins"],
+            "wins": r["wins"],
+            "draws": r.get("draws", 0),
+            "losses": r.get("losses", 0),
+            "win_rate": win_rate,
+            "badge": badge,
+            "last_win_at": r.get("last_win_at"),
+        })
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Omok (Gomoku) Player Stats & Leaderboard
+# ---------------------------------------------------------------------------
+
+def record_omok_result(black_id: int, white_id: int, winner: Optional[str]) -> None:
+    """Persist one completed omok result for both players. Winner: 'b', 'w', 'black', 'white', or None."""
+    now = utc_now()
+    with get_connection() as conn:
+        for user_id in (black_id, white_id):
+            conn.execute("INSERT OR IGNORE INTO omok_player_stats (user_id) VALUES (?)", (user_id,))
+        if winner in ("b", "w", "black", "white"):
+            winner_id = black_id if winner in ("b", "black") else white_id
+            loser_id = white_id if winner in ("b", "black") else black_id
+            conn.execute(
+                "UPDATE omok_player_stats SET wins = wins + 1, last_win_at = ? WHERE user_id = ?",
+                (now, winner_id),
+            )
+            conn.execute(
+                "UPDATE omok_player_stats SET losses = losses + 1 WHERE user_id = ?",
+                (loser_id,),
+            )
+        else:
+            conn.execute("UPDATE omok_player_stats SET draws = draws + 1 WHERE user_id IN (?, ?)", (black_id, white_id))
+
+
+def get_omok_stats(user_id: int) -> Dict[str, int]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT wins, draws, losses FROM omok_player_stats WHERE user_id = ?", (user_id,)).fetchone()
+    return dict(row) if row else {"wins": 0, "draws": 0, "losses": 0}
+
+
+def get_omok_rankings(limit: int = 20) -> List[Dict[str, Any]]:
+    """Return top omok players sorted by wins (desc) and time achieved (asc)."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT ps.user_id, u.username, u.display_name,
+                   ps.wins, ps.draws, ps.losses, ps.last_win_at,
+                   ROW_NUMBER() OVER (
+                       ORDER BY ps.wins DESC, ps.last_win_at ASC, ps.user_id ASC
+                   ) AS rank
+            FROM omok_player_stats ps
+            JOIN users u ON u.id = ps.user_id
+            WHERE ps.wins > 0
+            ORDER BY rank ASC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def reset_omok_records() -> None:
+    """Resets all omok player stats."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM omok_player_stats")
+
+
+def get_omok_leaderboard(limit: int = 20) -> List[Dict[str, Any]]:
+    """Return enriched omok rankings with win rates and badges."""
+    rankings = get_omok_rankings(limit=limit)
+    results = []
+    for r in rankings:
+        rank = int(r["rank"])
+        badge = _omok_badge(rank, int(r["wins"]))
+        total = r["wins"] + r.get("draws", 0) + r.get("losses", 0)
+        win_rate = round((r["wins"] / total * 100), 1) if total > 0 else 0.0
+        results.append({
+            "user_id": r["user_id"],
+            "username": r["username"],
+            "display_name": r["display_name"],
+            "rank": rank,
+            "score": r["wins"],
+            "wins": r["wins"],
+            "draws": r.get("draws", 0),
+            "losses": r.get("losses", 0),
+            "win_rate": win_rate,
+            "badge": badge,
+            "last_win_at": r.get("last_win_at"),
+        })
+    return results
+
 
 
 def get_quiz_subject_leaderboard(category: str, limit: int = 20) -> List[Dict[str, Any]]:

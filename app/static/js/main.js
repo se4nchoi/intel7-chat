@@ -35,8 +35,10 @@ import {
   refreshQuizHeaderStreak,
   refreshQuizSidebarCounts,
   handleLeaderboardInvalidated,
-} from './quiz.js';
 import { initChessListeners } from './chess.js';
+import { initPlayHubListeners } from './play_hub.js';
+import { initJanggiListeners } from './janggi.js';
+import { initOmokListeners } from './omok.js';
 import { initScreenShareUI, handleConversationSwitch, handleChannelSwitch } from './screenshare.js';
 import {
   openGlobalNotificationModal,
@@ -550,7 +552,10 @@ function initApp() {
   initChannelsListeners(switchConversation);
   initPinsListeners();
   initQuizListeners();
+  initPlayHubListeners();
   initChessListeners();
+  initJanggiListeners();
+  initOmokListeners();
   initSearchListeners(switchConversation);
   initScreenShareUI();
   initSidebarSections();
