@@ -105,6 +105,23 @@
   color: var(--om-text);
 }
 
+.om-btn-danger {
+  padding: 8px 14px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+.om-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.35);
+  color: #fff;
+  border-color: #ef4444;
+}
+
 /* Room Grid */
 .om-room-grid {
   display: grid;

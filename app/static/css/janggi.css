@@ -113,6 +113,23 @@
   color: var(--jg-text);
 }
 
+.jg-btn-danger {
+  padding: 8px 14px;
+  background: rgba(244, 63, 94, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+.jg-btn-danger:hover {
+  background: rgba(244, 63, 94, 0.35);
+  color: #fff;
+  border-color: #f43f5e;
+}
+
 /* Room Grid */
 .jg-room-grid {
   display: grid;
