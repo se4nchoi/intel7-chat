@@ -373,33 +373,35 @@
   letter-spacing: 0.5px !important;
 }
 
-/* Janggi Subtle/Gradual Tokens & Pills */
+/* Janggi Tokens & Pills: White background, black border, inner green/red text */
 .jg-avatar-han {
-  background: radial-gradient(circle at 35% 30%, #501b22, #290d12) !important;
-  border: 1.5px solid rgba(244, 63, 94, 0.45) !important;
-  color: #fecdd3 !important;
+  background: #ffffff !important;
+  border: 2px solid #18181b !important;
+  color: #dc2626 !important;
   font-family: 'Batang', serif !important;
   font-weight: 800 !important;
   font-size: 15px !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35) !important;
 }
 .jg-pill-han {
-  background: linear-gradient(135deg, rgba(244, 63, 94, 0.14), rgba(159, 18, 57, 0.08)) !important;
-  color: #fda4af !important;
-  border: 1px solid rgba(244, 63, 94, 0.3) !important;
+  background: rgba(220, 38, 38, 0.12) !important;
+  color: #ef4444 !important;
+  border: 1px solid rgba(220, 38, 38, 0.35) !important;
 }
 
 .jg-avatar-cho {
-  background: radial-gradient(circle at 35% 30%, #133942, #0b2229) !important;
-  border: 1.5px solid rgba(20, 184, 166, 0.45) !important;
-  color: #a5f3fc !important;
+  background: #ffffff !important;
+  border: 2px solid #18181b !important;
+  color: #15803d !important;
   font-family: 'Batang', serif !important;
   font-weight: 800 !important;
   font-size: 15px !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35) !important;
 }
 .jg-pill-cho {
-  background: linear-gradient(135deg, rgba(20, 184, 166, 0.14), rgba(13, 148, 136, 0.08)) !important;
-  color: #5eead4 !important;
-  border: 1px solid rgba(20, 184, 166, 0.3) !important;
+  background: rgba(21, 128, 61, 0.12) !important;
+  color: #16a34a !important;
+  border: 1px solid rgba(21, 128, 61, 0.35) !important;
 }
 
 .jg-formation-badge {

@@ -329,3 +329,43 @@ def test_chess_ready_and_owner_start_constraints():
         assert room["game_started"] is True
 
     asyncio.run(run())
+
+
+def test_chess_owner_transfer_on_spectator_and_sit():
+    manager = ChessManager()
+    ws1 = FakeWebSocket()
+    ws2 = FakeWebSocket()
+    ws3 = FakeWebSocket()
+    u1 = {"id": 2001, "username": "p1", "display_name": "P1"}
+    u2 = {"id": 2002, "username": "p2", "display_name": "P2"}
+    u3 = {"id": 2003, "username": "p3", "display_name": "P3"}
+
+    async def run():
+        manager.register_client(ws1, u1)
+        manager.register_client(ws2, u2)
+        manager.register_client(ws3, u3)
+
+        room = await manager.create_room(ws1, u1, "TransferTest", 10)
+        room_id = room["id"]
+        assert room["owner_id"] == u1["id"]
+
+        await manager.join_room(ws2, u2, room_id, "black")
+        await manager.join_room(ws3, u3, room_id, "spectator")
+        assert room["owner_id"] == u1["id"]
+
+        # Case 1: Owner u1 moves to spectator -> transfers to seated black (u2)
+        await manager.pick_role(u1, room_id, "spectator")
+        assert room["white"] is None
+        assert room["owner_id"] == u2["id"]
+
+        # Case 2: Owner u2 moves to spectator, now no players seated -> owner held (None), NOT u3
+        await manager.pick_role(u2, room_id, "spectator")
+        assert room["black"] is None
+        assert room["owner_id"] is None
+
+        # Case 3: Spectator u3 sits down as white -> delegated to u3
+        await manager.pick_role(u3, room_id, "w")
+        assert room["white"]["id"] == u3["id"]
+        assert room["owner_id"] == u3["id"]
+
+    asyncio.run(run())

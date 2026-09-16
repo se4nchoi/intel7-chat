@@ -112,3 +112,41 @@ def test_janggi_ready_and_owner_constraints():
 
     asyncio.run(run())
 
+
+def test_janggi_owner_transfer_on_spectator_and_sit():
+    mgr = JanggiManager()
+    ws1, ws2, ws3 = DummyWebSocket(), DummyWebSocket(), DummyWebSocket()
+
+    async def run():
+        u1 = database.create_user("jg_p1", "hash")
+        u2 = database.create_user("jg_p2", "hash")
+        u3 = database.create_user("jg_p3", "hash")
+        mgr.register_client(ws1, u1)
+        mgr.register_client(ws2, u2)
+        mgr.register_client(ws3, u3)
+
+        room = await mgr.create_room(ws1, u1, "JgTransferTest", 10)
+        room_id = room["id"]
+        assert room["owner_id"] == u1["id"]
+
+        await mgr.join_room(ws2, u2, room_id, "han")
+        await mgr.join_room(ws3, u3, room_id, "spectator")
+        assert room["owner_id"] == u1["id"]
+
+        # Case 1: Owner u1 moves to spectator -> transfers to seated han (u2)
+        await mgr.pick_role(u1, room_id, "spectator")
+        assert room["cho"] is None
+        assert room["owner_id"] == u2["id"]
+
+        # Case 2: Owner u2 moves to spectator, now no players seated -> owner held (None), NOT u3
+        await mgr.pick_role(u2, room_id, "spectator")
+        assert room["han"] is None
+        assert room["owner_id"] is None
+
+        # Case 3: Spectator u3 sits down as cho -> delegated to u3
+        await mgr.pick_role(u3, room_id, "cho")
+        assert room["cho"]["id"] == u3["id"]
+        assert room["owner_id"] == u3["id"]
+
+    asyncio.run(run())
+

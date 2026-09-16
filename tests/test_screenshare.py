@@ -137,11 +137,12 @@ def test_screenshare_api_and_websocket():
 
     origin = {"origin": "http://testserver"}
     with c1.websocket_connect("/ws", headers=origin) as ws1, c2.websocket_connect("/ws", headers=origin) as ws2:
-        def wait_for_event(ws, event_type):
-            while True:
+        def wait_for_event(ws, event_type, max_messages=25):
+            for _ in range(max_messages):
                 msg = ws.receive_json()
                 if msg.get("type") == event_type:
                     return msg
+            raise TimeoutError(f"Exceeded max_messages waiting for event '{event_type}'")
 
         # Drain initial connection messages
         wait_for_event(ws1, "history_ready")
@@ -211,11 +212,12 @@ def test_screenshare_dm_workflow_and_privacy():
     with c_a.websocket_connect("/ws", headers=origin) as ws_a, \
          c_b.websocket_connect("/ws", headers=origin) as ws_b:
 
-        def wait_for_event(ws, event_type):
-            while True:
+        def wait_for_event(ws, event_type, max_messages=25):
+            for _ in range(max_messages):
                 msg = ws.receive_json()
                 if msg.get("type") == event_type:
                     return msg
+            raise TimeoutError(f"Exceeded max_messages waiting for event '{event_type}'")
 
         # Drain history_ready
         wait_for_event(ws_a, "history_ready")

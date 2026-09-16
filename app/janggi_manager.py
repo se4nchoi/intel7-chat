@@ -244,6 +244,33 @@ class JanggiManager:
         await self.broadcast_room(room_id)
         return room
 
+    def _sync_room_owner(self, room: dict, leaving_owner_id: Optional[int] = None) -> None:
+        cho = room.get("cho")
+        han = room.get("han")
+        owner_id = room.get("owner_id")
+
+        if leaving_owner_id is not None and owner_id == leaving_owner_id:
+            if cho and cho["id"] != leaving_owner_id:
+                room["owner_id"] = cho["id"]
+                room["created_by"] = cho["name"]
+            elif han and han["id"] != leaving_owner_id:
+                room["owner_id"] = han["id"]
+                room["created_by"] = han["name"]
+            else:
+                room["owner_id"] = None
+                room["created_by"] = None
+            return
+
+        seated = [p for p in (cho, han) if p]
+        seated_ids = [p["id"] for p in seated]
+        if not seated:
+            room["owner_id"] = None
+            room["created_by"] = None
+        elif owner_id is None or owner_id not in seated_ids:
+            first = seated[0]
+            room["owner_id"] = first["id"]
+            room["created_by"] = first["name"]
+
     async def join_room(self, ws: WebSocket, user: dict, room_id: str, role_pref: Optional[str] = None) -> Optional[dict]:
         room = self.rooms.get(room_id)
         if not room:
@@ -256,14 +283,31 @@ class JanggiManager:
 
         player = self._player_for(user)
         user_id = str(user["id"])
+        was_owner = (room.get("owner_id") == user["id"])
 
         if room.get("cho") and str(room["cho"]["id"]) == user_id:
-            room["cho"] = player
+            if role_pref == "spectator" and not room["game_started"]:
+                room["cho"] = None
+                room["spectators"] = [s for s in room["spectators"] if str(s["id"]) != user_id]
+                room["spectators"].append(player)
+                if was_owner:
+                    self._sync_room_owner(room, leaving_owner_id=user["id"])
+            else:
+                room["cho"] = player
         elif room.get("han") and str(room["han"]["id"]) == user_id:
-            room["han"] = player
+            if role_pref == "spectator" and not room["game_started"]:
+                room["han"] = None
+                room["spectators"] = [s for s in room["spectators"] if str(s["id"]) != user_id]
+                room["spectators"].append(player)
+                if was_owner:
+                    self._sync_room_owner(room, leaving_owner_id=user["id"])
+            else:
+                room["han"] = player
         else:
             room["spectators"] = [s for s in room["spectators"] if str(s["id"]) != user_id]
-            if role_pref == "cho" and not room["cho"] and not room["game_started"]:
+            if role_pref == "spectator":
+                room["spectators"].append(player)
+            elif role_pref == "cho" and not room["cho"] and not room["game_started"]:
                 room["cho"] = player
             elif role_pref == "han" and not room["han"] and not room["game_started"]:
                 room["han"] = player
@@ -273,6 +317,8 @@ class JanggiManager:
                 room["han"] = player
             else:
                 room["spectators"].append(player)
+
+        self._sync_room_owner(room)
 
         if room_id not in self.room_sockets:
             self.room_sockets[room_id] = set()
@@ -321,15 +367,7 @@ class JanggiManager:
                 room["han_ready"] = False
 
             if room.get("owner_id") == user_id:
-                if room["cho"] and room["cho"]["id"] != user_id:
-                    room["owner_id"] = room["cho"]["id"]
-                    room["created_by"] = room["cho"]["name"]
-                elif room["han"] and room["han"]["id"] != user_id:
-                    room["owner_id"] = room["han"]["id"]
-                    room["created_by"] = room["han"]["name"]
-                elif room["spectators"]:
-                    room["owner_id"] = room["spectators"][0]["id"]
-                    room["created_by"] = room["spectators"][0]["name"]
+                self._sync_room_owner(room, leaving_owner_id=user_id)
 
         room["spectators"] = [s for s in room["spectators"] if s["id"] != user_id]
         if not room["cho"] and not room["han"] and not room["spectators"]:
@@ -348,6 +386,7 @@ class JanggiManager:
 
         user_id = user["id"]
         player = self._player_for(user)
+        was_owner = (room.get("owner_id") == user_id)
 
         if room["cho"] and str(room["cho"]["id"]) == str(user_id):
             room["cho"] = None
@@ -365,6 +404,12 @@ class JanggiManager:
             room["spectators"].append(player)
             room["cho_ready"] = False
             room["han_ready"] = False
+
+        is_spectator = any(s["id"] == user_id for s in room["spectators"])
+        if was_owner and is_spectator:
+            self._sync_room_owner(room, leaving_owner_id=user_id)
+        else:
+            self._sync_room_owner(room)
 
         await self.broadcast_room(room_id)
         await self.broadcast_lobby()
@@ -468,11 +513,14 @@ class JanggiManager:
                     room["spectators"].append(player)
             room["cho"] = None
             room["han"] = None
+            room["cho_ready"] = False
+            room["han_ready"] = False
             room["game_started"] = False
             room["result"] = None
             room["draw_offer"] = None
             room["board"] = None
             room["active_turn"] = "cho"
+            self._sync_room_owner(room)
             await self.broadcast_room(room_id)
             await self.broadcast_lobby()
         finally:

@@ -240,6 +240,33 @@ class OmokManager:
         await self.broadcast_room(room_id)
         return room
 
+    def _sync_room_owner(self, room: dict, leaving_owner_id: Optional[int] = None) -> None:
+        black = room.get("black")
+        white = room.get("white")
+        owner_id = room.get("owner_id")
+
+        if leaving_owner_id is not None and owner_id == leaving_owner_id:
+            if black and black["id"] != leaving_owner_id:
+                room["owner_id"] = black["id"]
+                room["created_by"] = black["name"]
+            elif white and white["id"] != leaving_owner_id:
+                room["owner_id"] = white["id"]
+                room["created_by"] = white["name"]
+            else:
+                room["owner_id"] = None
+                room["created_by"] = None
+            return
+
+        seated = [p for p in (black, white) if p]
+        seated_ids = [p["id"] for p in seated]
+        if not seated:
+            room["owner_id"] = None
+            room["created_by"] = None
+        elif owner_id is None or owner_id not in seated_ids:
+            first = seated[0]
+            room["owner_id"] = first["id"]
+            room["created_by"] = first["name"]
+
     async def join_room(self, ws: WebSocket, user: dict, room_id: str, role_pref: Optional[str] = None) -> Optional[dict]:
         room = self.rooms.get(room_id)
         if not room:
@@ -252,14 +279,31 @@ class OmokManager:
 
         player = self._player_for(user)
         user_id = str(user["id"])
+        was_owner = (room.get("owner_id") == user["id"])
 
         if room.get("black") and str(room["black"]["id"]) == user_id:
-            room["black"] = player
+            if role_pref == "spectator" and not room["game_started"]:
+                room["black"] = None
+                room["spectators"] = [s for s in room["spectators"] if str(s["id"]) != user_id]
+                room["spectators"].append(player)
+                if was_owner:
+                    self._sync_room_owner(room, leaving_owner_id=user["id"])
+            else:
+                room["black"] = player
         elif room.get("white") and str(room["white"]["id"]) == user_id:
-            room["white"] = player
+            if role_pref == "spectator" and not room["game_started"]:
+                room["white"] = None
+                room["spectators"] = [s for s in room["spectators"] if str(s["id"]) != user_id]
+                room["spectators"].append(player)
+                if was_owner:
+                    self._sync_room_owner(room, leaving_owner_id=user["id"])
+            else:
+                room["white"] = player
         else:
             room["spectators"] = [s for s in room["spectators"] if str(s["id"]) != user_id]
-            if role_pref == "b" and not room["black"] and not room["game_started"]:
+            if role_pref == "spectator":
+                room["spectators"].append(player)
+            elif role_pref == "b" and not room["black"] and not room["game_started"]:
                 room["black"] = player
             elif role_pref == "w" and not room["white"] and not room["game_started"]:
                 room["white"] = player
@@ -269,6 +313,8 @@ class OmokManager:
                 room["white"] = player
             else:
                 room["spectators"].append(player)
+
+        self._sync_room_owner(room)
 
         if room_id not in self.room_sockets:
             self.room_sockets[room_id] = set()
@@ -317,15 +363,7 @@ class OmokManager:
                 room["white_ready"] = False
 
             if room.get("owner_id") == user_id:
-                if room["black"] and room["black"]["id"] != user_id:
-                    room["owner_id"] = room["black"]["id"]
-                    room["created_by"] = room["black"]["name"]
-                elif room["white"] and room["white"]["id"] != user_id:
-                    room["owner_id"] = room["white"]["id"]
-                    room["created_by"] = room["white"]["name"]
-                elif room["spectators"]:
-                    room["owner_id"] = room["spectators"][0]["id"]
-                    room["created_by"] = room["spectators"][0]["name"]
+                self._sync_room_owner(room, leaving_owner_id=user_id)
 
         room["spectators"] = [s for s in room["spectators"] if s["id"] != user_id]
         if not room["black"] and not room["white"] and not room["spectators"]:
@@ -344,6 +382,7 @@ class OmokManager:
 
         user_id = user["id"]
         player = self._player_for(user)
+        was_owner = (room.get("owner_id") == user_id)
 
         if room["black"] and str(room["black"]["id"]) == str(user_id):
             room["black"] = None
@@ -361,6 +400,12 @@ class OmokManager:
             room["spectators"].append(player)
             room["black_ready"] = False
             room["white_ready"] = False
+
+        is_spectator = any(s["id"] == user_id for s in room["spectators"])
+        if was_owner and is_spectator:
+            self._sync_room_owner(room, leaving_owner_id=user_id)
+        else:
+            self._sync_room_owner(room)
 
         await self.broadcast_room(room_id)
         await self.broadcast_lobby()
@@ -441,11 +486,14 @@ class OmokManager:
                     room["spectators"].append(player)
             room["black"] = None
             room["white"] = None
+            room["black_ready"] = False
+            room["white_ready"] = False
             room["game_started"] = False
             room["result"] = None
             room["draw_offer"] = None
             room["board"] = None
             room["active_turn"] = "b"
+            self._sync_room_owner(room)
             await self.broadcast_room(room_id)
             await self.broadcast_lobby()
         finally:

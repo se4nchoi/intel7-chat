@@ -27,4 +27,20 @@ def global_database_isolation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(database, "DB_MAX_BYTES", 100 * 1024 * 1024)
     monkeypatch.setenv("BAMBOOCHAT_CONFIG", str(tmp_path / "bamboochat.json"))
     database.init_db()
+
+    # Clear lingering in-memory socket state to prevent cross-test hangs
+    try:
+        from app import main
+        main.connected_clients.clear()
+        main.user_registry.clear()
+    except Exception:
+        pass
+
     yield
+
+    try:
+        from app import main
+        main.connected_clients.clear()
+        main.user_registry.clear()
+    except Exception:
+        pass

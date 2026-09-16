@@ -501,6 +501,7 @@ class JanggiBoard:
                     "color": "cho" if self.is_cho(piece) else "han",
                     "name": PIECE_NAMES_KR.get(piece, piece),
                 })
+        legal_moves = self.get_legal_moves(self.turn)
         return {
             "turn": self.turn,
             "move_count": self.move_count,
@@ -509,4 +510,5 @@ class JanggiBoard:
             "in_check": self.is_in_check(self.turn),
             "bikjang": self.is_bikjang(),
             "consecutive_passes": self.consecutive_passes,
+            "legal_moves": [[[f[0], f[1]], [t[0], t[1]]] for f, t in legal_moves],
         }

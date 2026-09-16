@@ -1956,7 +1956,7 @@ def _chess_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:
 
 
 JANGGI_TITLES = {
-    1: ("🀄", "장기의 신"),
+    1: ("👑", "장기의 신"),
     2: ("🀄", "장기의 왕"),
     3: ("🀄", "장기고인물"),
 }
@@ -1974,9 +1974,9 @@ def _janggi_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:
 
 
 OMOK_TITLES = {
-    1: ("⚫", "오목의 신"),
-    2: ("⚪", "오목의 왕"),
-    3: ("⚫", "오목고인물"),
+    1: ("👑", "오목의 신"),
+    2: ("⚫", "오목의 왕"),
+    3: ("⚪", "오목고인물"),
 }
 
 def _omok_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:

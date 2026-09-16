@@ -256,10 +256,11 @@
   font-family: 'Noto Serif KR', 'Batang', serif;
   font-weight: 800;
   font-size: 20px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5), inset 0 2px 3px rgba(255, 255, 255, 0.25);
-  transition: transform 0.12s ease;
+  background: #ffffff !important;
+  border: 2.5px solid #18181b !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), inset 0 2px 3px rgba(255, 255, 255, 0.8) !important;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
   user-select: none;
-  border: 2px solid;
 }
 
 .jg-piece.king {
@@ -275,22 +276,21 @@
 }
 
 .jg-piece.cho {
-  background: var(--jg-cho-bg);
-  color: #bfdbfe;
-  border-color: var(--jg-cho-border);
-  text-shadow: 0 1px 2px #000;
+  color: #15803d !important;
+  border-color: #18181b !important;
+  text-shadow: none !important;
 }
 
 .jg-piece.han {
-  background: var(--jg-han-bg);
-  color: #fecaca;
-  border-color: var(--jg-han-border);
-  text-shadow: 0 1px 2px #000;
+  color: #dc2626 !important;
+  border-color: #18181b !important;
+  text-shadow: none !important;
 }
 
 .jg-point.selected .jg-piece {
-  transform: scale(1.15);
-  box-shadow: 0 0 14px #34d399;
+  transform: scale(1.18);
+  border-color: #ca8a04 !important;
+  box-shadow: 0 0 16px rgba(234, 179, 8, 0.95), 0 4px 12px rgba(0, 0, 0, 0.45) !important;
 }
 
 .jg-point.last-move::after {
@@ -304,14 +304,58 @@
   pointer-events: none;
 }
 
-.jg-point.legal-target::before {
-  content: '';
-  width: 12px;
-  height: 12px;
+.jg-point.legal-dest {
+  cursor: pointer;
+}
+
+.jg-dest-dot {
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--jg-legal-dot);
-  box-shadow: 0 0 8px #34d399;
-  z-index: 5;
+  background: #16a34a;
+  box-shadow: 0 0 10px rgba(22, 163, 74, 0.9), 0 0 0 2.5px rgba(255, 255, 255, 0.95);
+  pointer-events: none;
+  z-index: 12;
+  animation: jg-pulse 1.5s infinite ease-in-out;
+}
+
+.jg-point.legal-dest:hover .jg-dest-dot {
+  transform: scale(1.35);
+  background: #22c55e;
+}
+
+.jg-capture-ring {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 3px solid #dc2626;
+  box-shadow: 0 0 14px rgba(220, 38, 38, 0.9), inset 0 0 6px rgba(220, 38, 38, 0.4);
+  pointer-events: none;
+  z-index: 15;
+  animation: jg-capture-pulse 1.4s infinite ease-in-out;
+}
+
+@keyframes jg-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 1;
+  }
+}
+
+@keyframes jg-capture-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
 }
 
 /* -------------------------------------------------------------

@@ -495,15 +495,26 @@ function renderJgBoard(room) {
 
   const isMyTurn = (room.game_started && !room.result && myColor && room.active_turn === myColor);
 
+  const legalMoves = room.board?.legal_moves || [];
+  const legalDests = new Set();
+  if (selectedPoint && isMyTurn) {
+    for (const [from, to] of legalMoves) {
+      if (from[0] === selectedPoint.col && from[1] === selectedPoint.row) {
+        legalDests.add(`${to[0]},${to[1]}`);
+      }
+    }
+  }
+
   for (let c = 0; c < 9; c++) {
     for (let r = 0; r < 10; r++) {
       const pt = getPt(c, r);
       const piece = pieceMap[`${c},${r}`];
       const isSelected = selectedPoint && selectedPoint.col === c && selectedPoint.row === r;
       const isLastMove = room.last_to && room.last_to[0] === c && room.last_to[1] === r;
+      const isLegalDest = legalDests.has(`${c},${r}`);
 
       const ptDiv = document.createElement('div');
-      ptDiv.className = `jg-point ${isSelected ? 'selected' : ''} ${isLastMove ? 'last-move' : ''}`;
+      ptDiv.className = `jg-point ${isSelected ? 'selected' : ''} ${isLastMove ? 'last-move' : ''} ${isLegalDest ? 'legal-dest' : ''}`;
       ptDiv.style.left = `${pt.x}px`;
       ptDiv.style.top = `${pt.y}px`;
 
@@ -514,6 +525,16 @@ function renderJgBoard(room) {
         pieceDiv.className = `jg-piece ${piece.color} ${sizeClass}`;
         pieceDiv.textContent = HANJA_MAP[piece.piece] || piece.piece;
         ptDiv.appendChild(pieceDiv);
+
+        if (isLegalDest) {
+          const captureRing = document.createElement('div');
+          captureRing.className = 'jg-capture-ring';
+          ptDiv.appendChild(captureRing);
+        }
+      } else if (isLegalDest) {
+        const destDot = document.createElement('div');
+        destDot.className = 'jg-dest-dot';
+        ptDiv.appendChild(destDot);
       }
 
       ptDiv.addEventListener('click', () => handlePointClick(c, r, piece, isMyTurn));
@@ -539,6 +560,13 @@ function handlePointClick(c, r, piece, isMyTurn) {
       renderJgBoard(currentRoom);
       return;
     }
+    // Verify move is legal
+    const legalMoves = currentRoom.board?.legal_moves || [];
+    const isLegal = legalMoves.some(
+      ([from, to]) => from[0] === selectedPoint.col && from[1] === selectedPoint.row && to[0] === c && to[1] === r
+    );
+    if (!isLegal) return;
+
     // Attempt move
     sendJgAction('move', {
       from_col: selectedPoint.col,

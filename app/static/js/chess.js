@@ -685,7 +685,7 @@ function updateRoleUI() {
   const isPlayer = !!myColor;
   const isWaitingState = !currentRoom?.game_started && !currentRoom?.result;
   const isActiveGame = isPlayer && currentRoom?.game_started && !currentRoom?.result;
-  const isOwner = currentRoom && state.currentUser && currentRoom.owner_id === state.currentUser.id;
+  const isOwner = currentRoom && state.currentUser && String(currentRoom.owner_id) === String(state.currentUser.id);
   const isMyReady = (myColor === 'w' && currentRoom?.white_ready) || (myColor === 'b' && currentRoom?.black_ready);
 
   if (isPlayer) {
@@ -1095,7 +1095,7 @@ function updateStatusUI() {
   if (!currentRoom) return;
 
   const isWaiting = !currentRoom.game_started && !currentRoom.result;
-  const isOwner = currentRoom && state.currentUser && currentRoom.owner_id === state.currentUser.id;
+  const isOwner = currentRoom && state.currentUser && String(currentRoom.owner_id) === String(state.currentUser.id);
   const bothSeated = !!currentRoom.white && !!currentRoom.black;
   const bothReady = bothSeated && !!currentRoom.white_ready && !!currentRoom.black_ready;
   const canStart = isOwner && bothReady && isWaiting;
@@ -1159,8 +1159,8 @@ function renderPlayersAndSpectators() {
 
   const whiteReadyBadge = currentRoom.white ? (currentRoom.white_ready ? '<span class="chess-ready-badge is-ready">READY</span>' : '<span class="chess-ready-badge not-ready">대기 중</span>') : '';
   const blackReadyBadge = currentRoom.black ? (currentRoom.black_ready ? '<span class="chess-ready-badge is-ready">READY</span>' : '<span class="chess-ready-badge not-ready">대기 중</span>') : '';
-  const isWhiteOwner = currentRoom.white && currentRoom.owner_id === currentRoom.white.id;
-  const isBlackOwner = currentRoom.black && currentRoom.owner_id === currentRoom.black.id;
+  const isWhiteOwner = currentRoom.white && String(currentRoom.owner_id) === String(currentRoom.white.id);
+  const isBlackOwner = currentRoom.black && String(currentRoom.owner_id) === String(currentRoom.black.id);
 
   box.innerHTML = `
     <div class="player-row">
