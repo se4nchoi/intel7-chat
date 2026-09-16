@@ -325,7 +325,7 @@
   box-sizing: border-box !important;
 }
 
-.chess-game-topbar > .ch-row:first-child {
+.chess-game-topbar>.ch-row:first-child {
   position: static !important;
 }
 
@@ -379,17 +379,26 @@
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
-  gap: 6px !important;
+  gap: 5px !important;
 }
 
 .play-dialog .chess-name-text {
-  flex: 1 !important;
+  flex: 1 1 auto !important;
   min-width: 0 !important;
   font-weight: 700 !important;
-  font-size: 13.5px !important;
+  font-size: 13px !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
+}
+
+.play-dialog .chess-sub-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 6px !important;
+  margin-top: 3px !important;
+  min-height: 20px !important;
 }
 
 .play-dialog .chess-player-identity {
@@ -464,6 +473,7 @@
   font-size: 15px !important;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35) !important;
 }
+
 .jg-pill-han {
   background: rgba(220, 38, 38, 0.12) !important;
   color: #ef4444 !important;
@@ -479,6 +489,7 @@
   font-size: 15px !important;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35) !important;
 }
+
 .jg-pill-cho {
   background: rgba(21, 128, 61, 0.12) !important;
   color: #16a34a !important;
@@ -499,6 +510,7 @@
   color: #18181b !important;
   font-size: 15px !important;
 }
+
 .om-pill-white {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(212, 212, 216, 0.06)) !important;
   color: #f4f4f5 !important;
@@ -511,6 +523,7 @@
   color: #ffffff !important;
   font-size: 15px !important;
 }
+
 .om-pill-black {
   background: linear-gradient(135deg, rgba(39, 39, 42, 0.55), rgba(24, 24, 27, 0.75)) !important;
   color: #d4d4d8 !important;
@@ -650,9 +663,9 @@
    Move History (기보 / 착수 기록) Strict Overflow Containment
    ------------------------------------------------------------- */
 .play-dialog .chess-history-card {
-  height: 110px !important;
-  min-height: 110px !important;
-  max-height: 110px !important;
+  height: 125px !important;
+  min-height: 125px !important;
+  max-height: 125px !important;
   padding: 8px 12px !important;
   display: flex !important;
   flex-direction: column !important;
@@ -682,6 +695,7 @@
 .play-dialog .chess-spectator-list::-webkit-scrollbar {
   width: 5px;
 }
+
 .play-dialog .chess-move-list::-webkit-scrollbar-thumb,
 .play-dialog .chess-spectator-list::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.18);
@@ -699,9 +713,9 @@
    Spectators List Card Strict Overflow Containment (~4 visible)
    ------------------------------------------------------------- */
 .play-dialog .chess-spectators-card {
-  height: 140px !important;
-  min-height: 140px !important;
-  max-height: 140px !important;
+  height: 125px !important;
+  min-height: 125px !important;
+  max-height: 125px !important;
   padding: 8px 12px !important;
   display: flex !important;
   flex-direction: column !important;
@@ -762,8 +776,15 @@
 }
 
 @keyframes ready-pulse {
-  0%, 100% { box-shadow: 0 0 6px rgba(74, 222, 128, 0.2); }
-  50% { box-shadow: 0 0 12px rgba(74, 222, 128, 0.5); }
+
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.2);
+  }
+
+  50% {
+    box-shadow: 0 0 12px rgba(74, 222, 128, 0.5);
+  }
 }
 
 .owner-crown {
@@ -771,6 +792,20 @@
   font-size: 12px;
   margin-right: 3px;
   filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.6));
+}
+
+.record-badge {
+  display: inline-block;
+  font-size: 10.5px !important;
+  color: #fbbf24 !important;
+  background: rgba(251, 191, 36, 0.15) !important;
+  border: 1px solid rgba(251, 191, 36, 0.3) !important;
+  padding: 1px 5px !important;
+  border-radius: 4px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  line-height: 1.4 !important;
 }
 
 /* -------------------------------------------------------------
@@ -890,13 +925,77 @@
   transition: background 0.15s ease !important;
   border-radius: 4px !important;
 }
+
 .chess-move-item:hover {
   background: rgba(255, 255, 255, 0.08) !important;
 }
+
 .chess-move-item.active {
   background: rgba(251, 191, 36, 0.22) !important;
   color: #fde68a !important;
   font-weight: 700 !important;
+}
+
+/* -------------------------------------------------------------
+   Board Review Mode (복기 모드) Dark Overlay & Badge Indicator
+   ------------------------------------------------------------- */
+.om-board-box.review-mode,
+.jg-board-box.review-mode,
+.board-frame.inspect-active {
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.35), 0 16px 40px rgba(0, 0, 0, 0.8) !important;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease !important;
+}
+
+.jg-board-box.review-mode {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.35), 0 16px 40px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* Subtle dark scrim overlay covering the board */
+.om-board-box.review-mode::before,
+.jg-board-box.review-mode::before,
+.board-frame.inspect-active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(8, 6, 4, 0.38);
+  box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.35);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 25;
+  transition: opacity 0.25s ease;
+}
+
+/* Floating pill indicator on top of the board */
+.om-board-box.review-mode::after,
+.jg-board-box.review-mode::after,
+.board-frame.inspect-active::after {
+  content: "🔍 복기 모드";
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 20, 24, 0.92);
+  color: #fde68a;
+  padding: 4px 14px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+  z-index: 26;
+  white-space: nowrap;
+}
+
+.jg-board-box.review-mode::after {
+  color: #a7f3d0;
+  border-color: rgba(16, 185, 129, 0.5);
 }
 
 /* Play God Supreme Badge */
@@ -956,11 +1055,13 @@
   background: rgba(18, 20, 24, 0.85) !important;
   border: 1px solid rgba(204, 159, 69, 0.25) !important;
 }
+
 .play-dialog.theme-chess .chess-table thead th {
   background: #14171d !important;
   color: var(--ch-gold-soft) !important;
   border-bottom: 1px solid rgba(204, 159, 69, 0.2) !important;
 }
+
 .play-dialog.theme-chess .chess-table tr.my-row td {
   background: rgba(204, 159, 69, 0.14) !important;
   font-weight: 700 !important;
@@ -970,11 +1071,13 @@
   background: rgba(15, 23, 20, 0.85) !important;
   border: 1px solid rgba(52, 211, 153, 0.25) !important;
 }
+
 .play-dialog.theme-janggi .chess-table thead th {
   background: #12211a !important;
   color: #a7f3d0 !important;
   border-bottom: 1px solid rgba(52, 211, 153, 0.2) !important;
 }
+
 .play-dialog.theme-janggi .chess-table tr.my-row td {
   background: rgba(52, 211, 153, 0.14) !important;
   font-weight: 700 !important;
@@ -984,14 +1087,14 @@
   background: rgba(26, 18, 12, 0.85) !important;
   border: 1px solid rgba(245, 158, 11, 0.25) !important;
 }
+
 .play-dialog.theme-omok .chess-table thead th {
   background: #24190e !important;
   color: #fde68a !important;
   border-bottom: 1px solid rgba(245, 158, 11, 0.2) !important;
 }
+
 .play-dialog.theme-omok .chess-table tr.my-row td {
   background: rgba(245, 158, 11, 0.14) !important;
   font-weight: 700 !important;
 }
-
-

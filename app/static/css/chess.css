@@ -6,8 +6,8 @@
   --ch-bg-2: #12151b;
   --ch-panel: #181c24;
   --ch-panel-2: #212631;
-  --ch-board-light: #e2e8f0;
-  --ch-board-dark: #334155;
+  --ch-board-light: #6b7d91;
+  --ch-board-dark: #273444;
   --ch-gold: #94a3b8;
   --ch-gold-soft: #cbd5e1;
   --ch-ivory: #f8fafc;
@@ -337,9 +337,9 @@
 }
 
 .chess-info-column .history-list {
-  height: 140px;
-  min-height: 140px;
-  max-height: 140px;
+  height: 150px;
+  min-height: 120px;
+  max-height: 180px;
 }
 
 .chess-chat-column {
@@ -492,17 +492,18 @@
   flex-direction: column;
   justify-content: space-around;
   width: 14px;
-  color: var(--ch-muted);
+  color: var(--ch-gold-soft);
   font-size: 11px;
+  font-weight: 600;
   text-align: center;
 }
 
 .board-frame {
   flex: 1;
-  border: 6px solid var(--ch-gold);
+  border: 5px solid rgba(148, 163, 184, 0.4);
   border-radius: 6px;
   overflow: hidden;
-  box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.6);
   position: relative;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -555,12 +556,14 @@
 
 .sq.piece-w .piece-char {
   color: #ffffff;
-  text-shadow: 0 0 2px #000, 0 2px 4px rgba(0,0,0,0.6);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9), 0 2px 5px rgba(0,0,0,0.75);
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.45));
 }
 
 .sq.piece-b .piece-char {
-  color: #1a1a1a;
-  text-shadow: 0 0 2px #fff, 0 2px 4px rgba(0,0,0,0.5);
+  color: #12151c;
+  text-shadow: 0 0 2px rgba(255,255,255,0.95), 0 0 5px rgba(255,255,255,0.55), 0 2px 4px rgba(0,0,0,0.9);
+  filter: drop-shadow(0 1px 2px rgba(255,255,255,0.3));
 }
 
 .sq.selected { box-shadow: inset 0 0 0 4px var(--ch-gold-soft); }
@@ -571,7 +574,8 @@
   width: 26%;
   height: 26%;
   border-radius: 50%;
-  background: rgba(20,15,10,0.35);
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
   z-index: 1;
 }
 
@@ -598,8 +602,9 @@
   display: flex;
   justify-content: space-between;
   padding: 4px 4px 0 20px;
-  color: var(--ch-muted);
+  color: var(--ch-gold-soft);
   font-size: 11px;
+  font-weight: 600;
 }
 
 /* Guide Card */
@@ -851,12 +856,12 @@
 
 .promo-btn.piece-w {
   color: #ffffff;
-  text-shadow: 0 0 2px #000, 0 2px 4px rgba(0,0,0,0.6);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9), 0 2px 4px rgba(0,0,0,0.7);
 }
 
 .promo-btn.piece-b {
-  color: #1a1a1a;
-  text-shadow: 0 0 2px #fff, 0 2px 4px rgba(0,0,0,0.5);
+  color: #12151c;
+  text-shadow: 0 0 2px rgba(255,255,255,0.95), 0 0 5px rgba(255,255,255,0.55), 0 2px 4px rgba(0,0,0,0.9);
 }
 
 .result-banner {

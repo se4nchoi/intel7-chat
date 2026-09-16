@@ -463,6 +463,11 @@ class OmokManager:
         room["result"] = result
         if room["black"] and room["white"]:
             record_omok_result(int(room["black"]["id"]), int(room["white"]["id"]), result.get("winner"))
+            try:
+                room["stats"][str(room["black"]["id"])] = get_omok_stats(int(room["black"]["id"]))
+                room["stats"][str(room["white"]["id"])] = get_omok_stats(int(room["white"]["id"]))
+            except Exception:
+                pass
 
         room_id = room["id"]
         previous = self.result_reset_tasks.pop(room_id, None)

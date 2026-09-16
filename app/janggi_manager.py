@@ -490,6 +490,11 @@ class JanggiManager:
         room["result"] = result
         if room["cho"] and room["han"]:
             record_janggi_result(int(room["cho"]["id"]), int(room["han"]["id"]), result.get("winner"))
+            try:
+                room["stats"][str(room["cho"]["id"])] = get_janggi_stats(int(room["cho"]["id"]))
+                room["stats"][str(room["han"]["id"])] = get_janggi_stats(int(room["han"]["id"]))
+            except Exception:
+                pass
 
         room_id = room["id"]
         previous = self.result_reset_tasks.pop(room_id, None)

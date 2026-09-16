@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -12,8 +12,10 @@ const files = (await readdir(javascriptDirectory))
 const failures = [];
 for (const name of files) {
   const filePath = path.join(javascriptDirectory, name);
-  const result = spawnSync(process.execPath, ['--check', filePath], {
+  const content = await readFile(filePath, 'utf8');
+  const result = spawnSync(process.execPath, ['--input-type=module', '--check', '-'], {
     cwd: repositoryRoot,
+    input: content,
     encoding: 'utf8',
   });
   if (result.status !== 0) {

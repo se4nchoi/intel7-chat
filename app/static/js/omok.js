@@ -13,6 +13,7 @@ let currentRoom = null;
 let myColor = null; // 'b', 'w', or null
 let omHistoryPreviewIndex = null;
 let clockInterval = null;
+let lastResultKeyHandled = null;
 
 const $ = id => document.getElementById(id);
 
@@ -97,6 +98,26 @@ export function initOmokListeners() {
 
   const btnReturnLive = $('omBtnReturnLive');
   if (btnReturnLive) btnReturnLive.addEventListener('click', clearOmHistoryPreview);
+
+  const btnCancelFoul = $('omBtnCancelFoul');
+  if (btnCancelFoul) btnCancelFoul.addEventListener('click', closeOmFoulModal);
+  const btnConfirmFoul = $('omBtnConfirmFoul');
+  if (btnConfirmFoul) {
+    btnConfirmFoul.addEventListener('click', () => {
+      if (pendingFoulMove) {
+        const { col, row } = pendingFoulMove;
+        closeOmFoulModal();
+        sendOmAction('move', { col, row });
+        playStoneClickSound();
+      }
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeOmFoulModal();
+    }
+  });
 
   // Room chat
   const chatForm = $('omChatForm');
@@ -281,15 +302,29 @@ function renderOmRoomList(rooms) {
   });
 }
 
+function getOmStatText(id) {
+  if (!id || !currentRoom?.stats) return '0승 0무 0패';
+  const s = currentRoom.stats[id] || currentRoom.stats[String(id)];
+  if (!s) return '0승 0무 0패';
+  return `${s.wins || 0}승 ${s.draws || 0}무 ${s.losses || 0}패`;
+}
+
 function updateOmRoomState(room) {
+  const isNewRoom = (!currentRoom && room) || (currentRoom && room && currentRoom.id !== room.id);
   currentRoom = room;
   const lobby = $('omLobbyScreen');
   const game = $('omGameScreen');
 
   if (!room) {
+    closeOmFoulModal();
     if (lobby) lobby.classList.remove('hidden');
     if (game) game.classList.add('hidden');
+    resetOmChat();
     return;
+  }
+
+  if (isNewRoom) {
+    resetOmChat();
   }
 
   if (lobby) lobby.classList.add('hidden');
@@ -311,17 +346,29 @@ function updateOmRoomState(room) {
   $('omBlackName').textContent = room.black ? blackOwnerMark + room.black.name : '흑 플레이어 대기 중';
   $('omWhiteName').textContent = room.white ? whiteOwnerMark + room.white.name : '백 플레이어 대기 중';
 
-  const blackBadge = $('omBlackReadyBadge');
-  if (blackBadge) {
-    blackBadge.classList.toggle('hidden', !room.black);
-    blackBadge.className = 'chess-ready-badge ' + (room.black_ready ? 'is-ready' : 'not-ready');
-    blackBadge.textContent = room.black_ready ? 'READY' : '대기 중';
+  const blackStatBadge = $('omBlackBadge');
+  if (blackStatBadge) {
+    blackStatBadge.classList.toggle('hidden', !room.black);
+    blackStatBadge.textContent = room.black ? getOmStatText(room.black.id) : '';
   }
-  const whiteBadge = $('omWhiteReadyBadge');
-  if (whiteBadge) {
-    whiteBadge.classList.toggle('hidden', !room.white);
-    whiteBadge.className = 'chess-ready-badge ' + (room.white_ready ? 'is-ready' : 'not-ready');
-    whiteBadge.textContent = room.white_ready ? 'READY' : '대기 중';
+
+  const whiteStatBadge = $('omWhiteBadge');
+  if (whiteStatBadge) {
+    whiteStatBadge.classList.toggle('hidden', !room.white);
+    whiteStatBadge.textContent = room.white ? getOmStatText(room.white.id) : '';
+  }
+
+  const blackReadyBadge = $('omBlackReadyBadge');
+  if (blackReadyBadge) {
+    blackReadyBadge.classList.toggle('hidden', !room.black);
+    blackReadyBadge.className = 'chess-ready-badge ' + (room.black_ready ? 'is-ready' : 'not-ready');
+    blackReadyBadge.textContent = room.black_ready ? 'READY' : '대기 중';
+  }
+  const whiteReadyBadge = $('omWhiteReadyBadge');
+  if (whiteReadyBadge) {
+    whiteReadyBadge.classList.toggle('hidden', !room.white);
+    whiteReadyBadge.className = 'chess-ready-badge ' + (room.white_ready ? 'is-ready' : 'not-ready');
+    whiteReadyBadge.textContent = room.white_ready ? 'READY' : '대기 중';
   }
 
   // Start & Role buttons
@@ -367,20 +414,40 @@ function updateOmRoomState(room) {
 
   // Status banner
   if (room.result) {
+    closeOmFoulModal();
     $('omStatusText').textContent = `대국 종료: ${room.result.desc || ''}`;
     $('omTurnBadge').classList.add('hidden');
-  } else if (room.game_started) {
-    $('omTurnBadge').classList.remove('hidden');
-    $('omTurnText').textContent = `${room.active_turn === 'b' ? '흑(Black)' : '백(White)'} 차례`;
-    $('omStatusText').textContent = `${room.move_history?.length || 0}수 진행 중`;
+    if (JSON.stringify(room.result) !== lastResultKeyHandled) {
+      lastResultKeyHandled = JSON.stringify(room.result);
+      const res = room.result;
+      if (!res.winner) {
+        showToast(`🤝 오목 무승부: ${res.desc || '무승부로 종료되었습니다.'}`, 'info');
+      } else if (myColor) {
+        if (res.winner === myColor) {
+          showToast(`🎉 오목 승리! ${res.desc || '축하합니다! 대국에서 승리하셨습니다.'}`, 'success');
+        } else {
+          showToast(`💀 오목 패배: ${res.desc || '아쉽게도 대국에서 패배하였습니다.'}`, 'warning');
+        }
+      } else {
+        const winnerName = res.winner === 'b' ? '흑(Black)' : '백(White)';
+        showToast(`⚫ 오목 대국 종료: ${winnerName} 승리 (${res.desc || ''})`, 'info');
+      }
+    }
   } else {
-    $('omTurnBadge').classList.add('hidden');
-    if (!isBothSeated) {
-      $('omStatusText').textContent = '상대 플레이어 착석을 기다리는 중입니다.';
-    } else if (!isBothReady) {
-      $('omStatusText').textContent = '양측 플레이어 준비(Ready)를 기다리는 중입니다.';
+    lastResultKeyHandled = null;
+    if (room.game_started) {
+      $('omTurnBadge').classList.remove('hidden');
+      $('omTurnText').textContent = `${room.active_turn === 'b' ? '흑(Black)' : '백(White)'} 차례`;
+      $('omStatusText').textContent = `${room.move_history?.length || 0}수 진행 중`;
     } else {
-      $('omStatusText').textContent = '👑 양측 준비 완료! 방장이 "대국 시작"을 눌러주세요.';
+      $('omTurnBadge').classList.add('hidden');
+      if (!isBothSeated) {
+        $('omStatusText').textContent = '상대 플레이어 착석을 기다리는 중입니다.';
+      } else if (!isBothReady) {
+        $('omStatusText').textContent = '양측 플레이어 준비(Ready)를 기다리는 중입니다.';
+      } else {
+        $('omStatusText').textContent = '👑 양측 준비 완료! 방장이 "대국 시작"을 눌러주세요.';
+      }
     }
   }
 
@@ -400,9 +467,12 @@ function updateOmRoomState(room) {
       specList.innerHTML = '<span style="font-size:12px;color:var(--om-muted);opacity:0.6;">관전자가 없습니다.</span>';
     } else {
       specList.innerHTML = spectators.map(s => `
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.04);">
-          <span style="font-size:11px;">👁️</span>
-          <span style="color:var(--om-text);font-weight:600;">${s.name}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.04);">
+          <div style="display:flex;align-items:center;gap:5px;min-width:0;">
+            <span style="font-size:11px;flex-shrink:0;">👁️</span>
+            <span style="color:var(--om-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.name)}</span>
+          </div>
+          <span class="record-badge">${getOmStatText(s.id)}</span>
         </div>
       `).join('');
     }
@@ -415,16 +485,22 @@ function updateOmRoomState(room) {
 function renderOmBoard(room) {
   const svg = $('omBoardSvg');
   const layer = $('omIntersectionsLayer');
+  const box = $('omBoardBox');
   if (!svg || !layer) return;
 
-  const width = 532;
-  const pad = 21;
-  const step = (width - pad * 2) / 14; // 35px
+  const width = (box && box.clientWidth) ? box.clientWidth : 532;
+  const height = (box && box.clientHeight) ? box.clientHeight : 532;
+  const step = 35;
+  const gridSpan = 14 * step; // 490px
+  const padX = Math.max(0, (width - gridSpan) / 2);
+  const padY = Math.max(0, (height - gridSpan) / 2);
 
   const getPt = (c, r) => ({
-    x: pad + c * step,
-    y: pad + r * step
+    x: padX + c * step,
+    y: padY + r * step
   });
+
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
   // Render SVG Grid Lines (15 files x 15 ranks)
   let lines = '';
@@ -449,6 +525,7 @@ function renderOmBoard(room) {
 
   // History preview: reconstruct stones from move_history slice
   const isHistoryPreview = omHistoryPreviewIndex !== null;
+  if (box) box.classList.toggle('review-mode', isHistoryPreview);
   let stones, lastMove, effectiveIsMyTurn;
   if (isHistoryPreview) {
     const histSlice = (room.move_history || []).slice(0, omHistoryPreviewIndex + 1);
@@ -474,6 +551,8 @@ function renderOmBoard(room) {
   const foulMove = !isHistoryPreview ? room.result?.foul_move : null;
   const isFoulStone = (c, r) => foulMove && foulMove[0] === c && foulMove[1] === r;
 
+  const canSeeForbidden = (myColor === 'b' || myColor === null);
+
   const forbiddenMap = {};
   if (!isHistoryPreview && room.active_turn === 'b' && !room.result) {
     (room.board?.forbidden_points || []).forEach(f => {
@@ -489,9 +568,10 @@ function renderOmBoard(room) {
       const isWinningStone = winningLineSet.has(`${c},${r}`);
       const isFoul = isFoulStone(c, r);
       const foulType = forbiddenMap[`${c},${r}`];
+      const showForbidden = canSeeForbidden && !!foulType;
 
       const ptDiv = document.createElement('div');
-      ptDiv.className = `om-point ${isLastMove ? 'last-move' : ''} ${isWinningStone ? 'winning-stone' : ''} ${isFoul ? 'foul-stone' : ''} ${foulType ? 'forbidden' : ''}`;
+      ptDiv.className = `om-point ${isLastMove ? 'last-move' : ''} ${isWinningStone ? 'winning-stone' : ''} ${isFoul ? 'foul-stone' : ''} ${showForbidden ? 'forbidden' : ''}`;
       ptDiv.style.left = `${pt.x}px`;
       ptDiv.style.top = `${pt.y}px`;
 
@@ -501,20 +581,20 @@ function renderOmBoard(room) {
         ptDiv.appendChild(stoneDiv);
       } else {
         // Empty intersection
-        if (!isHistoryPreview && foulType && room.active_turn === 'b') {
+        if (!isHistoryPreview && showForbidden && room.active_turn === 'b') {
           const badge = document.createElement('span');
           badge.className = 'om-forbidden-marker';
           const foulLabel = foulType === '33' ? '3·3' : (foulType === '44' ? '4·4' : '6+');
           badge.textContent = foulLabel;
-          badge.title = `흑 ${foulLabel} 금수 (착수 시 자동패)`;
+          badge.title = `흑 ${foulLabel} 금수 자리 (착수 시 백 자동승리)`;
           ptDiv.appendChild(badge);
         }
 
         if (effectiveIsMyTurn) {
-          // Hover preview
+          // Hover preview (Black can see preview-forbidden warning if hovering on a forbidden spot)
           ptDiv.addEventListener('mouseenter', () => {
             ptDiv.classList.add('hover-preview', myColor === 'b' ? 'preview-b' : 'preview-w');
-            if (foulType && myColor === 'b') {
+            if (showForbidden && myColor === 'b') {
               ptDiv.classList.add('preview-forbidden');
             }
           });
@@ -527,9 +607,8 @@ function renderOmBoard(room) {
       ptDiv.addEventListener('click', () => {
         if (!color && effectiveIsMyTurn) {
           if (foulType && myColor === 'b') {
-            const foulKorean = foulType === '33' ? '3-3(삼삼)' : (foulType === '44' ? '4-4(사사)' : '장목(6목 이상)');
-            const proceed = confirm(`⚠️ 경고: [${foulKorean} 금수 자리]입니다!\n착수 시 국제 렌주룰에 의해 즉시 "자동패(금수패)" 처리됩니다.\n\n정말로 착수하시겠습니까?`);
-            if (!proceed) return;
+            showOmFoulModal(c, r, foulType);
+            return;
           }
           sendOmAction('move', { col: c, row: r });
           playStoneClickSound();
@@ -539,6 +618,27 @@ function renderOmBoard(room) {
       layer.appendChild(ptDiv);
     }
   }
+}
+
+let pendingFoulMove = null;
+
+function showOmFoulModal(col, row, foulType) {
+  pendingFoulMove = { col, row };
+  const modal = $('omFoulModal');
+  const desc = $('omFoulModalDesc');
+  if (!modal) return;
+
+  const foulKorean = foulType === '33' ? '3-3(삼삼) 금수' : (foulType === '44' ? '4-4(사사) 금수' : '장목(6목 이상) 금수');
+  if (desc) {
+    desc.innerHTML = `해당 위치는 흑(黑) <b>[${foulKorean}]</b> 자리입니다.`;
+  }
+  modal.classList.remove('hidden');
+}
+
+function closeOmFoulModal() {
+  pendingFoulMove = null;
+  const modal = $('omFoulModal');
+  if (modal) modal.classList.add('hidden');
 }
 
 function handleResign() {
@@ -558,7 +658,9 @@ function handleLeaveRoom() {
 function renderOmMoveHistory(history) {
   const list = $('omMoveList');
   const countSpan = $('omMoveCount');
-  if (countSpan) countSpan.textContent = history.length;
+  if (countSpan) {
+    countSpan.textContent = omHistoryPreviewIndex !== null ? `${omHistoryPreviewIndex + 1}/${history.length}` : `${history.length}`;
+  }
   if (!list) return;
 
   if (!history.length) {
@@ -603,6 +705,8 @@ function jumpToOmHistory(idx) {
 function clearOmHistoryPreview() {
   if (omHistoryPreviewIndex === null) return;
   omHistoryPreviewIndex = null;
+  const box = $('omBoardBox');
+  if (box) box.classList.remove('review-mode');
   renderOmBoard(currentRoom);
   renderOmMoveHistory(currentRoom?.move_history || []);
   updateOmReturnLiveBanner();
@@ -610,15 +714,13 @@ function clearOmHistoryPreview() {
 
 function updateOmReturnLiveBanner() {
   const btnReturnLive = $('omBtnReturnLive');
-  const banner = $('omReturnLiveBanner');
-  const label = $('omInspectMoveLabel');
+  const countSpan = $('omMoveCount');
   const isReviewing = omHistoryPreviewIndex !== null;
+  const total = currentRoom?.move_history?.length || 0;
 
   if (btnReturnLive) btnReturnLive.classList.toggle('hidden', !isReviewing);
-  if (banner) banner.classList.toggle('hidden', !isReviewing);
-  if (isReviewing && label) {
-    const total = currentRoom?.move_history?.length || 0;
-    label.textContent = `🔍 기보 복기 중 (${omHistoryPreviewIndex + 1}수 / 총 ${total}수)`;
+  if (countSpan) {
+    countSpan.textContent = isReviewing ? `${omHistoryPreviewIndex + 1}/${total}` : `${total}`;
   }
 }
 
@@ -652,6 +754,12 @@ function startOmClock(room) {
 
   updateTimers();
   clockInterval = setInterval(updateTimers, 500);
+}
+
+function resetOmChat() {
+  const container = $('omChatMessages');
+  if (!container) return;
+  container.innerHTML = '<div class="chess-chat-notice">실시간 대화창입니다.</div>';
 }
 
 function appendOmChat(sender, text, timeStr) {

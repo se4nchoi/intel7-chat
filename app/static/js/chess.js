@@ -392,6 +392,7 @@ function handleLeaveRoom() {
     if (!confirm('게임 도중에 나가면 기권패 처리됩니다. 나가시겠습니까?')) return;
   }
   sendWs({ action: 'leave_room', room_id: currentRoom.id });
+  clearRoomChatStorage(currentRoom.id);
   currentRoom = null;
   myColor = null;
   sessionStorage.removeItem(SAVED_CHESS_ROOM_KEY);
@@ -561,6 +562,9 @@ function syncRoomState(room) {
   const isNewRoom = !currentRoom || currentRoom.id !== room.id;
   const prevLatestIdx = (currentRoom?.move_history?.length || 1) - 1;
   const prevHistoryLen = currentRoom?.move_history?.length || 0;
+  if (isNewRoom && currentRoom?.id) {
+    clearRoomChatStorage(currentRoom.id);
+  }
   currentRoom = room;
   sessionStorage.setItem(SAVED_CHESS_ROOM_KEY, room.id);
   showGameScreen();
@@ -1143,6 +1147,13 @@ function updateStatusUI() {
   }
 }
 
+function getChessStatText(id) {
+  if (!id || !currentRoom?.stats) return '0승 0무 0패';
+  const s = currentRoom.stats[id] || currentRoom.stats[String(id)];
+  if (!s) return '0승 0무 0패';
+  return `${s.wins || 0}승 ${s.draws || 0}무 ${s.losses || 0}패`;
+}
+
 function renderPlayersAndSpectators() {
   const box = $('chPlayersBox');
   if (!currentRoom) return;
@@ -1150,12 +1161,6 @@ function renderPlayersAndSpectators() {
   const myUserId = state.currentUser?.id;
   const canJoinWhite = !currentRoom.white && !currentRoom.game_started && !myColor;
   const canJoinBlack = !currentRoom.black && !currentRoom.game_started && !myColor;
-
-  const getStat = (id) => {
-    if (!id || !currentRoom.stats || !currentRoom.stats[id]) return '(0승 0무 0패)';
-    const s = currentRoom.stats[id];
-    return `(${s.wins}승 ${s.draws}무 ${s.losses}패)`;
-  };
 
   const whiteReadyBadge = currentRoom.white ? (currentRoom.white_ready ? '<span class="chess-ready-badge is-ready">READY</span>' : '<span class="chess-ready-badge not-ready">대기 중</span>') : '';
   const blackReadyBadge = currentRoom.black ? (currentRoom.black_ready ? '<span class="chess-ready-badge is-ready">READY</span>' : '<span class="chess-ready-badge not-ready">대기 중</span>') : '';
@@ -1173,8 +1178,8 @@ function renderPlayersAndSpectators() {
           </span>
         </div>
         <div class="chess-player-meta">
+          ${currentRoom.white ? `<span class="record-badge">${getChessStatText(currentRoom.white.id)}</span>` : ''}
           ${whiteReadyBadge}
-          ${currentRoom.white ? `<span class="record-badge">${getStat(currentRoom.white.id)}</span>` : ''}
         </div>
       </div>
       ${canJoinWhite ? `<button class="ch-btn ch-btn-primary small" style="margin-top:6px;" data-pick-role="w" onclick="window.pickChessRole('w')">백으로 앉기</button>` : ''}
@@ -1189,8 +1194,8 @@ function renderPlayersAndSpectators() {
           </span>
         </div>
         <div class="chess-player-meta">
+          ${currentRoom.black ? `<span class="record-badge">${getChessStatText(currentRoom.black.id)}</span>` : ''}
           ${blackReadyBadge}
-          ${currentRoom.black ? `<span class="record-badge">${getStat(currentRoom.black.id)}</span>` : ''}
         </div>
       </div>
       ${canJoinBlack ? `<button class="ch-btn ch-btn-primary small" style="margin-top:6px;" data-pick-role="b" onclick="window.pickChessRole('b')">흑으로 앉기</button>` : ''}
@@ -1213,11 +1218,14 @@ function renderPlayersAndSpectators() {
     specBox.innerHTML = specs.map(s => {
       const qIndex = (currentRoom.match_queue || []).findIndex(q => q.id === s.id);
       const isQueued = qIndex !== -1;
-      const statText = getStat(s.id);
+      const statText = getChessStatText(s.id);
       return `
-        <div class="spec-item">
-          <span>👁️ ${escapeHtml(s.name)} ${sameUser(s.id, myUserId) ? '(나)' : ''} <span class="record-badge">${statText}</span></span>
-          ${isQueued ? `<span style="color:var(--ch-gold);font-weight:bold;">[대기 ${qIndex + 1}번]</span>` : ''}
+        <div class="spec-item" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">👁️ ${escapeHtml(s.name)} ${sameUser(s.id, myUserId) ? '(나)' : ''}</span>
+          <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+            <span class="record-badge">${statText}</span>
+            ${isQueued ? `<span style="color:var(--ch-gold);font-weight:bold;font-size:11px;">[대기 ${qIndex + 1}번]</span>` : ''}
+          </div>
         </div>
       `;
     }).join('');
@@ -1400,17 +1408,22 @@ function showResultBanner(res) {
   if (!res.winner) {
     banner.textContent = '🤝 무승부!';
     banner.classList.add('draw');
+    showToast(`🤝 체스 무승부: ${res.desc || '무승부로 종료되었습니다.'}`, 'info');
   } else if (myColor) {
     if (res.winner === myColor) {
       banner.textContent = '🎉 승리!';
       banner.classList.add('win');
+      showToast(`🎉 체스 승리! ${res.desc || '축하합니다! 대국에서 승리하셨습니다.'}`, 'success');
     } else {
       banner.textContent = '💀 패배...';
       banner.classList.add('lose');
+      showToast(`💀 체스 패배: ${res.desc || '아쉽게도 대국에서 패배하였습니다.'}`, 'warning');
     }
   } else {
+    const winnerName = res.winner === 'w' ? '백(White)' : '흑(Black)';
     banner.textContent = res.winner === 'w' ? '🏆 백(White) 승리!' : '🏆 흑(Black) 승리!';
     banner.classList.add('win');
+    showToast(`🏁 체스 대국 종료: ${winnerName} 승리 (${res.desc || ''})`, 'info');
   }
 
   banner.classList.add('show');
@@ -1507,10 +1520,30 @@ function renderChessRankings(list) {
   });
 }
 
-// ================= IN-ROOM REAL-TIME CHAT (LOCALSTORAGE) =================
+// ================= IN-ROOM REAL-TIME CHAT (SESSION-SCOPED) =================
 function getRoomChatKey(roomId) {
   return `bamboo_chess_chat_${roomId}`;
 }
+
+function clearRoomChatStorage(roomId) {
+  if (!roomId) return;
+  try {
+    sessionStorage.removeItem(getRoomChatKey(roomId));
+    localStorage.removeItem(getRoomChatKey(roomId));
+  } catch (_) {}
+}
+
+function cleanupLegacyStorageResidue() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('bamboo_chess_chat_')) {
+        localStorage.removeItem(k);
+      }
+    }
+  } catch (_) {}
+}
+cleanupLegacyStorageResidue();
 
 function loadRoomChat(roomId) {
   const container = $('chChatMessages');
@@ -1518,7 +1551,9 @@ function loadRoomChat(roomId) {
   container.innerHTML = '<div class="chess-chat-notice">대국자와 관전자가 실시간으로 대화할 수 있습니다.</div>';
   if (!roomId) return;
   try {
-    const raw = localStorage.getItem(getRoomChatKey(roomId));
+    // Clear any lingering localStorage key for this room
+    try { localStorage.removeItem(getRoomChatKey(roomId)); } catch (_) {}
+    const raw = sessionStorage.getItem(getRoomChatKey(roomId));
     if (raw) {
       const list = JSON.parse(raw);
       if (Array.isArray(list)) {
@@ -1526,7 +1561,7 @@ function loadRoomChat(roomId) {
       }
     }
   } catch (e) {
-    console.warn('Failed to load chess chat from localStorage:', e);
+    console.warn('Failed to load chess chat from sessionStorage:', e);
   }
   container.scrollTop = container.scrollHeight;
 }
@@ -1536,7 +1571,7 @@ function saveRoomChatMessage(roomId, msg) {
   try {
     const key = getRoomChatKey(roomId);
     let list = [];
-    const raw = localStorage.getItem(key);
+    const raw = sessionStorage.getItem(key);
     if (raw) {
       list = JSON.parse(raw);
       if (!Array.isArray(list)) list = [];
@@ -1545,9 +1580,9 @@ function saveRoomChatMessage(roomId, msg) {
     if (list.length > 50) {
       list = list.slice(-50);
     }
-    localStorage.setItem(key, JSON.stringify(list));
+    sessionStorage.setItem(key, JSON.stringify(list));
   } catch (e) {
-    console.warn('Failed to save chess chat to localStorage:', e);
+    console.warn('Failed to save chess chat to sessionStorage:', e);
   }
 }
 

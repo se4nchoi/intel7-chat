@@ -416,6 +416,9 @@ export function startInlineMessageEdit(msg) {
 
   const textarea = document.createElement('textarea');
   textarea.className = 'inline-edit-input';
+  textarea.spellcheck = false;
+  textarea.setAttribute('autocorrect', 'off');
+  textarea.setAttribute('autocapitalize', 'off');
   textarea.value = originalContent;
 
   const actionsBox = document.createElement('div');

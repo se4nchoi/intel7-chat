@@ -170,7 +170,7 @@
 .om-game-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 260px 1fr 280px;
+  grid-template-columns: 280px 1fr 280px;
   overflow: hidden;
   height: calc(100% - 46px);
 }
@@ -208,7 +208,7 @@
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), inset 0 0 30px rgba(0, 0, 0, 0.25);
   position: relative;
   user-select: none;
-  box-sizing: border-box;
+  box-sizing: content-box;
 }
 
 .om-board-svg {
@@ -342,5 +342,93 @@
 @keyframes om-foul-pulse {
   0% { transform: scale(1); filter: drop-shadow(0 0 6px #ef4444); }
   100% { transform: scale(1.15); filter: drop-shadow(0 0 14px #dc2626); }
+}
+
+/* -------------------------------------------------------------
+   Omok Foul Warning Modal (흑 금수 착수 경고 모달)
+   ------------------------------------------------------------- */
+.om-foul-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #18181b;
+  border: 1.5px solid #ef4444;
+  border-radius: 12px;
+  padding: 22px 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 25px rgba(239, 68, 68, 0.25);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 360px;
+  max-width: 90%;
+  box-sizing: border-box;
+  animation: om-modal-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes om-modal-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -46%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.om-foul-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.om-foul-modal-icon {
+  font-size: 20px;
+}
+
+.om-foul-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f87171;
+}
+
+.om-foul-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.om-foul-modal-desc {
+  margin: 0;
+  font-size: 13.5px;
+  color: #f4f4f5;
+  line-height: 1.5;
+}
+
+.om-foul-modal-desc b {
+  color: #fca5a5;
+}
+
+.om-foul-modal-alert {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #fca5a5;
+  line-height: 1.4;
+}
+
+.om-foul-modal-alert b {
+  color: #ffffff;
+}
+
+.om-foul-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
 }
 

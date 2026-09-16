@@ -14,6 +14,7 @@ let myColor = null; // 'cho', 'han', or null
 let selectedPoint = null; // { col, row }
 let jgHistoryPreviewIndex = null;
 let clockInterval = null;
+let lastResultKeyHandled = null;
 
 const $ = id => document.getElementById(id);
 
@@ -314,7 +315,15 @@ function renderJgRoomList(rooms) {
   });
 }
 
+function getJgStatText(id) {
+  if (!id || !currentRoom?.stats) return '0승 0무 0패';
+  const s = currentRoom.stats[id] || currentRoom.stats[String(id)];
+  if (!s) return '0승 0무 0패';
+  return `${s.wins || 0}승 ${s.draws || 0}무 ${s.losses || 0}패`;
+}
+
 function updateJgRoomState(room) {
+  const isNewRoom = (!currentRoom && room) || (currentRoom && room && currentRoom.id !== room.id);
   currentRoom = room;
   const lobby = $('jgLobbyScreen');
   const game = $('jgGameScreen');
@@ -322,7 +331,12 @@ function updateJgRoomState(room) {
   if (!room) {
     if (lobby) lobby.classList.remove('hidden');
     if (game) game.classList.add('hidden');
+    resetJgChat();
     return;
+  }
+
+  if (isNewRoom) {
+    resetJgChat();
   }
 
   if (lobby) lobby.classList.add('hidden');
@@ -343,20 +357,33 @@ function updateJgRoomState(room) {
   const hanOwnerMark = room.han && String(room.owner_id) === String(room.han.id) ? '👑 ' : '';
   $('jgChoName').textContent = room.cho ? choOwnerMark + room.cho.name : '초 플레이어 대기 중';
   $('jgHanName').textContent = room.han ? hanOwnerMark + room.han.name : '한 플레이어 대기 중';
+
+  const choStatBadge = $('jgChoBadge');
+  if (choStatBadge) {
+    choStatBadge.classList.toggle('hidden', !room.cho);
+    choStatBadge.textContent = room.cho ? getJgStatText(room.cho.id) : '';
+  }
+
+  const hanStatBadge = $('jgHanBadge');
+  if (hanStatBadge) {
+    hanStatBadge.classList.toggle('hidden', !room.han);
+    hanStatBadge.textContent = room.han ? getJgStatText(room.han.id) : '';
+  }
+
   $('jgChoFormationBadge').textContent = `[${getFormationName(room.cho_formation)}]`;
   $('jgHanFormationBadge').textContent = `[${getFormationName(room.han_formation)}]`;
 
-  const choBadge = $('jgChoReadyBadge');
-  if (choBadge) {
-    choBadge.classList.toggle('hidden', !room.cho);
-    choBadge.className = 'chess-ready-badge ' + (room.cho_ready ? 'is-ready' : 'not-ready');
-    choBadge.textContent = room.cho_ready ? 'READY' : '대기 중';
+  const choReadyBadge = $('jgChoReadyBadge');
+  if (choReadyBadge) {
+    choReadyBadge.classList.toggle('hidden', !room.cho);
+    choReadyBadge.className = 'chess-ready-badge ' + (room.cho_ready ? 'is-ready' : 'not-ready');
+    choReadyBadge.textContent = room.cho_ready ? 'READY' : '대기 중';
   }
-  const hanBadge = $('jgHanReadyBadge');
-  if (hanBadge) {
-    hanBadge.classList.toggle('hidden', !room.han);
-    hanBadge.className = 'chess-ready-badge ' + (room.han_ready ? 'is-ready' : 'not-ready');
-    hanBadge.textContent = room.han_ready ? 'READY' : '대기 중';
+  const hanReadyBadge = $('jgHanReadyBadge');
+  if (hanReadyBadge) {
+    hanReadyBadge.classList.toggle('hidden', !room.han);
+    hanReadyBadge.className = 'chess-ready-badge ' + (room.han_ready ? 'is-ready' : 'not-ready');
+    hanReadyBadge.textContent = room.han_ready ? 'READY' : '대기 중';
   }
 
   // Start & Role buttons
@@ -405,18 +432,37 @@ function updateJgRoomState(room) {
   if (room.result) {
     $('jgStatusText').textContent = `대국 종료: ${room.result.desc || ''}`;
     $('jgTurnBadge').classList.add('hidden');
-  } else if (room.game_started) {
-    $('jgTurnBadge').classList.remove('hidden');
-    $('jgTurnText').textContent = `${room.active_turn === 'cho' ? '초(楚)' : '한(漢)'} 차례`;
-    $('jgStatusText').textContent = `${room.move_history?.length || 1}수 진행 중`;
+    if (JSON.stringify(room.result) !== lastResultKeyHandled) {
+      lastResultKeyHandled = JSON.stringify(room.result);
+      const res = room.result;
+      if (!res.winner) {
+        showToast(`🤝 장기 무승부: ${res.desc || '무승부로 종료되었습니다.'}`, 'info');
+      } else if (myColor) {
+        if (res.winner === myColor) {
+          showToast(`🎉 장기 승리! ${res.desc || '축하합니다! 대국에서 승리하셨습니다.'}`, 'success');
+        } else {
+          showToast(`💀 장기 패배: ${res.desc || '아쉽게도 대국에서 패배하였습니다.'}`, 'warning');
+        }
+      } else {
+        const winnerName = res.winner === 'cho' ? '초(楚)' : '한(漢)';
+        showToast(`🀄 장기 대국 종료: ${winnerName} 승리 (${res.desc || ''})`, 'info');
+      }
+    }
   } else {
-    $('jgTurnBadge').classList.add('hidden');
-    if (!isBothSeated) {
-      $('jgStatusText').textContent = '상대 플레이어 착석을 기다리는 중입니다.';
-    } else if (!isBothReady) {
-      $('jgStatusText').textContent = '양측 플레이어 준비(Ready)를 기다리는 중입니다.';
+    lastResultKeyHandled = null;
+    if (room.game_started) {
+      $('jgTurnBadge').classList.remove('hidden');
+      $('jgTurnText').textContent = `${room.active_turn === 'cho' ? '초(楚)' : '한(漢)'} 차례`;
+      $('jgStatusText').textContent = `${room.move_history?.length || 1}수 진행 중`;
     } else {
-      $('jgStatusText').textContent = '👑 양측 준비 완료! 방장이 "대국 시작"을 눌러주세요.';
+      $('jgTurnBadge').classList.add('hidden');
+      if (!isBothSeated) {
+        $('jgStatusText').textContent = '상대 플레이어 착석을 기다리는 중입니다.';
+      } else if (!isBothReady) {
+        $('jgStatusText').textContent = '양측 플레이어 준비(Ready)를 기다리는 중입니다.';
+      } else {
+        $('jgStatusText').textContent = '👑 양측 준비 완료! 방장이 "대국 시작"을 눌러주세요.';
+      }
     }
   }
 
@@ -436,9 +482,12 @@ function updateJgRoomState(room) {
       specList.innerHTML = '<span style="font-size:12px;color:var(--jg-muted);opacity:0.6;">관전자가 없습니다.</span>';
     } else {
       specList.innerHTML = spectators.map(s => `
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.04);">
-          <span style="font-size:11px;">👁️</span>
-          <span style="color:var(--jg-text);font-weight:600;">${s.name}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.04);">
+          <div style="display:flex;align-items:center;gap:5px;min-width:0;">
+            <span style="font-size:11px;flex-shrink:0;">👁️</span>
+            <span style="color:var(--jg-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.name)}</span>
+          </div>
+          <span class="record-badge">${getJgStatText(s.id)}</span>
         </div>
       `).join('');
     }
@@ -462,20 +511,23 @@ function getFormationName(f) {
 function renderJgBoard(room) {
   const svg = $('jgBoardSvg');
   const layer = $('jgIntersectionsLayer');
+  const box = $('jgBoardBox');
   if (!svg || !layer) return;
 
-  const width = 504;
-  const height = 560;
-  const padX = 24;
-  const padY = 25;
-  const stepX = (width - padX * 2) / 8;  // 57px
-  const stepY = (height - padY * 2) / 9; // 56.67px
+  const width = (box && box.clientWidth) ? box.clientWidth : 504;
+  const height = (box && box.clientHeight) ? box.clientHeight : 560;
+  const stepX = 57;
+  const stepY = 56.67;
+  const padX = Math.max(0, (width - 8 * stepX) / 2);
+  const padY = Math.max(0, (height - 9 * stepY) / 2);
 
   const getPt = (c, r) => ({
     x: padX + c * stepX,
     // Cho ranks 0..3 are bottom, Han ranks 6..9 are top
     y: height - (padY + r * stepY)
   });
+
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
   // Render SVG Grid Lines
   let lines = '';
@@ -510,6 +562,7 @@ function renderJgBoard(room) {
 
   // History preview: if reviewing, use snapshot board & last_to from history entry
   const isHistoryPreview = jgHistoryPreviewIndex !== null;
+  if (box) box.classList.toggle('review-mode', isHistoryPreview);
   let boardData, lastTo, effectiveIsMyTurn;
   if (isHistoryPreview) {
     const snap = room.move_history?.[jgHistoryPreviewIndex];
@@ -650,6 +703,10 @@ function handleLeaveRoom() {
 
 function renderJgMoveHistory(history) {
   const list = $('jgMoveList');
+  const countSpan = $('jgMoveCount');
+  if (countSpan) {
+    countSpan.textContent = jgHistoryPreviewIndex !== null ? `${jgHistoryPreviewIndex + 1}/${history.length}` : `${history.length}`;
+  }
   if (!list) return;
   if (!history.length) {
     list.innerHTML = '<div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>';
@@ -696,6 +753,8 @@ function clearJgHistoryPreview() {
   if (jgHistoryPreviewIndex === null) return;
   jgHistoryPreviewIndex = null;
   selectedPoint = null;
+  const box = $('jgBoardBox');
+  if (box) box.classList.remove('review-mode');
   renderJgBoard(currentRoom);
   renderJgMoveHistory(currentRoom?.move_history || []);
   updateJgReturnLiveBanner();
@@ -703,15 +762,13 @@ function clearJgHistoryPreview() {
 
 function updateJgReturnLiveBanner() {
   const btnReturnLive = $('jgBtnReturnLive');
-  const banner = $('jgReturnLiveBanner');
-  const label = $('jgInspectMoveLabel');
+  const countSpan = $('jgMoveCount');
   const isReviewing = jgHistoryPreviewIndex !== null;
+  const total = currentRoom?.move_history?.length || 0;
 
   if (btnReturnLive) btnReturnLive.classList.toggle('hidden', !isReviewing);
-  if (banner) banner.classList.toggle('hidden', !isReviewing);
-  if (isReviewing && label) {
-    const total = currentRoom?.move_history?.length || 0;
-    label.textContent = `🔍 기보 복기 중 (${jgHistoryPreviewIndex + 1}수 / 총 ${total}수)`;
+  if (countSpan) {
+    countSpan.textContent = isReviewing ? `${jgHistoryPreviewIndex + 1}/${total}` : `${total}`;
   }
 }
 
@@ -745,6 +802,12 @@ function startJgClock(room) {
 
   updateTimers();
   clockInterval = setInterval(updateTimers, 500);
+}
+
+function resetJgChat() {
+  const container = $('jgChatMessages');
+  if (!container) return;
+  container.innerHTML = '<div class="chess-chat-notice">실시간 대화창입니다.</div>';
 }
 
 function appendJgChat(sender, text, timeStr) {
