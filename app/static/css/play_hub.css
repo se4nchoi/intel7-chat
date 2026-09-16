@@ -166,10 +166,18 @@
    Standardized Game Topbars & Lobby Headers (Zero Shift)
    ------------------------------------------------------------- */
 #chess-lobby-screen,
+.chess-lobby-screen,
 .jg-lobby,
 .om-lobby {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
   padding: 16px 20px !important;
   box-sizing: border-box !important;
+  gap: 16px !important;
+  overflow-y: auto !important;
 }
 
 .chess-game-topbar,
@@ -679,4 +687,114 @@
   margin-right: 3px;
   filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.6));
 }
+
+/* -------------------------------------------------------------
+   Full-Height Hall of Fame (명예의 전당) & Pinned Table Architecture
+   ------------------------------------------------------------- */
+.play-dialog .chess-rankings-panel {
+  flex: 1 1 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  gap: 12px !important;
+  overflow: hidden !important;
+}
+
+.play-dialog .chess-rank-scoring-note {
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+}
+
+.play-dialog .chess-podium-row {
+  display: none !important; /* Unified 3-game layout without layout shift */
+}
+
+.play-dialog .chess-table-box {
+  flex: 1 1 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  border-radius: 10px !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.play-dialog .chess-table-scroll {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
+}
+
+.play-dialog .chess-table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  font-size: 13px !important;
+  table-layout: fixed !important;
+}
+
+.play-dialog .chess-table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 5 !important;
+  box-sizing: border-box !important;
+  padding: 10px 8px !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+}
+
+.play-dialog .chess-table td {
+  padding: 10px 8px !important;
+  box-sizing: border-box !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* Themed Table Backgrounds, Sticky Headers & Row Highlights */
+.play-dialog.theme-chess .chess-table-box {
+  background: rgba(18, 20, 24, 0.85) !important;
+  border: 1px solid rgba(204, 159, 69, 0.25) !important;
+}
+.play-dialog.theme-chess .chess-table thead th {
+  background: #14171d !important;
+  color: var(--ch-gold-soft) !important;
+  border-bottom: 1px solid rgba(204, 159, 69, 0.2) !important;
+}
+.play-dialog.theme-chess .chess-table tr.my-row td {
+  background: rgba(204, 159, 69, 0.14) !important;
+  font-weight: 700 !important;
+}
+
+.play-dialog.theme-janggi .chess-table-box {
+  background: rgba(15, 23, 20, 0.85) !important;
+  border: 1px solid rgba(52, 211, 153, 0.25) !important;
+}
+.play-dialog.theme-janggi .chess-table thead th {
+  background: #12211a !important;
+  color: #a7f3d0 !important;
+  border-bottom: 1px solid rgba(52, 211, 153, 0.2) !important;
+}
+.play-dialog.theme-janggi .chess-table tr.my-row td {
+  background: rgba(52, 211, 153, 0.14) !important;
+  font-weight: 700 !important;
+}
+
+.play-dialog.theme-omok .chess-table-box {
+  background: rgba(26, 18, 12, 0.85) !important;
+  border: 1px solid rgba(245, 158, 11, 0.25) !important;
+}
+.play-dialog.theme-omok .chess-table thead th {
+  background: #24190e !important;
+  color: #fde68a !important;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.2) !important;
+}
+.play-dialog.theme-omok .chess-table tr.my-row td {
+  background: rgba(245, 158, 11, 0.14) !important;
+  font-weight: 700 !important;
+}
+
 

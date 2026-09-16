@@ -1404,15 +1404,11 @@ function escapeHtml(str) {
 
 // ================= CHESS RANKINGS & HALL OF FAME =================
 async function fetchAndRenderChessRankings() {
-  const podiumRow = $('chess-podium-row');
   const tbody = $('chess-rankings-tbody');
-  if (!podiumRow || !tbody) return;
+  if (!tbody) return;
 
-  if (!podiumRow.children.length) {
-    podiumRow.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--ch-muted);">랭킹 불러오는 중...</div>';
-  }
   if (!tbody.children.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:var(--ch-muted);">랭킹 불러오는 중...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--ch-muted);">랭킹 불러오는 중...</td></tr>';
   }
 
   try {
@@ -1422,50 +1418,21 @@ async function fetchAndRenderChessRankings() {
     renderChessRankings(data.leaderboard || data.rankings || []);
   } catch (err) {
     console.error('Failed to fetch chess rankings:', err);
-    if (!podiumRow.children.length) podiumRow.innerHTML = '';
     if (!tbody.children.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:var(--ch-muted);">랭킹을 불러오지 못했습니다.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--ch-muted);">랭킹을 불러오지 못했습니다.</td></tr>';
     }
   }
 }
 
 function renderChessRankings(list) {
-  const podiumRow = $('chess-podium-row');
   const tbody = $('chess-rankings-tbody');
-  if (!podiumRow || !tbody) return;
+  if (!tbody) return;
 
-  podiumRow.replaceChildren();
   tbody.replaceChildren();
-
-  const top3 = list.slice(0, 3);
-  const podiumIcons = ['👑', '🥈', '🥉'];
-  top3.forEach((item, idx) => {
-    const card = document.createElement('div');
-    card.className = `chess-podium-card rank-${idx + 1}`;
-
-    const icon = document.createElement('div');
-    icon.className = 'podium-icon';
-    icon.textContent = podiumIcons[idx];
-
-    const name = document.createElement('div');
-    name.className = 'podium-name';
-    name.textContent = item.display_name || item.username;
-
-    const score = document.createElement('div');
-    score.className = 'podium-score';
-    score.textContent = `${item.wins || 0}승`;
-
-    const sub = document.createElement('div');
-    sub.className = 'podium-sub';
-    sub.textContent = `${item.wins || 0}승 ${item.draws || 0}무 ${item.losses || 0}패 (${item.win_rate || 0}%)`;
-
-    card.append(icon, name, score, sub);
-    podiumRow.appendChild(card);
-  });
 
   if (list.length === 0) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="6" style="text-align:center;padding:24px;color:var(--ch-muted);">아직 등록된 체스 승리 기록이 없습니다. 첫 승리에 도전해보세요!</td>';
+    tr.innerHTML = '<td colspan="6" style="text-align:center;padding:24px;color:var(--ch-muted);">아직 기록된 전적이 없습니다.</td>';
     tbody.appendChild(tr);
     return;
   }
@@ -1480,21 +1447,23 @@ function renderChessRankings(list) {
 
     const rankDisplay = rankMedals[item.rank] || item.rank;
 
-    let badgeHtml = '<span style="color:var(--ch-muted);opacity:0.6;">-</span>';
+    let badgeHtml = '';
     if (item.badge) {
-      badgeHtml = `<span class="quiz-user-badge badge-chess">${item.badge.icon} ${escapeHtml(item.badge.label)}</span>`;
+      badgeHtml = `<span class="quiz-user-badge badge-chess" style="margin-left:6px;">${item.badge.icon} ${escapeHtml(item.badge.label)}</span>`;
     }
 
+    const lastWinDisplay = item.last_win_at ? String(item.last_win_at).slice(0, 16).replace('T', ' ') : '-';
+
     tr.innerHTML = `
-      <td style="font-weight:700;color:var(--ch-gold-soft);">${rankDisplay}</td>
-      <td>
-        <strong style="color:var(--ch-ivory);">${escapeHtml(item.display_name || item.username)}</strong>
-        ${isMe ? '<span style="font-size:10.5px;color:var(--ch-good);margin-left:4px;">(나)</span>' : ''}
+      <td style="text-align:center;font-weight:700;color:var(--ch-gold-soft);">${rankDisplay}</td>
+      <td style="font-weight:600;">
+        <span style="color:var(--ch-ivory);">${escapeHtml(item.display_name || item.username)}</span>${badgeHtml}
+        ${isMe ? '<span style="font-size:10.5px;color:var(--ch-good);margin-left:4px;font-weight:700;">(나)</span>' : ''}
       </td>
-      <td style="font-weight:700;color:var(--ch-gold);">${item.wins || 0}승</td>
-      <td style="color:var(--ch-muted);font-size:12px;">${item.wins || 0}승 ${item.draws || 0}무 ${item.losses || 0}패</td>
-      <td style="color:var(--ch-ivory);">${item.win_rate || 0}%</td>
-      <td>${badgeHtml}</td>
+      <td style="text-align:center;font-weight:700;color:var(--ch-gold);">${item.wins || 0}승</td>
+      <td style="text-align:center;">${item.win_rate || 0}%</td>
+      <td style="text-align:center;color:var(--ch-muted);">${item.wins || 0}승 ${item.draws || 0}무 ${item.losses || 0}패</td>
+      <td style="text-align:center;font-size:12px;color:var(--ch-muted);">${lastWinDisplay}</td>
     `;
     tbody.appendChild(tr);
   });

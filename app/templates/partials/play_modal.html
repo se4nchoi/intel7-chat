@@ -35,7 +35,7 @@
                 <button id="chLobbyTabRank" class="chess-tab-btn" type="button">🏆 체스 명예의 전당</button>
               </div>
               <div class="ch-row" id="chLobbyActionsRooms">
-                <button id="chess-refresh-lobby-btn" class="ch-btn ch-btn-ghost small" type="button">🔄 목록 새로고침</button>
+                <button id="chess-refresh-lobby-btn" class="ch-btn ch-btn-ghost small" type="button">🔄 새로고침</button>
                 <button id="chess-open-create-btn" class="ch-btn ch-btn-primary small" type="button">➕ 새 방 만들기</button>
               </div>
               <div class="ch-row hidden" id="chLobbyActionsRank">
@@ -58,7 +58,7 @@
               </div>
               <div class="ch-row" style="justify-content:flex-end;">
                 <button id="chess-cancel-create-btn" class="ch-btn ch-btn-ghost small" type="button">취소</button>
-                <button id="chess-submit-create-btn" class="ch-btn ch-btn-primary small" type="button">방 생성 및 입장</button>
+                <button id="chess-submit-create-btn" class="ch-btn ch-btn-primary small" type="button">방 만들기</button>
               </div>
             </div>
 
@@ -72,22 +72,23 @@
 
             <!-- 체스 명예의 전당 패널 -->
             <div id="chess-rankings-panel" class="chess-rankings-panel hidden">
-              <div class="chess-rank-scoring-note">💡 대국 승리 횟수로 순위가 집계됩니다.</div>
-              <div id="chess-podium-row" class="chess-podium-row"></div>
+              <div class="chess-rank-scoring-note">💡 체스 대국 승리 횟수로 집계됩니다 (1~3위 칭호 자동 부여).</div>
               <div class="chess-table-box">
-                <table class="chess-table">
-                  <thead>
-                    <tr>
-                      <th style="width: 50px;">순위</th>
-                      <th>플레이어</th>
-                      <th style="width: 70px;">승수</th>
-                      <th style="width: 100px;">전적 (승/무/패)</th>
-                      <th style="width: 70px;">승률</th>
-                      <th>칭호</th>
-                    </tr>
-                  </thead>
-                  <tbody id="chess-rankings-tbody"></tbody>
-                </table>
+                <div class="chess-table-scroll">
+                  <table class="chess-table">
+                    <thead>
+                      <tr>
+                        <th style="width:60px;text-align:center;">순위</th>
+                        <th>플레이어</th>
+                        <th style="width:70px;text-align:center;">승수</th>
+                        <th style="width:90px;text-align:center;">승률</th>
+                        <th style="width:130px;text-align:center;">전적</th>
+                        <th style="width:140px;text-align:center;">최근 승리</th>
+                      </tr>
+                    </thead>
+                    <tbody id="chess-rankings-tbody"></tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
@@ -298,21 +299,22 @@
             <!-- 장기 랭킹 패널 -->
             <div id="jgRankingsPanel" class="chess-rankings-panel hidden">
               <div class="chess-rank-scoring-note" style="color:var(--jg-muted);">💡 장기 대국 승리 횟수로 집계됩니다 (한 1.5점 덤 적용).</div>
-              <div id="jgPodiumRow" class="chess-podium-row"></div>
               <div class="chess-table-box">
-                <table class="chess-table">
-                  <thead>
-                    <tr>
-                      <th style="width:60px;text-align:center;">순위</th>
-                      <th>플레이어</th>
-                      <th style="width:70px;text-align:center;">승수</th>
-                      <th style="width:90px;text-align:center;">승률</th>
-                      <th style="width:130px;text-align:center;">전적</th>
-                      <th style="width:140px;text-align:center;">최근 승리</th>
-                    </tr>
-                  </thead>
-                  <tbody id="jgRankingsTbody"></tbody>
-                </table>
+                <div class="chess-table-scroll">
+                  <table class="chess-table">
+                    <thead>
+                      <tr>
+                        <th style="width:60px;text-align:center;">순위</th>
+                        <th>플레이어</th>
+                        <th style="width:70px;text-align:center;">승수</th>
+                        <th style="width:90px;text-align:center;">승률</th>
+                        <th style="width:130px;text-align:center;">전적</th>
+                        <th style="width:140px;text-align:center;">최근 승리</th>
+                      </tr>
+                    </thead>
+                    <tbody id="jgRankingsTbody"></tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
@@ -524,21 +526,22 @@
             <!-- 오목 랭킹 패널 -->
             <div id="omRankingsPanel" class="chess-rankings-panel hidden">
               <div class="chess-rank-scoring-note" style="color:var(--om-muted);">💡 오목 대국 승리 횟수로 집계됩니다 (연속 5돌 승리).</div>
-              <div id="omPodiumRow" class="chess-podium-row"></div>
               <div class="chess-table-box">
-                <table class="chess-table">
-                  <thead>
-                    <tr>
-                      <th style="width:60px;text-align:center;">순위</th>
-                      <th>플레이어</th>
-                      <th style="width:70px;text-align:center;">승수</th>
-                      <th style="width:90px;text-align:center;">승률</th>
-                      <th style="width:130px;text-align:center;">전적</th>
-                      <th style="width:140px;text-align:center;">최근 승리</th>
-                    </tr>
-                  </thead>
-                  <tbody id="omRankingsTbody"></tbody>
-                </table>
+                <div class="chess-table-scroll">
+                  <table class="chess-table">
+                    <thead>
+                      <tr>
+                        <th style="width:60px;text-align:center;">순위</th>
+                        <th>플레이어</th>
+                        <th style="width:70px;text-align:center;">승수</th>
+                        <th style="width:90px;text-align:center;">승률</th>
+                        <th style="width:130px;text-align:center;">전적</th>
+                        <th style="width:140px;text-align:center;">최근 승리</th>
+                      </tr>
+                    </thead>
+                    <tbody id="omRankingsTbody"></tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>

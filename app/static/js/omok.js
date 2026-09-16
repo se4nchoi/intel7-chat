@@ -4,7 +4,9 @@
 // ============================================================
 
 import { state } from './state.js';
-import { showToast } from './utils.js';
+import { showToast, escapeHtml } from './utils.js';
+
+const sameUser = (left, right) => left != null && right != null && String(left) === String(right);
 
 let omWs = null;
 let currentRoom = null;
@@ -192,16 +194,25 @@ function renderOmRankings(rankings) {
     return '';
   };
 
-  tbody.innerHTML = rankings.map(r => `
-    <tr>
-      <td style="text-align:center;font-weight:700;">${r.rank === 1 ? '🥇 1' : r.rank === 2 ? '🥈 2' : r.rank === 3 ? '🥉 3' : r.rank}</td>
-      <td style="font-weight:600;">${r.display_name || r.username}${getOmBadge(r.rank)}</td>
+  const myUserId = state.currentUser ? Number(state.currentUser.id) : null;
+  tbody.innerHTML = rankings.map(r => {
+    const isMe = sameUser(r.user_id, myUserId);
+    const myRowClass = isMe ? ' class="my-row"' : '';
+    const meLabel = isMe ? '<span style="font-size:10.5px;color:#fcd34d;margin-left:4px;font-weight:700;">(나)</span>' : '';
+    const lastWin = r.last_win_at ? String(r.last_win_at).slice(0, 16).replace('T', ' ') : '-';
+    return `
+    <tr${myRowClass}>
+      <td style="text-align:center;font-weight:700;color:var(--om-text);">${r.rank === 1 ? '🥇 1' : r.rank === 2 ? '🥈 2' : r.rank === 3 ? '🥉 3' : r.rank}</td>
+      <td style="font-weight:600;">
+        <span style="color:var(--om-text);">${escapeHtml(r.display_name || r.username)}</span>${getOmBadge(r.rank)}${meLabel}
+      </td>
       <td style="text-align:center;color:#fde68a;font-weight:700;">${r.wins}승</td>
       <td style="text-align:center;">${r.win_rate}%</td>
       <td style="text-align:center;color:var(--om-muted);">${r.wins}승 ${r.draws}무 ${r.losses}패</td>
-      <td style="text-align:center;font-size:12px;color:var(--om-muted);">${r.last_win_at ? r.last_win_at.slice(0, 16) : '-'}</td>
+      <td style="text-align:center;font-size:12px;color:var(--om-muted);">${lastWin}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function submitCreateOmRoom() {
