@@ -148,11 +148,13 @@ export function initChessListeners() {
   const rejectDrawBtn = $('chRejectDrawBtn');
   const resignBtn = $('chResignBtn');
   const returnToSpecBtn = $('chReturnToSpecBtn');
+  const readyBtn = $('chReadyBtn');
   const promoCloseBtn = $('chPromoCloseBtn');
   const returnLiveBtn = $('chReturnLiveBtn');
 
   if (leaveRoomBtn) leaveRoomBtn.addEventListener('click', handleLeaveRoom);
   if (startGameBtn) startGameBtn.addEventListener('click', handleStartGame);
+  if (readyBtn) readyBtn.addEventListener('click', () => sendWs({ action: 'toggle_ready', room_id: currentRoom?.id }));
   if (drawOfferBtn) drawOfferBtn.addEventListener('click', handleOfferDraw);
   if (acceptDrawBtn) acceptDrawBtn.addEventListener('click', () => handleRespondDraw(true));
   if (rejectDrawBtn) rejectDrawBtn.addEventListener('click', () => handleRespondDraw(false));
@@ -683,6 +685,8 @@ function updateRoleUI() {
   const isPlayer = !!myColor;
   const isWaitingState = !currentRoom?.game_started && !currentRoom?.result;
   const isActiveGame = isPlayer && currentRoom?.game_started && !currentRoom?.result;
+  const isOwner = currentRoom && state.currentUser && currentRoom.owner_id === state.currentUser.id;
+  const isMyReady = (myColor === 'w' && currentRoom?.white_ready) || (myColor === 'b' && currentRoom?.black_ready);
 
   if (isPlayer) {
     $('chPlayerActions').classList.remove('hidden');
@@ -690,10 +694,22 @@ function updateRoleUI() {
     $('chPlayerActions').classList.add('hidden');
   }
 
+  const readyBtn = $('chReadyBtn');
+  if (readyBtn) {
+    readyBtn.style.display = isPlayer && isWaitingState ? 'inline-flex' : 'none';
+    if (isMyReady) {
+      readyBtn.textContent = '❌ 준비 취소';
+      readyBtn.className = 'ch-btn ch-btn-ghost small';
+    } else {
+      readyBtn.textContent = '✅ 준비';
+      readyBtn.className = 'ch-btn ch-btn-primary small';
+    }
+  }
+
   $('chDrawOfferBtn').style.display = isActiveGame ? 'inline-flex' : 'none';
   $('chResignBtn').style.display = isActiveGame ? 'inline-flex' : 'none';
   $('chReturnToSpecBtn').style.display = isPlayer && isWaitingState ? 'inline-flex' : 'none';
-  $('chStartGameBtn').style.display = isPlayer && isWaitingState ? 'inline-flex' : 'none';
+  $('chStartGameBtn').style.display = isOwner && isWaitingState ? 'inline-flex' : 'none';
 }
 
 function notifyTurnIfHidden() {
@@ -1079,17 +1095,33 @@ function updateStatusUI() {
   if (!currentRoom) return;
 
   const isWaiting = !currentRoom.game_started && !currentRoom.result;
-  const canStart = !!currentRoom.white && !!currentRoom.black && isWaiting;
+  const isOwner = currentRoom && state.currentUser && currentRoom.owner_id === state.currentUser.id;
+  const bothSeated = !!currentRoom.white && !!currentRoom.black;
+  const bothReady = bothSeated && !!currentRoom.white_ready && !!currentRoom.black_ready;
+  const canStart = isOwner && bothReady && isWaiting;
 
-  if (!currentRoom.white || !currentRoom.black) {
-    el.innerHTML = '<span class="badge">🎮 상대방 대기 중 (양쪽 좌석에 플레이어가 앉아야 시작 가능)</span>';
+  if (!bothSeated) {
+    el.innerHTML = '<span class="badge">🎮 상대방 대기 중 (양쪽 좌석에 플레이어가 앉아야 준비 가능)</span>';
     $('chStartGameBtn').disabled = true;
     return;
   }
 
   if (isWaiting) {
-    el.innerHTML = '<span class="badge">⏳ 준비 완료: [게임 시작] 버튼을 눌러주세요.</span>';
-    $('chStartGameBtn').disabled = !canStart;
+    if (!bothReady) {
+      if (!currentRoom.white_ready && !currentRoom.black_ready) {
+        el.innerHTML = '<span class="badge">⏳ 양측 준비 대기 중 (준비 버튼을 눌러주세요)</span>';
+      } else if (!currentRoom.white_ready) {
+        el.innerHTML = '<span class="badge">⏳ 백(White) 플레이어 준비 대기 중...</span>';
+      } else {
+        el.innerHTML = '<span class="badge">⏳ 흑(Black) 플레이어 준비 대기 중...</span>';
+      }
+      $('chStartGameBtn').disabled = true;
+      if (isOwner) $('chStartGameBtn').textContent = '⏳ 준비 대기 중';
+    } else {
+      el.innerHTML = '<span class="badge" style="color:#4ade80;border-color:rgba(74,222,128,0.4);">👑 양측 준비 완료! 방장이 [게임 시작]을 눌러주세요.</span>';
+      $('chStartGameBtn').disabled = !canStart;
+      $('chStartGameBtn').textContent = '⚔️ 게임 시작';
+    }
     return;
   }
 
@@ -1125,17 +1157,22 @@ function renderPlayersAndSpectators() {
     return `(${s.wins}승 ${s.draws}무 ${s.losses}패)`;
   };
 
+  const whiteReadyBadge = currentRoom.white ? (currentRoom.white_ready ? '<span class="chess-ready-badge is-ready">READY</span>' : '<span class="chess-ready-badge not-ready">대기 중</span>') : '';
+  const blackReadyBadge = currentRoom.black ? (currentRoom.black_ready ? '<span class="chess-ready-badge is-ready">READY</span>' : '<span class="chess-ready-badge not-ready">대기 중</span>') : '';
+  const isWhiteOwner = currentRoom.white && currentRoom.owner_id === currentRoom.white.id;
+  const isBlackOwner = currentRoom.black && currentRoom.owner_id === currentRoom.black.id;
+
   box.innerHTML = `
     <div class="player-row">
       <div class="top">
-        <span><span class="dot w"></span><b>백 (White)</b>: ${currentRoom.white ? escapeHtml(currentRoom.white.name) : '<span class="empty-seat">비어있음</span>'}</span>
+        <span><span class="dot w"></span><b>백 (White)</b>: ${currentRoom.white ? (isWhiteOwner ? '👑 ' : '') + escapeHtml(currentRoom.white.name) : '<span class="empty-seat">비어있음</span>'} ${whiteReadyBadge}</span>
         ${currentRoom.white ? `<span class="record-badge">${getStat(currentRoom.white.id)}</span>` : ''}
       </div>
       ${canJoinWhite ? `<button class="ch-btn ch-btn-primary small" style="margin-top:5px;" data-pick-role="w" onclick="window.pickChessRole('w')">백으로 앉기</button>` : ''}
     </div>
     <div class="player-row">
       <div class="top">
-        <span><span class="dot b"></span><b>흑 (Black)</b>: ${currentRoom.black ? escapeHtml(currentRoom.black.name) : '<span class="empty-seat">비어있음</span>'}</span>
+        <span><span class="dot b"></span><b>흑 (Black)</b>: ${currentRoom.black ? (isBlackOwner ? '👑 ' : '') + escapeHtml(currentRoom.black.name) : '<span class="empty-seat">비어있음</span>'} ${blackReadyBadge}</span>
         ${currentRoom.black ? `<span class="record-badge">${getStat(currentRoom.black.id)}</span>` : ''}
       </div>
       ${canJoinBlack ? `<button class="ch-btn ch-btn-primary small" style="margin-top:5px;" data-pick-role="b" onclick="window.pickChessRole('b')">흑으로 앉기</button>` : ''}

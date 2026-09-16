@@ -39,6 +39,8 @@ def make_room():
         room = await manager.create_room(white_ws, white, "Test", 10)
         manager.register_client(black_ws, black)
         await manager.join_room(black_ws, black, room["id"])
+        await manager.toggle_ready(white, room["id"])
+        await manager.toggle_ready(black, room["id"])
         await manager.start_game(white, room["id"])
         return room["id"], white, white_ws
 
@@ -241,6 +243,8 @@ def test_resign_records_winner_and_loser_correctly():
         room_id = room["id"]
         manager.register_client(black_ws, black)
         await manager.join_room(black_ws, black, room_id, "black")
+        await manager.toggle_ready(white, room_id)
+        await manager.toggle_ready(black, room_id)
         await manager.start_game(white, room_id)
 
         # White resigns -> Black should WIN, White should LOSE!
@@ -272,6 +276,8 @@ def test_make_move_stores_from_and_to_in_history():
         room_id = room["id"]
         manager.register_client(black_ws, black)
         await manager.join_room(black_ws, black, room_id, "black")
+        await manager.toggle_ready(white, room_id)
+        await manager.toggle_ready(black, room_id)
         await manager.start_game(white, room_id)
 
         # White plays e2 -> e4
@@ -285,3 +291,41 @@ def test_make_move_stores_from_and_to_in_history():
     assert history[1]["move"] == "e4"
     assert history[1]["from"] == "e2"
     assert history[1]["to"] == "e4"
+
+
+def test_chess_ready_and_owner_start_constraints():
+    manager = ChessManager()
+    white_ws = FakeWebSocket()
+    black_ws = FakeWebSocket()
+    white = {"id": 1001, "username": "owner_w", "display_name": "OwnerW"}
+    black = {"id": 1002, "username": "guest_b", "display_name": "GuestB"}
+
+    async def run():
+        manager.register_client(white_ws, white)
+        room = await manager.create_room(white_ws, white, "ReadyTest", 10)
+        room_id = room["id"]
+        manager.register_client(black_ws, black)
+        await manager.join_room(black_ws, black, room_id, "black")
+
+        # 1. Attempt start with 0 ready -> must not start
+        await manager.start_game(white, room_id)
+        assert room["game_started"] is False
+
+        # 2. Only white ready -> must not start
+        await manager.toggle_ready(white, room_id)
+        assert room["white_ready"] is True
+        assert room["black_ready"] is False
+        await manager.start_game(white, room_id)
+        assert room["game_started"] is False
+
+        # 3. Both ready, but non-owner attempts start -> must not start
+        await manager.toggle_ready(black, room_id)
+        assert room["black_ready"] is True
+        await manager.start_game(black, room_id)
+        assert room["game_started"] is False
+
+        # 4. Both ready, owner starts -> succeeds!
+        await manager.start_game(white, room_id)
+        assert room["game_started"] is True
+
+    asyncio.run(run())

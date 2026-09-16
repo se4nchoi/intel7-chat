@@ -105,6 +105,7 @@
 
               <!-- 플레이어 액션 버튼 -->
               <div id="chPlayerActions" class="ch-row" style="display:flex;align-items:center;gap:6px;">
+                <button id="chReadyBtn" class="ch-btn ch-btn-ghost small hidden" type="button">✅ 준비</button>
                 <button id="chStartGameBtn" class="ch-btn ch-btn-primary small" type="button">게임 시작</button>
                 <button id="chDrawOfferBtn" class="ch-btn ch-btn-ghost small" type="button" style="display:none;">무승부 신청</button>
                 <button id="chResignBtn" class="ch-btn ch-btn-danger small" type="button" style="display:none;">기권</button>
@@ -347,6 +348,7 @@
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="jgHanName" class="chess-name-text">한 플레이어 대기 중</span>
+                        <span id="jgHanReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
                         <span class="chess-color-pill jg-pill-han">한 (漢)</span>
                       </div>
                       <div id="jgHanFormationBadge" class="jg-formation-badge">[원앙마]</div>
@@ -372,7 +374,9 @@
                       <button id="jgBtnSitHan" class="jg-btn-ghost" style="flex:1;" type="button">漢 한 착석</button>
                     </div>
                     <button id="jgBtnChangeFormation" class="jg-btn-ghost" type="button">🔄 상차림 선택</button>
+                    <button id="jgBtnReady" class="jg-btn-primary hidden" type="button">✅ 준비</button>
                     <button id="jgBtnStartGame" class="jg-btn-primary hidden" type="button">⚔️ 장기 대국 시작</button>
+                    <button id="jgBtnReturnToSpec" class="jg-btn-ghost hidden" type="button">관전자로 이동</button>
                   </div>
                 </div>
 
@@ -385,6 +389,7 @@
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="jgChoName" class="chess-name-text">초 플레이어 대기 중</span>
+                        <span id="jgChoReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
                         <span class="chess-color-pill jg-pill-cho">초 (楚)</span>
                       </div>
                       <div id="jgChoFormationBadge" class="jg-formation-badge">[원앙마]</div>
@@ -407,7 +412,7 @@
 
               <!-- 기보, 관전자, 채팅 컬럼 -->
               <div class="chess-chat-column jg-chat-col">
-                <div class="ch-card chess-history-card" style="height:130px;margin-bottom:8px;">
+                <div class="ch-card chess-history-card">
                   <div class="chess-history-header">기보 (Moves)</div>
                   <div id="jgMoveList" class="chess-move-list">
                     <div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>
@@ -415,9 +420,9 @@
                 </div>
 
                 <!-- 관전자 리스트 (참관 리스트) -->
-                <div class="ch-card chess-spectators-card" style="height:110px;margin-bottom:8px;padding:10px 12px;box-sizing:border-box;display:flex;flex-direction:column;">
-                  <div class="chess-spectators-header" style="font-size:12px;font-weight:700;color:var(--jg-gold-soft);margin-bottom:6px;">관전자 (<span id="jgSpectatorCount">0</span>명)</div>
-                  <div id="jgSpectatorList" class="chess-spectator-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
+                <div class="ch-card chess-spectators-card">
+                  <div class="chess-spectators-header" style="font-size:12px;font-weight:700;color:var(--jg-gold-soft);margin-bottom:4px;">관전자 (<span id="jgSpectatorCount">0</span>명)</div>
+                  <div id="jgSpectatorList" class="chess-spectator-list">
                     <span style="font-size:12px;color:var(--jg-muted);opacity:0.6;">관전자가 없습니다.</span>
                   </div>
                 </div>
@@ -566,6 +571,7 @@
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="omWhiteName" class="chess-name-text">백 플레이어 대기 중</span>
+                        <span id="omWhiteReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
                         <span class="chess-color-pill om-pill-white">백 (White)</span>
                       </div>
                       <div id="omWhiteStats" class="chess-stats-text">전적: -</div>
@@ -590,7 +596,9 @@
                       <button id="omBtnSitBlack" class="om-btn-ghost" style="flex:1;" type="button">⚫ 흑 착석</button>
                       <button id="omBtnSitWhite" class="om-btn-ghost" style="flex:1;" type="button">⚪ 백 착석</button>
                     </div>
+                    <button id="omBtnReady" class="om-btn-primary hidden" type="button">✅ 준비</button>
                     <button id="omBtnStartGame" class="om-btn-primary hidden" type="button">⚔️ 오목 대국 시작</button>
+                    <button id="omBtnReturnToSpec" class="om-btn-ghost hidden" type="button">관전자로 이동</button>
                   </div>
                 </div>
 
@@ -603,6 +611,7 @@
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="omBlackName" class="chess-name-text">흑 플레이어 대기 중</span>
+                        <span id="omBlackReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
                         <span class="chess-color-pill om-pill-black">흑 (Black)</span>
                       </div>
                       <div id="omBlackStats" class="chess-stats-text">전적: -</div>
@@ -625,7 +634,7 @@
 
               <!-- 기보, 관전자, 채팅 컬럼 -->
               <div class="chess-chat-column om-chat-col">
-                <div class="ch-card chess-history-card" style="height:130px;margin-bottom:8px;">
+                <div class="ch-card chess-history-card">
                   <div class="chess-history-header">착수 기록 (<span id="omMoveCount">0</span>수)</div>
                   <div id="omMoveList" class="chess-move-list">
                     <div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>
@@ -633,9 +642,9 @@
                 </div>
 
                 <!-- 관전자 리스트 (참관 리스트) -->
-                <div class="ch-card chess-spectators-card" style="height:110px;margin-bottom:8px;padding:10px 12px;box-sizing:border-box;display:flex;flex-direction:column;">
-                  <div class="chess-spectators-header" style="font-size:12px;font-weight:700;color:#fde68a;margin-bottom:6px;">관전자 (<span id="omSpectatorCount">0</span>명)</div>
-                  <div id="omSpectatorList" class="chess-spectator-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
+                <div class="ch-card chess-spectators-card">
+                  <div class="chess-spectators-header" style="font-size:12px;font-weight:700;color:#fde68a;margin-bottom:4px;">관전자 (<span id="omSpectatorCount">0</span>명)</div>
+                  <div id="omSpectatorList" class="chess-spectator-list">
                     <span style="font-size:12px;color:var(--om-muted);opacity:0.6;">관전자가 없습니다.</span>
                   </div>
                 </div>

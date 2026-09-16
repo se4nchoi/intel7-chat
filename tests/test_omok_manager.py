@@ -39,6 +39,10 @@ def test_omok_manager_room_lifecycle():
         await mgr.join_room(ws2, user2, room["id"], "w")
         assert room["white"]["id"] == user2["id"]
 
+        # Toggle ready
+        await mgr.toggle_ready(user1, room["id"])
+        await mgr.toggle_ready(user2, room["id"])
+
         # Start game
         await mgr.start_game(user1, room["id"])
         assert room["game_started"] is True
@@ -63,6 +67,48 @@ def test_omok_manager_room_lifecycle():
     asyncio.run(run_scenario())
 
 
+def test_omok_ready_and_owner_constraints():
+    mgr = OmokManager()
+
+    async def run():
+        ub = database.create_user("om_owner", "hash")
+        uw = database.create_user("om_guest", "hash")
+        wsb, wsw = DummyWebSocket(), DummyWebSocket()
+        mgr.register_client(wsb, ub)
+        mgr.register_client(wsw, uw)
+
+        room = await mgr.create_room(wsb, ub, "ReadyOmok", 10)
+        room_id = room["id"]
+        await mgr.join_room(wsw, uw, room_id, "w")
+
+        # 1. 0 ready -> cannot start
+        await mgr.start_game(ub, room_id)
+        assert room["game_started"] is False
+
+        # 2. only black ready -> cannot start
+        await mgr.toggle_ready(ub, room_id)
+        assert room["black_ready"] is True
+        assert room["white_ready"] is False
+        await mgr.start_game(ub, room_id)
+        assert room["game_started"] is False
+
+        # 3. Ready both
+        await mgr.toggle_ready(uw, room_id)
+        assert room["black_ready"] is True
+        assert room["white_ready"] is True
+
+        # 4. Non-owner cannot start
+        await mgr.start_game(uw, room_id)
+        assert room["game_started"] is False
+
+        # 5. Owner starts -> success!
+        await mgr.start_game(ub, room_id)
+        assert room["game_started"] is True
+
+    asyncio.run(run())
+
+
+
 def test_omok_manager_33_foul_loss():
     mgr = OmokManager()
 
@@ -77,6 +123,8 @@ def test_omok_manager_33_foul_loss():
 
         room = await mgr.create_room(ws_b, user_b, "33테스트", 5)
         await mgr.join_room(ws_w, user_w, room["id"], "w")
+        await mgr.toggle_ready(user_b, room["id"])
+        await mgr.toggle_ready(user_w, room["id"])
         await mgr.start_game(user_b, room["id"])
 
         # Setup Black 3-3 at (7, 7)

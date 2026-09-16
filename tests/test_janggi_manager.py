@@ -43,6 +43,10 @@ def test_janggi_manager_room_lifecycle():
         await mgr.set_formation(user1, room["id"], "yangwima")
         assert room["cho_formation"] == "yangwima"
 
+        # Toggle ready
+        await mgr.toggle_ready(user1, room["id"])
+        await mgr.toggle_ready(user2, room["id"])
+
         # Start game
         await mgr.start_game(user1, room["id"])
         assert room["game_started"] is True
@@ -61,3 +65,50 @@ def test_janggi_manager_room_lifecycle():
         assert stats2["losses"] == 1
 
     asyncio.run(run_scenario())
+
+
+def test_janggi_ready_and_owner_constraints():
+    mgr = JanggiManager()
+
+    async def run():
+        u1 = database.create_user("jg_owner", "hash")
+        u2 = database.create_user("jg_guest", "hash")
+        ws1, ws2 = DummyWebSocket(), DummyWebSocket()
+        mgr.register_client(ws1, u1)
+        mgr.register_client(ws2, u2)
+
+        room = await mgr.create_room(ws1, u1, "ReadyJanggi", 10)
+        room_id = room["id"]
+        await mgr.join_room(ws2, u2, room_id, "han")
+
+        # 1. 0 ready -> cannot start
+        await mgr.start_game(u1, room_id)
+        assert room["game_started"] is False
+
+        # 2. only cho ready -> cannot start
+        await mgr.toggle_ready(u1, room_id)
+        assert room["cho_ready"] is True
+        assert room["han_ready"] is False
+        await mgr.start_game(u1, room_id)
+        assert room["game_started"] is False
+
+        # 3. formation change resets ready -> must reset cho_ready
+        await mgr.set_formation(u1, room_id, "yangwima")
+        assert room["cho_ready"] is False
+
+        # 4. Ready both
+        await mgr.toggle_ready(u1, room_id)
+        await mgr.toggle_ready(u2, room_id)
+        assert room["cho_ready"] is True
+        assert room["han_ready"] is True
+
+        # 5. Non-owner cannot start
+        await mgr.start_game(u2, room_id)
+        assert room["game_started"] is False
+
+        # 6. Owner starts -> success!
+        await mgr.start_game(u1, room_id)
+        assert room["game_started"] is True
+
+    asyncio.run(run())
+

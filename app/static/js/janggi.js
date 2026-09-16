@@ -90,6 +90,8 @@ export function initJanggiListeners() {
   const btnSitCho = $('jgBtnSitCho');
   const btnSitHan = $('jgBtnSitHan');
   const btnStartGame = $('jgBtnStartGame');
+  const btnReady = $('jgBtnReady');
+  const btnReturnToSpec = $('jgBtnReturnToSpec');
   const btnChangeFormation = $('jgBtnChangeFormation');
   const btnCloseFormation = $('jgBtnCloseFormation');
 
@@ -99,6 +101,8 @@ export function initJanggiListeners() {
   if (btnLeave) btnLeave.addEventListener('click', handleLeaveRoom);
   if (btnSitCho) btnSitCho.addEventListener('click', () => sendJgAction('pick_role', { role: 'cho' }));
   if (btnSitHan) btnSitHan.addEventListener('click', () => sendJgAction('pick_role', { role: 'han' }));
+  if (btnReady) btnReady.addEventListener('click', () => sendJgAction('toggle_ready'));
+  if (btnReturnToSpec) btnReturnToSpec.addEventListener('click', () => sendJgAction('pick_role', { role: 'spectator' }));
   if (btnStartGame) btnStartGame.addEventListener('click', () => sendJgAction('start_game'));
 
   if (btnChangeFormation) {
@@ -302,16 +306,65 @@ function updateJgRoomState(room) {
   if (room.cho && String(room.cho.id) === myId) myColor = 'cho';
   if (room.han && String(room.han.id) === myId) myColor = 'han';
 
-  // Player cards
-  $('jgChoName').textContent = room.cho ? room.cho.name : '초 플레이어 대기 중';
-  $('jgHanName').textContent = room.han ? room.han.name : '한 플레이어 대기 중';
+  // Player cards & badges
+  const choOwnerMark = room.cho && String(room.owner_id) === String(room.cho.id) ? '👑 ' : '';
+  const hanOwnerMark = room.han && String(room.owner_id) === String(room.han.id) ? '👑 ' : '';
+  $('jgChoName').textContent = room.cho ? choOwnerMark + room.cho.name : '초 플레이어 대기 중';
+  $('jgHanName').textContent = room.han ? hanOwnerMark + room.han.name : '한 플레이어 대기 중';
   $('jgChoFormationBadge').textContent = `[${getFormationName(room.cho_formation)}]`;
   $('jgHanFormationBadge').textContent = `[${getFormationName(room.han_formation)}]`;
 
+  const choBadge = $('jgChoReadyBadge');
+  if (choBadge) {
+    choBadge.classList.toggle('hidden', !room.cho);
+    choBadge.className = 'chess-ready-badge ' + (room.cho_ready ? 'is-ready' : 'not-ready');
+    choBadge.textContent = room.cho_ready ? 'READY' : '대기 중';
+  }
+  const hanBadge = $('jgHanReadyBadge');
+  if (hanBadge) {
+    hanBadge.classList.toggle('hidden', !room.han);
+    hanBadge.className = 'chess-ready-badge ' + (room.han_ready ? 'is-ready' : 'not-ready');
+    hanBadge.textContent = room.han_ready ? 'READY' : '대기 중';
+  }
+
   // Start & Role buttons
-  const isBothSeated = room.cho && room.han;
+  const isBothSeated = !!room.cho && !!room.han;
   const isPlayer = myColor !== null;
-  $('jgBtnStartGame').classList.toggle('hidden', !(isBothSeated && isPlayer && !room.game_started));
+  const isWaiting = !room.game_started && !room.result;
+  const isOwner = room && state.currentUser && String(room.owner_id) === String(state.currentUser.id);
+  const isBothReady = isBothSeated && !!room.cho_ready && !!room.han_ready;
+  const isMyReady = (myColor === 'cho' && room.cho_ready) || (myColor === 'han' && room.han_ready);
+
+  const btnReady = $('jgBtnReady');
+  if (btnReady) {
+    btnReady.classList.toggle('hidden', !(isPlayer && isWaiting));
+    if (isMyReady) {
+      btnReady.textContent = '❌ 준비 취소';
+      btnReady.className = 'jg-btn-ghost';
+    } else {
+      btnReady.textContent = '✅ 준비';
+      btnReady.className = 'jg-btn-primary';
+    }
+  }
+
+  const btnReturn = $('jgBtnReturnToSpec');
+  if (btnReturn) {
+    btnReturn.classList.toggle('hidden', !(isPlayer && isWaiting));
+  }
+
+  const btnStart = $('jgBtnStartGame');
+  if (btnStart) {
+    btnStart.classList.toggle('hidden', !(isOwner && isWaiting));
+    btnStart.disabled = !isBothReady;
+    if (!isBothReady) {
+      if (!room.cho_ready && !room.han_ready) btnStart.textContent = '⏳ 양측 준비 대기 중';
+      else if (!room.cho_ready) btnStart.textContent = '⏳ 초(楚) 준비 대기 중';
+      else btnStart.textContent = '⏳ 한(漢) 준비 대기 중';
+    } else {
+      btnStart.textContent = '⚔️ 장기 대국 시작';
+    }
+  }
+
   $('jgBtnSitCho').classList.toggle('hidden', !!room.cho || room.game_started);
   $('jgBtnSitHan').classList.toggle('hidden', !!room.han || room.game_started);
   $('jgBtnChangeFormation').classList.toggle('hidden', room.game_started || !isPlayer);
@@ -326,7 +379,13 @@ function updateJgRoomState(room) {
     $('jgStatusText').textContent = `${room.move_history?.length || 1}수 진행 중`;
   } else {
     $('jgTurnBadge').classList.add('hidden');
-    $('jgStatusText').textContent = isBothSeated ? '대국 준비 완료! "대국 시작"을 눌러주세요.' : '상대 플레이어를 기다리는 중입니다.';
+    if (!isBothSeated) {
+      $('jgStatusText').textContent = '상대 플레이어 착석을 기다리는 중입니다.';
+    } else if (!isBothReady) {
+      $('jgStatusText').textContent = '양측 플레이어 준비(Ready)를 기다리는 중입니다.';
+    } else {
+      $('jgStatusText').textContent = '👑 양측 준비 완료! 방장이 "대국 시작"을 눌러주세요.';
+    }
   }
 
   // Score banner

@@ -2051,6 +2051,8 @@ async def chess_websocket_endpoint(ws: WebSocket):
                 await chess_manager.leave_room(ws, user, room_id)
             elif action == "pick_role" and room_id:
                 await chess_manager.pick_role(user, room_id, data.get("role", "spectator"))
+            elif action == "toggle_ready" and room_id:
+                await chess_manager.toggle_ready(user, room_id)
             elif action == "start_game" and room_id:
                 await chess_manager.start_game(user, room_id)
             elif action == "move" and room_id:
@@ -2120,6 +2122,8 @@ async def janggi_websocket_endpoint(ws: WebSocket):
                 await janggi_manager.pick_role(user, room_id, data.get("role", "spectator"))
             elif action == "set_formation" and room_id:
                 await janggi_manager.set_formation(user, room_id, str(data.get("formation", "wonangma")))
+            elif action == "toggle_ready" and room_id:
+                await janggi_manager.toggle_ready(user, room_id)
             elif action == "start_game" and room_id:
                 await janggi_manager.start_game(user, room_id)
             elif action == "move" and room_id:
@@ -2183,6 +2187,8 @@ async def omok_websocket_endpoint(ws: WebSocket):
                 await omok_manager.leave_room(ws, user, room_id)
             elif action == "pick_role" and room_id:
                 await omok_manager.pick_role(user, room_id, data.get("role", "spectator"))
+            elif action == "toggle_ready" and room_id:
+                await omok_manager.toggle_ready(user, room_id)
             elif action == "start_game" and room_id:
                 await omok_manager.start_game(user, room_id)
             elif action == "move" and room_id:

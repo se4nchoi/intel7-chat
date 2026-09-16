@@ -164,8 +164,9 @@ class JanggiManager:
                 "board": room["board"].to_dict() if room["board"] else None,
                 "active_turn": room["active_turn"],
                 "move_history": room["move_history"],
-                "last_from": room["last_from"],
-                "last_to": room["last_to"],
+                "owner_id": room.get("owner_id"),
+                "cho_ready": bool(room.get("cho_ready", False)),
+                "han_ready": bool(room.get("han_ready", False)),
                 "game_started": room["game_started"],
                 "result": room["result"],
                 "draw_offer": room["draw_offer"],
@@ -202,9 +203,12 @@ class JanggiManager:
             "id": room_id,
             "title": title,
             "created_by": player["name"],
+            "owner_id": player["id"],
             "time_minutes": time_minutes,
             "cho": player,
             "han": None,
+            "cho_ready": False,
+            "han_ready": False,
             "cho_formation": "wonangma",
             "han_formation": "wonangma",
             "spectators": [],
@@ -311,8 +315,21 @@ class JanggiManager:
         else:
             if room["cho"] and room["cho"]["id"] == user_id:
                 room["cho"] = None
+                room["cho_ready"] = False
             if room["han"] and room["han"]["id"] == user_id:
                 room["han"] = None
+                room["han_ready"] = False
+
+            if room.get("owner_id") == user_id:
+                if room["cho"] and room["cho"]["id"] != user_id:
+                    room["owner_id"] = room["cho"]["id"]
+                    room["created_by"] = room["cho"]["name"]
+                elif room["han"] and room["han"]["id"] != user_id:
+                    room["owner_id"] = room["han"]["id"]
+                    room["created_by"] = room["han"]["name"]
+                elif room["spectators"]:
+                    room["owner_id"] = room["spectators"][0]["id"]
+                    room["created_by"] = room["spectators"][0]["name"]
 
         room["spectators"] = [s for s in room["spectators"] if s["id"] != user_id]
         if not room["cho"] and not room["han"] and not room["spectators"]:
@@ -340,10 +357,14 @@ class JanggiManager:
 
         if role == "cho" and not room["cho"]:
             room["cho"] = player
+            room["cho_ready"] = False
         elif role == "han" and not room["han"]:
             room["han"] = player
+            room["han_ready"] = False
         else:
             room["spectators"].append(player)
+            room["cho_ready"] = False
+            room["han_ready"] = False
 
         await self.broadcast_room(room_id)
         await self.broadcast_lobby()
@@ -360,9 +381,24 @@ class JanggiManager:
         user_id = str(user["id"])
         if room["cho"] and str(room["cho"]["id"]) == user_id:
             room["cho_formation"] = formation
+            room["cho_ready"] = False
         elif room["han"] and str(room["han"]["id"]) == user_id:
             room["han_formation"] = formation
+            room["han_ready"] = False
 
+        await self.broadcast_room(room_id)
+
+    async def toggle_ready(self, user: dict, room_id: str) -> None:
+        room = self.rooms.get(room_id)
+        if not room or room["game_started"] or room.get("result"):
+            return
+        uid = str(user["id"])
+        if room["cho"] and str(room["cho"]["id"]) == uid:
+            room["cho_ready"] = not room.get("cho_ready", False)
+        elif room["han"] and str(room["han"]["id"]) == uid:
+            room["han_ready"] = not room.get("han_ready", False)
+        else:
+            return
         await self.broadcast_room(room_id)
 
     async def start_game(self, user: dict, room_id: str) -> None:
@@ -371,7 +407,13 @@ class JanggiManager:
             return
 
         user_id = user["id"]
-        if room["cho"]["id"] != user_id and room["han"]["id"] != user_id:
+        owner_id = room.get("owner_id")
+        if owner_id is not None and user_id != owner_id:
+            return
+        if owner_id is None and room["cho"]["id"] != user_id and room["han"]["id"] != user_id:
+            return
+
+        if not (room.get("cho_ready") and room.get("han_ready")):
             return
 
         board = JanggiBoard(room["cho_formation"], room["han_formation"])

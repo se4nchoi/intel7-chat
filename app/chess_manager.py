@@ -161,8 +161,9 @@ class ChessManager:
                 "active_turn": room["active_turn"],
                 "move_history": room["move_history"],
                 "last_from": room["last_from"],
-                "last_to": room["last_to"],
-                "last_flags": room["last_flags"],
+                "owner_id": room.get("owner_id"),
+                "white_ready": bool(room.get("white_ready", False)),
+                "black_ready": bool(room.get("black_ready", False)),
                 "game_started": room["game_started"],
                 "result": room["result"],
                 "draw_offer": room["draw_offer"],
@@ -201,9 +202,12 @@ class ChessManager:
             "id": room_id,
             "title": title,
             "created_by": player["name"],
+            "owner_id": player["id"],
             "time_minutes": time_minutes,
             "white": player,
             "black": None,
+            "white_ready": False,
+            "black_ready": False,
             "spectators": [],
             "match_queue": [],
             "fen": START_FEN,
@@ -329,8 +333,21 @@ class ChessManager:
         else:
             if room["white"] and room["white"]["id"] == user_id:
                 room["white"] = None
+                room["white_ready"] = False
             if room["black"] and room["black"]["id"] == user_id:
                 room["black"] = None
+                room["black_ready"] = False
+
+            if room.get("owner_id") == user_id:
+                if room["white"] and room["white"]["id"] != user_id:
+                    room["owner_id"] = room["white"]["id"]
+                    room["created_by"] = room["white"]["name"]
+                elif room["black"] and room["black"]["id"] != user_id:
+                    room["owner_id"] = room["black"]["id"]
+                    room["created_by"] = room["black"]["name"]
+                elif room["spectators"]:
+                    room["owner_id"] = room["spectators"][0]["id"]
+                    room["created_by"] = room["spectators"][0]["name"]
 
         room["spectators"] = [s for s in room["spectators"] if s["id"] != user_id]
         room["match_queue"] = [m for m in room["match_queue"] if m["id"] != user_id]
@@ -361,13 +378,30 @@ class ChessManager:
 
         if role == "w" and not room["white"]:
             room["white"] = player
+            room["white_ready"] = False
         elif role == "b" and not room["black"]:
             room["black"] = player
+            room["black_ready"] = False
         else:
             room["spectators"].append(player)
+            room["white_ready"] = False
+            room["black_ready"] = False
 
         await self.broadcast_room(room_id)
         await self.broadcast_lobby()
+
+    async def toggle_ready(self, user: dict, room_id: str) -> None:
+        room = self.rooms.get(room_id)
+        if not room or room["game_started"] or room.get("result"):
+            return
+        uid = str(user["id"])
+        if room["white"] and str(room["white"]["id"]) == uid:
+            room["white_ready"] = not room.get("white_ready", False)
+        elif room["black"] and str(room["black"]["id"]) == uid:
+            room["black_ready"] = not room.get("black_ready", False)
+        else:
+            return
+        await self.broadcast_room(room_id)
 
     async def start_game(self, user: dict, room_id: str) -> None:
         room = self.rooms.get(room_id)
@@ -375,7 +409,13 @@ class ChessManager:
             return
 
         user_id = user["id"]
-        if room["white"]["id"] != user_id and room["black"]["id"] != user_id:
+        owner_id = room.get("owner_id")
+        if owner_id is not None and user_id != owner_id:
+            return
+        if owner_id is None and room["white"]["id"] != user_id and room["black"]["id"] != user_id:
+            return
+
+        if not (room.get("white_ready") and room.get("black_ready")):
             return
 
         mins = room["time_minutes"]
@@ -428,6 +468,8 @@ class ChessManager:
                     room["spectators"].append(player)
             room["white"] = None
             room["black"] = None
+            room["white_ready"] = False
+            room["black_ready"] = False
             room["game_started"] = False
             room["result"] = None
             room["draw_offer"] = None

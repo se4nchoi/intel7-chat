@@ -495,3 +495,188 @@
   box-shadow: 0 2px 8px rgba(35, 18, 5, 0.6);
   border-color: rgba(245, 158, 11, 0.5);
 }
+
+/* -------------------------------------------------------------
+   Play Modal Right Column & Chat Containment (Anti-Cutoff)
+   ------------------------------------------------------------- */
+.play-dialog .chess-chat-column {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.play-dialog .chess-chat-column .ch-card {
+  margin-top: 0 !important;
+  margin-bottom: 8px !important;
+}
+
+.play-dialog .chess-chat-card {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding: 10px 12px !important;
+  box-sizing: border-box !important;
+}
+
+.play-dialog .chess-chat-card.full-height {
+  height: 100% !important;
+}
+
+.play-dialog .chess-chat-header {
+  flex-shrink: 0 !important;
+  margin-bottom: 6px !important;
+  padding-bottom: 6px !important;
+}
+
+.play-dialog .chess-chat-messages {
+  flex: 1 1 0 !important;
+  min-height: 80px !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  margin-bottom: 8px !important;
+  padding: 8px 10px !important;
+  box-sizing: border-box !important;
+}
+
+.play-dialog .chess-chat-form {
+  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  margin-top: auto !important;
+}
+
+/* -------------------------------------------------------------
+   Move History (기보 / 착수 기록) Strict Overflow Containment
+   ------------------------------------------------------------- */
+.play-dialog .chess-history-card {
+  height: 110px !important;
+  min-height: 110px !important;
+  max-height: 110px !important;
+  padding: 8px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  flex-shrink: 0 !important;
+}
+
+.play-dialog .chess-history-header {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  margin-bottom: 4px !important;
+  flex-shrink: 0 !important;
+}
+
+.play-dialog .chess-move-list {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  padding-right: 4px !important;
+}
+
+.play-dialog .chess-move-list::-webkit-scrollbar,
+.play-dialog .chess-spectator-list::-webkit-scrollbar {
+  width: 5px;
+}
+.play-dialog .chess-move-list::-webkit-scrollbar-thumb,
+.play-dialog .chess-spectator-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+
+.play-dialog .chess-empty-history {
+  font-size: 11.5px !important;
+  color: var(--ch-muted, rgba(255, 255, 255, 0.4)) !important;
+  text-align: center !important;
+  padding: 12px 0 !important;
+}
+
+/* -------------------------------------------------------------
+   Spectators List Card Strict Overflow Containment
+   ------------------------------------------------------------- */
+.play-dialog .chess-spectators-card {
+  height: 85px !important;
+  min-height: 85px !important;
+  max-height: 85px !important;
+  padding: 8px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  flex-shrink: 0 !important;
+}
+
+.play-dialog .chess-spectator-list {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  padding-right: 4px !important;
+}
+
+/* Game Body Heights */
+.play-dialog .jg-game-body,
+.play-dialog .om-game-body {
+  height: calc(100% - 50px) !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* -------------------------------------------------------------
+   Ready & Room Owner UI Elements
+   ------------------------------------------------------------- */
+.chess-ready-badge {
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  padding: 2px 7px !important;
+  border-radius: 6px !important;
+  letter-spacing: 0.03em !important;
+  transition: all 0.2s ease !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  white-space: nowrap !important;
+  line-height: 1.3 !important;
+}
+
+.chess-ready-badge.not-ready {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(255, 255, 255, 0.45) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.chess-ready-badge.is-ready {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #4ade80 !important;
+  border: 1px solid rgba(74, 222, 128, 0.4) !important;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.25) !important;
+  animation: ready-pulse 1.8s infinite ease-in-out !important;
+}
+
+@keyframes ready-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(74, 222, 128, 0.2); }
+  50% { box-shadow: 0 0 12px rgba(74, 222, 128, 0.5); }
+}
+
+.owner-crown {
+  color: #fbbf24;
+  font-size: 12px;
+  margin-right: 3px;
+  filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.6));
+}
+

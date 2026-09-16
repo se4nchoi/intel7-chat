@@ -81,11 +81,15 @@ export function initOmokListeners() {
   const btnSitBlack = $('omBtnSitBlack');
   const btnSitWhite = $('omBtnSitWhite');
   const btnStartGame = $('omBtnStartGame');
+  const btnReady = $('omBtnReady');
+  const btnReturnToSpec = $('omBtnReturnToSpec');
 
   if (btnResign) btnResign.addEventListener('click', handleResign);
   if (btnLeave) btnLeave.addEventListener('click', handleLeaveRoom);
   if (btnSitBlack) btnSitBlack.addEventListener('click', () => sendOmAction('pick_role', { role: 'b' }));
   if (btnSitWhite) btnSitWhite.addEventListener('click', () => sendOmAction('pick_role', { role: 'w' }));
+  if (btnReady) btnReady.addEventListener('click', () => sendOmAction('toggle_ready'));
+  if (btnReturnToSpec) btnReturnToSpec.addEventListener('click', () => sendOmAction('pick_role', { role: 'spectator' }));
   if (btnStartGame) btnStartGame.addEventListener('click', () => sendOmAction('start_game'));
 
   // Room chat
@@ -268,14 +272,63 @@ function updateOmRoomState(room) {
   if (room.black && String(room.black.id) === myId) myColor = 'b';
   if (room.white && String(room.white.id) === myId) myColor = 'w';
 
-  // Player cards
-  $('omBlackName').textContent = room.black ? room.black.name : '흑 플레이어 대기 중';
-  $('omWhiteName').textContent = room.white ? room.white.name : '백 플레이어 대기 중';
+  // Player cards & badges
+  const blackOwnerMark = room.black && String(room.owner_id) === String(room.black.id) ? '👑 ' : '';
+  const whiteOwnerMark = room.white && String(room.owner_id) === String(room.white.id) ? '👑 ' : '';
+  $('omBlackName').textContent = room.black ? blackOwnerMark + room.black.name : '흑 플레이어 대기 중';
+  $('omWhiteName').textContent = room.white ? whiteOwnerMark + room.white.name : '백 플레이어 대기 중';
+
+  const blackBadge = $('omBlackReadyBadge');
+  if (blackBadge) {
+    blackBadge.classList.toggle('hidden', !room.black);
+    blackBadge.className = 'chess-ready-badge ' + (room.black_ready ? 'is-ready' : 'not-ready');
+    blackBadge.textContent = room.black_ready ? 'READY' : '대기 중';
+  }
+  const whiteBadge = $('omWhiteReadyBadge');
+  if (whiteBadge) {
+    whiteBadge.classList.toggle('hidden', !room.white);
+    whiteBadge.className = 'chess-ready-badge ' + (room.white_ready ? 'is-ready' : 'not-ready');
+    whiteBadge.textContent = room.white_ready ? 'READY' : '대기 중';
+  }
 
   // Start & Role buttons
-  const isBothSeated = room.black && room.white;
+  const isBothSeated = !!room.black && !!room.white;
   const isPlayer = myColor !== null;
-  $('omBtnStartGame').classList.toggle('hidden', !(isBothSeated && isPlayer && !room.game_started));
+  const isWaiting = !room.game_started && !room.result;
+  const isOwner = room && state.currentUser && String(room.owner_id) === String(state.currentUser.id);
+  const isBothReady = isBothSeated && !!room.black_ready && !!room.white_ready;
+  const isMyReady = (myColor === 'b' && room.black_ready) || (myColor === 'w' && room.white_ready);
+
+  const btnReady = $('omBtnReady');
+  if (btnReady) {
+    btnReady.classList.toggle('hidden', !(isPlayer && isWaiting));
+    if (isMyReady) {
+      btnReady.textContent = '❌ 준비 취소';
+      btnReady.className = 'om-btn-ghost';
+    } else {
+      btnReady.textContent = '✅ 준비';
+      btnReady.className = 'om-btn-primary';
+    }
+  }
+
+  const btnReturn = $('omBtnReturnToSpec');
+  if (btnReturn) {
+    btnReturn.classList.toggle('hidden', !(isPlayer && isWaiting));
+  }
+
+  const btnStart = $('omBtnStartGame');
+  if (btnStart) {
+    btnStart.classList.toggle('hidden', !(isOwner && isWaiting));
+    btnStart.disabled = !isBothReady;
+    if (!isBothReady) {
+      if (!room.black_ready && !room.white_ready) btnStart.textContent = '⏳ 양측 준비 대기 중';
+      else if (!room.black_ready) btnStart.textContent = '⏳ 흑(Black) 준비 대기 중';
+      else btnStart.textContent = '⏳ 백(White) 준비 대기 중';
+    } else {
+      btnStart.textContent = '⚔️ 오목 대국 시작';
+    }
+  }
+
   $('omBtnSitBlack').classList.toggle('hidden', !!room.black || room.game_started);
   $('omBtnSitWhite').classList.toggle('hidden', !!room.white || room.game_started);
 
@@ -289,7 +342,13 @@ function updateOmRoomState(room) {
     $('omStatusText').textContent = `${room.move_history?.length || 0}수 진행 중`;
   } else {
     $('omTurnBadge').classList.add('hidden');
-    $('omStatusText').textContent = isBothSeated ? '대국 준비 완료! "대국 시작"을 눌러주세요.' : '상대 플레이어를 기다리는 중입니다.';
+    if (!isBothSeated) {
+      $('omStatusText').textContent = '상대 플레이어 착석을 기다리는 중입니다.';
+    } else if (!isBothReady) {
+      $('omStatusText').textContent = '양측 플레이어 준비(Ready)를 기다리는 중입니다.';
+    } else {
+      $('omStatusText').textContent = '👑 양측 준비 완료! 방장이 "대국 시작"을 눌러주세요.';
+    }
   }
 
   // Render board
