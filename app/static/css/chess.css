@@ -909,34 +909,32 @@
 }
 
 .chess-lobby-tabs {
-  display: inline-flex;
-  background: var(--ch-bg-2);
-  border: 1px solid rgba(204,159,69,0.3);
-  border-radius: 8px;
-  padding: 3px;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .chess-tab-btn {
-  background: transparent;
-  border: none;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(204, 159, 69, 0.25);
+  border-radius: 8px;
   color: var(--ch-muted);
-  border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 12.5px;
-  font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  font-weight: 600;
+  font-size: 13px;
+  transition: all 0.2s ease;
 }
 
 .chess-tab-btn:hover {
+  background: rgba(204, 159, 69, 0.12);
   color: var(--ch-ivory);
 }
 
 .chess-tab-btn.active {
-  background: rgba(204,159,69,0.22);
+  background: rgba(204, 159, 69, 0.25);
   color: var(--ch-gold-soft);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  border-color: var(--ch-gold-soft);
 }
 
 .chess-rankings-panel {

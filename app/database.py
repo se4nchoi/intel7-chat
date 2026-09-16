@@ -1991,6 +1991,53 @@ def _omok_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:
     }
 
 
+PLAY_GOD_TITLE = ("👑", "놀이의 신")
+
+def _play_god_badge(first_count: int) -> Dict[str, Any]:
+    icon, label = PLAY_GOD_TITLE
+    return {
+        "type": "play_god",
+        "icon": icon,
+        "label": label,
+        "title": f"놀이의 신 · {first_count}개 종목 1위",
+    }
+
+def get_play_god_qualifications(conn: sqlite3.Connection, user_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+    """Determine which users qualify as '놀이의 신' across play disciplines.
+    Condition: 1st place in all disciplines, or 1st in >= 3 disciplines (with tie-breaking by first_count).
+    """
+    if not user_ids:
+        return {}
+    disciplines = [
+        ("chess", "chess_player_stats"),
+        ("janggi", "janggi_player_stats"),
+        ("omok", "omok_player_stats"),
+    ]
+    total_disciplines = len(disciplines)
+    results = {uid: {"first_count": 0, "disciplines": [], "is_god": False} for uid in user_ids}
+    placeholders = ",".join("?" for _ in user_ids)
+    for name, table in disciplines:
+        row = conn.execute(f"""
+            WITH ranked AS (
+                SELECT user_id, wins,
+                       ROW_NUMBER() OVER (ORDER BY wins DESC, last_win_at ASC, user_id ASC) AS rnk
+                FROM {table}
+                WHERE wins > 0
+            )
+            SELECT user_id FROM ranked WHERE rnk = 1 AND user_id IN ({placeholders})
+        """, user_ids).fetchone()
+        if row:
+            uid = row["user_id"]
+            if uid in results:
+                results[uid]["first_count"] += 1
+                results[uid]["disciplines"].append(name)
+    for uid, data in results.items():
+        fc = data["first_count"]
+        if (total_disciplines >= 2 and fc >= total_disciplines) or fc >= 3:
+            data["is_god"] = True
+    return results
+
+
 
 def normalize_quiz_import(items: Any, expertise: str) -> List[Dict[str, Any]]:
     expertise = normalize_quiz_expertise(expertise)
@@ -3539,6 +3586,17 @@ def get_user_quiz_title_options(user_id: int) -> List[Dict[str, Any]]:
             "rank": None,
             "score": None,
         })
+    with get_connection() as conn:
+        god_info = get_play_god_qualifications(conn, [user_id]).get(user_id)
+    if god_info and god_info["is_god"]:
+        fc = god_info["first_count"]
+        options.insert(0, {
+            **_play_god_badge(fc),
+            "category": "놀이마당",
+            "selection": "play_god",
+            "rank": 1,
+            "score": fc,
+        })
     return options
 
 
@@ -3674,6 +3732,7 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
             WHERE user_id IN ({placeholders}) AND om_rank <= 3
         """, user_ids).fetchall()
         omok_map = {r["user_id"]: dict(r) for r in omok_rows}
+        god_map = get_play_god_qualifications(conn, user_ids)
 
         for uid in user_ids:
             st = stats_map.get(uid)
@@ -3687,6 +3746,8 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
                 subject = subjects.get(selection.removeprefix("subject:"))
             if selection == "none":
                 badges[uid] = None
+            elif selection == "play_god" and uid in god_map and god_map[uid]["is_god"]:
+                badges[uid] = _play_god_badge(god_map[uid]["first_count"])
             elif selection == "chess" and uid in chess_map:
                 badges[uid] = _chess_badge(
                     int(chess_map[uid]["chess_rank"]), int(chess_map[uid]["wins"])

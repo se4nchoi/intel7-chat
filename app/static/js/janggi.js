@@ -12,6 +12,7 @@ let jgWs = null;
 let currentRoom = null;
 let myColor = null; // 'cho', 'han', or null
 let selectedPoint = null; // { col, row }
+let jgHistoryPreviewIndex = null;
 let clockInterval = null;
 
 const $ = id => document.getElementById(id);
@@ -106,6 +107,8 @@ export function initJanggiListeners() {
   if (btnReady) btnReady.addEventListener('click', () => sendJgAction('toggle_ready'));
   if (btnReturnToSpec) btnReturnToSpec.addEventListener('click', () => sendJgAction('pick_role', { role: 'spectator' }));
   if (btnStartGame) btnStartGame.addEventListener('click', () => sendJgAction('start_game'));
+  const btnReturnLive = $('jgBtnReturnLive');
+  if (btnReturnLive) btnReturnLive.addEventListener('click', clearJgHistoryPreview);
 
   if (btnChangeFormation) {
     btnChangeFormation.addEventListener('click', () => {
@@ -216,6 +219,24 @@ async function fetchJanggiRankings() {
 
 function renderJgRankings(rankings) {
   const tbody = $('jgRankingsTbody');
+  const podiumRow = $('jgPodiumRow');
+  if (podiumRow) {
+    podiumRow.replaceChildren();
+    const top3 = rankings.slice(0, 3);
+    const medals = ['🥇', '🥈', '🥉'];
+    top3.forEach((item, idx) => {
+      const card = document.createElement('div');
+      card.className = `podium-card rank-${idx + 1}`;
+      card.innerHTML = `
+        <span class="podium-rank-icon">${medals[idx]}</span>
+        <span class="podium-name">${escapeHtml(item.display_name || item.username)}</span>
+        <span class="podium-score">${item.wins || 0}승</span>
+        <span class="podium-sub">승률 ${item.win_rate || 0}% · ${item.wins || 0}승 ${item.draws || 0}무 ${item.losses || 0}패</span>
+      `;
+      podiumRow.appendChild(card);
+    });
+  }
+
   if (!tbody) return;
   if (!rankings.length) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--jg-muted);">아직 기록된 전적이 없습니다.</td></tr>';
@@ -487,17 +508,29 @@ function renderJgBoard(room) {
 
   svg.innerHTML = lines;
 
+  // History preview: if reviewing, use snapshot board & last_to from history entry
+  const isHistoryPreview = jgHistoryPreviewIndex !== null;
+  let boardData, lastTo, effectiveIsMyTurn;
+  if (isHistoryPreview) {
+    const snap = room.move_history?.[jgHistoryPreviewIndex];
+    boardData = snap?.board || room.board;
+    lastTo = snap?.to || null;
+    effectiveIsMyTurn = false; // disable interaction during review
+  } else {
+    boardData = room.board;
+    lastTo = room.last_to;
+    effectiveIsMyTurn = (room.game_started && !room.result && myColor && room.active_turn === myColor);
+  }
+
   // Render Intersections and Pieces
   layer.innerHTML = '';
-  const pieces = room.board?.pieces || [];
+  const pieces = boardData?.pieces || [];
   const pieceMap = {};
   pieces.forEach(p => { pieceMap[`${p.col},${p.row}`] = p; });
 
-  const isMyTurn = (room.game_started && !room.result && myColor && room.active_turn === myColor);
-
-  const legalMoves = room.board?.legal_moves || [];
+  const legalMoves = effectiveIsMyTurn ? (boardData?.legal_moves || []) : [];
   const legalDests = new Set();
-  if (selectedPoint && isMyTurn) {
+  if (selectedPoint && effectiveIsMyTurn) {
     for (const [from, to] of legalMoves) {
       if (from[0] === selectedPoint.col && from[1] === selectedPoint.row) {
         legalDests.add(`${to[0]},${to[1]}`);
@@ -509,8 +542,8 @@ function renderJgBoard(room) {
     for (let r = 0; r < 10; r++) {
       const pt = getPt(c, r);
       const piece = pieceMap[`${c},${r}`];
-      const isSelected = selectedPoint && selectedPoint.col === c && selectedPoint.row === r;
-      const isLastMove = room.last_to && room.last_to[0] === c && room.last_to[1] === r;
+      const isSelected = !isHistoryPreview && selectedPoint && selectedPoint.col === c && selectedPoint.row === r;
+      const isLastMove = lastTo && lastTo[0] === c && lastTo[1] === r;
       const isLegalDest = legalDests.has(`${c},${r}`);
 
       const ptDiv = document.createElement('div');
@@ -537,7 +570,7 @@ function renderJgBoard(room) {
         ptDiv.appendChild(destDot);
       }
 
-      ptDiv.addEventListener('click', () => handlePointClick(c, r, piece, isMyTurn));
+      ptDiv.addEventListener('click', () => handlePointClick(c, r, piece, effectiveIsMyTurn));
       layer.appendChild(ptDiv);
     }
   }
@@ -622,13 +655,64 @@ function renderJgMoveHistory(history) {
     list.innerHTML = '<div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>';
     return;
   }
-  list.innerHTML = history.map((item, idx) => `
-    <div class="chess-move-item" style="padding:3px 8px;font-size:12px;">
+  list.innerHTML = history.map((item, idx) => {
+    const isActive = jgHistoryPreviewIndex === idx;
+    return `
+    <div class="chess-move-item${isActive ? ' active' : ''}" data-jg-hist-idx="${idx}" style="padding:3px 8px;font-size:12px;cursor:pointer;">
       <span style="color:var(--jg-muted);width:26px;">${idx + 1}.</span>
-      <span>${item.move}</span>
+      <span>${item.move || (idx === 0 ? '대국 시작' : '?')}</span>
     </div>
-  `).join('');
-  list.scrollTop = list.scrollHeight;
+  `;
+  }).join('');
+
+  // Attach click listeners for history time-travel
+  list.querySelectorAll('[data-jg-hist-idx]').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = parseInt(el.getAttribute('data-jg-hist-idx'), 10);
+      jumpToJgHistory(idx);
+    });
+  });
+
+  // Scroll: keep active item visible, else scroll to bottom
+  if (jgHistoryPreviewIndex !== null) {
+    const activeEl = list.querySelector('.chess-move-item.active');
+    if (activeEl) activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  } else {
+    list.scrollTop = list.scrollHeight;
+  }
+}
+
+function jumpToJgHistory(idx) {
+  if (!currentRoom?.move_history) return;
+  const clampedIdx = Math.max(0, Math.min(idx, currentRoom.move_history.length - 1));
+  jgHistoryPreviewIndex = clampedIdx;
+  selectedPoint = null;
+  renderJgBoard(currentRoom);
+  renderJgMoveHistory(currentRoom.move_history);
+  updateJgReturnLiveBanner();
+}
+
+function clearJgHistoryPreview() {
+  if (jgHistoryPreviewIndex === null) return;
+  jgHistoryPreviewIndex = null;
+  selectedPoint = null;
+  renderJgBoard(currentRoom);
+  renderJgMoveHistory(currentRoom?.move_history || []);
+  updateJgReturnLiveBanner();
+}
+
+function updateJgReturnLiveBanner() {
+  const btnReturnLive = $('jgBtnReturnLive');
+  const banner = $('jgReturnLiveBanner');
+  const label = $('jgInspectMoveLabel');
+  const isReviewing = jgHistoryPreviewIndex !== null;
+
+  if (btnReturnLive) btnReturnLive.classList.toggle('hidden', !isReviewing);
+  if (banner) banner.classList.toggle('hidden', !isReviewing);
+  if (isReviewing && label) {
+    const total = currentRoom?.move_history?.length || 0;
+    label.textContent = `🔍 기보 복기 중 (${jgHistoryPreviewIndex + 1}수 / 총 ${total}수)`;
+  }
 }
 
 function startJgClock(room) {

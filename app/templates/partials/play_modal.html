@@ -73,6 +73,7 @@
             <!-- 체스 명예의 전당 패널 -->
             <div id="chess-rankings-panel" class="chess-rankings-panel hidden">
               <div class="chess-rank-scoring-note">💡 체스 대국 승리 횟수로 집계됩니다 (1~3위 칭호 자동 부여).</div>
+              <div id="chess-podium-row" class="chess-podium-row cbt-podium-row"></div>
               <div class="chess-table-box">
                 <div class="chess-table-scroll">
                   <table class="chess-table">
@@ -93,8 +94,8 @@
             </div>
           </div>
 
-          <!-- 체스 대국 화면 (완전 복원된 3-컬럼 정규 체스 대국실) -->
-          <div id="chess-game-screen" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow-y:auto;padding:16px 20px;">
+          <!-- 체스 대국 화면 (완전 복원된 3-컬럼 정규 체스 대국실 - 상단 틈 완전 제거) -->
+          <div id="chess-game-screen" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:0;margin:0;">
             <div class="chess-game-topbar">
               <div class="ch-row" style="display:flex;align-items:center;gap:10px;">
                 <button id="chLeaveRoomBtn" class="ch-btn ch-btn-ghost small" type="button">← 로비로 나가기</button>
@@ -215,9 +216,9 @@
                 </div>
 
                 <!-- 관전자 & 대기열 -->
-                <div class="ch-card">
-                  <h3>관전자 & 대기열</h3>
-                  <div id="chSpectatorsBox" class="spec-list">
+                <div class="ch-card chess-spectators-card">
+                  <div class="chess-spectators-header" style="font-size:12px;font-weight:700;color:var(--ch-gold-soft);margin-bottom:4px;">관전자 & 대기열 (<span id="chSpectatorCount">0</span>명)</div>
+                  <div id="chSpectatorsBox" class="spec-list chess-spectator-list">
                     <span class="placeholder-line">관전자가 없습니다.</span>
                   </div>
                 </div>
@@ -299,6 +300,7 @@
             <!-- 장기 랭킹 패널 -->
             <div id="jgRankingsPanel" class="chess-rankings-panel hidden">
               <div class="chess-rank-scoring-note" style="color:var(--jg-muted);">💡 장기 대국 승리 횟수로 집계됩니다 (한 1.5점 덤 적용).</div>
+              <div id="jgPodiumRow" class="chess-podium-row cbt-podium-row"></div>
               <div class="chess-table-box">
                 <div class="chess-table-scroll">
                   <table class="chess-table">
@@ -347,10 +349,12 @@
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="jgHanName" class="chess-name-text">한 플레이어 대기 중</span>
-                        <span id="jgHanReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
                         <span class="chess-color-pill jg-pill-han">한 (漢)</span>
                       </div>
-                      <div id="jgHanFormationBadge" class="jg-formation-badge">[원앙마]</div>
+                      <div class="chess-sub-row" style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
+                        <div id="jgHanFormationBadge" class="jg-formation-badge">[원앙마]</div>
+                        <span id="jgHanReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
+                      </div>
                     </div>
                   </div>
                   <div class="chess-clock-box">
@@ -388,10 +392,12 @@
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="jgChoName" class="chess-name-text">초 플레이어 대기 중</span>
-                        <span id="jgChoReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
                         <span class="chess-color-pill jg-pill-cho">초 (楚)</span>
                       </div>
-                      <div id="jgChoFormationBadge" class="jg-formation-badge">[원앙마]</div>
+                      <div class="chess-sub-row" style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
+                        <div id="jgChoFormationBadge" class="jg-formation-badge">[원앙마]</div>
+                        <span id="jgChoReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
+                      </div>
                     </div>
                   </div>
                   <div class="chess-clock-box">
@@ -412,7 +418,13 @@
               <!-- 기보, 관전자, 채팅 컬럼 -->
               <div class="chess-chat-column jg-chat-col">
                 <div class="ch-card chess-history-card">
-                  <div class="chess-history-header">기보 (Moves)</div>
+                  <div class="chess-history-header" style="display:flex;align-items:center;justify-content:space-between;">
+                    <span>기보 (Moves)</span>
+                    <button id="jgBtnReturnLive" class="ch-btn ch-btn-primary small hidden" type="button" style="padding:2px 8px;font-size:11px;height:22px;line-height:1;">최신 수 (▶|)</button>
+                  </div>
+                  <div id="jgReturnLiveBanner" class="history-inspect-banner hidden">
+                    <span id="jgInspectMoveLabel">🔍 기보 복기 중</span>
+                  </div>
                   <div id="jgMoveList" class="chess-move-list">
                     <div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>
                   </div>
@@ -526,6 +538,7 @@
             <!-- 오목 랭킹 패널 -->
             <div id="omRankingsPanel" class="chess-rankings-panel hidden">
               <div class="chess-rank-scoring-note" style="color:var(--om-muted);">💡 오목 대국 승리 횟수로 집계됩니다 (연속 5돌 승리).</div>
+              <div id="omPodiumRow" class="chess-podium-row cbt-podium-row"></div>
               <div class="chess-table-box">
                 <div class="chess-table-scroll">
                   <table class="chess-table">
@@ -571,10 +584,12 @@
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="omWhiteName" class="chess-name-text">백 플레이어 대기 중</span>
-                        <span id="omWhiteReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
                         <span class="chess-color-pill om-pill-white">백 (White)</span>
                       </div>
-                      <div id="omWhiteStats" class="chess-stats-text">전적: -</div>
+                      <div class="chess-sub-row" style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
+                        <div id="omWhiteStats" class="chess-stats-text">전적: -</div>
+                        <span id="omWhiteReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
+                      </div>
                     </div>
                   </div>
                   <div class="chess-clock-box">
@@ -611,10 +626,12 @@
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="omBlackName" class="chess-name-text">흑 플레이어 대기 중</span>
-                        <span id="omBlackReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
                         <span class="chess-color-pill om-pill-black">흑 (Black)</span>
                       </div>
-                      <div id="omBlackStats" class="chess-stats-text">전적: -</div>
+                      <div class="chess-sub-row" style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
+                        <div id="omBlackStats" class="chess-stats-text">전적: -</div>
+                        <span id="omBlackReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
+                      </div>
                     </div>
                   </div>
                   <div class="chess-clock-box">
@@ -635,7 +652,13 @@
               <!-- 기보, 관전자, 채팅 컬럼 -->
               <div class="chess-chat-column om-chat-col">
                 <div class="ch-card chess-history-card">
-                  <div class="chess-history-header">착수 기록 (<span id="omMoveCount">0</span>수)</div>
+                  <div class="chess-history-header" style="display:flex;align-items:center;justify-content:space-between;">
+                    <span>착수 기록 (<span id="omMoveCount">0</span>수)</span>
+                    <button id="omBtnReturnLive" class="ch-btn ch-btn-primary small hidden" type="button" style="padding:2px 8px;font-size:11px;height:22px;line-height:1;">최신 수 (▶|)</button>
+                  </div>
+                  <div id="omReturnLiveBanner" class="history-inspect-banner hidden">
+                    <span id="omInspectMoveLabel">🔍 기보 복기 중</span>
+                  </div>
                   <div id="omMoveList" class="chess-move-list">
                     <div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>
                   </div>

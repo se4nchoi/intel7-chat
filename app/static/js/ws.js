@@ -9,7 +9,7 @@ import { fetchActivePinnedMessages } from './pins.js';
 import { emitAttention, updateDocumentTitle, isChatActiveAndFocused } from './notifications.js';
 import { displayNickname, renderOnlineList, getOrCreateDm, userDirectory } from './dm.js';
 
-import { getOrCreateChannel, channelsDirectory } from './channels.js';
+import { getOrCreateChannel, channelsDirectory, updateChannelLastNotification } from './channels.js';
 import { appendMessageNode, setMentionUsers, refreshRenderedAuthorNames } from './chat.js';
 import {
   onScreenshareStarted,
@@ -186,6 +186,9 @@ export function initWebSocket(callbacks = {}) {
               onSelectConv: callbacks.onSwitchConv,
             });
           }
+        }
+        if (!isOwn && !data.history) {
+          updateChannelLastNotification(chanId);
         }
         if (callbacks.onNewMessage) callbacks.onNewMessage(chatMessage);
         break;

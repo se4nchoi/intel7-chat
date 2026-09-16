@@ -1164,18 +1164,36 @@ function renderPlayersAndSpectators() {
 
   box.innerHTML = `
     <div class="player-row">
-      <div class="top">
-        <span><span class="dot w"></span><b>백 (White)</b>: ${currentRoom.white ? (isWhiteOwner ? '👑 ' : '') + escapeHtml(currentRoom.white.name) : '<span class="empty-seat">비어있음</span>'} ${whiteReadyBadge}</span>
-        ${currentRoom.white ? `<span class="record-badge">${getStat(currentRoom.white.id)}</span>` : ''}
+      <div class="top" style="display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;">
+        <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;overflow:hidden;">
+          <span class="dot w" style="flex-shrink:0;"></span>
+          <b style="flex-shrink:0;color:var(--ch-gold-soft);font-size:12px;">백:</b>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;min-width:0;color:var(--ch-ivory);font-size:13px;">
+            ${currentRoom.white ? (isWhiteOwner ? '👑 ' : '') + escapeHtml(currentRoom.white.name) : '<span class="empty-seat">비어있음</span>'}
+          </span>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+          ${whiteReadyBadge}
+          ${currentRoom.white ? `<span class="record-badge">${getStat(currentRoom.white.id)}</span>` : ''}
+        </div>
       </div>
-      ${canJoinWhite ? `<button class="ch-btn ch-btn-primary small" style="margin-top:5px;" data-pick-role="w" onclick="window.pickChessRole('w')">백으로 앉기</button>` : ''}
+      ${canJoinWhite ? `<button class="ch-btn ch-btn-primary small" style="margin-top:6px;" data-pick-role="w" onclick="window.pickChessRole('w')">백으로 앉기</button>` : ''}
     </div>
     <div class="player-row">
-      <div class="top">
-        <span><span class="dot b"></span><b>흑 (Black)</b>: ${currentRoom.black ? (isBlackOwner ? '👑 ' : '') + escapeHtml(currentRoom.black.name) : '<span class="empty-seat">비어있음</span>'} ${blackReadyBadge}</span>
-        ${currentRoom.black ? `<span class="record-badge">${getStat(currentRoom.black.id)}</span>` : ''}
+      <div class="top" style="display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;">
+        <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;overflow:hidden;">
+          <span class="dot b" style="flex-shrink:0;"></span>
+          <b style="flex-shrink:0;color:var(--ch-gold-soft);font-size:12px;">흑:</b>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;min-width:0;color:var(--ch-ivory);font-size:13px;">
+            ${currentRoom.black ? (isBlackOwner ? '👑 ' : '') + escapeHtml(currentRoom.black.name) : '<span class="empty-seat">비어있음</span>'}
+          </span>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+          ${blackReadyBadge}
+          ${currentRoom.black ? `<span class="record-badge">${getStat(currentRoom.black.id)}</span>` : ''}
+        </div>
       </div>
-      ${canJoinBlack ? `<button class="ch-btn ch-btn-primary small" style="margin-top:5px;" data-pick-role="b" onclick="window.pickChessRole('b')">흑으로 앉기</button>` : ''}
+      ${canJoinBlack ? `<button class="ch-btn ch-btn-primary small" style="margin-top:6px;" data-pick-role="b" onclick="window.pickChessRole('b')">흑으로 앉기</button>` : ''}
     </div>
   `;
 
@@ -1186,7 +1204,9 @@ function renderPlayersAndSpectators() {
   });
 
   const specBox = $('chSpectatorsBox');
+  const specCountEl = $('chSpectatorCount');
   const specs = currentRoom.spectators || [];
+  if (specCountEl) specCountEl.textContent = specs.length;
   if (specs.length === 0) {
     specBox.innerHTML = '<span class="placeholder-line">관전자가 없습니다.</span>';
   } else {
@@ -1426,6 +1446,24 @@ async function fetchAndRenderChessRankings() {
 
 function renderChessRankings(list) {
   const tbody = $('chess-rankings-tbody');
+  const podiumRow = $('chess-podium-row');
+  if (podiumRow) {
+    podiumRow.replaceChildren();
+    const top3 = list.slice(0, 3);
+    const medals = ['🥇', '🥈', '🥉'];
+    top3.forEach((item, idx) => {
+      const card = document.createElement('div');
+      card.className = `podium-card rank-${idx + 1}`;
+      card.innerHTML = `
+        <span class="podium-rank-icon">${medals[idx]}</span>
+        <span class="podium-name">${escapeHtml(item.display_name || item.username)}</span>
+        <span class="podium-score">${item.wins || 0}승</span>
+        <span class="podium-sub">승률 ${item.win_rate || 0}% · ${item.wins || 0}승 ${item.draws || 0}무 ${item.losses || 0}패</span>
+      `;
+      podiumRow.appendChild(card);
+    });
+  }
+
   if (!tbody) return;
 
   tbody.replaceChildren();

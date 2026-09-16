@@ -56,27 +56,117 @@ export async function loadChannels(onSwitchConv) {
   } catch { /* ignore */ }
 }
 
+// ---- Channel Pin & Ordering Helpers ----
+const SYSTEM_CHANNEL_IDS = [1, 2]; // general=1 fixed first, screenshare=2 fixed second
+
+function getPinnedChannelIds() {
+  if (!state.currentUser) return [];
+  try {
+    const raw = localStorage.getItem(`bamboo_pinned_channels_${state.currentUser.id}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function savePinnedChannelIds(ids) {
+  if (!state.currentUser) return;
+  localStorage.setItem(`bamboo_pinned_channels_${state.currentUser.id}`, JSON.stringify(ids));
+}
+
+function toggleChannelPin(channelId, onSwitchConv) {
+  const pinned = getPinnedChannelIds();
+  const idx = pinned.indexOf(channelId);
+  if (idx === -1) { pinned.push(channelId); } else { pinned.splice(idx, 1); }
+  savePinnedChannelIds(pinned);
+  renderChannels(onSwitchConv);
+}
+
+export function updateChannelLastNotification(channelId) {
+  const conv = state.channels.find(c => c.channelId === channelId);
+  if (conv) { conv.lastNotificationTime = Date.now(); conv.lastActivityTime = Date.now(); }
+}
+
 export function renderChannels(onSwitchConv) {
   const channelListEl = document.getElementById('channel-list');
   if (!channelListEl) return;
+
+  const pinnedIds = getPinnedChannelIds();
+  const systemChannels = [];
+  const pinnedChannels = [];
+  const unpinnedChannels = [];
+
+  for (const conv of state.channels) {
+    if (SYSTEM_CHANNEL_IDS.includes(conv.channelId)) { systemChannels.push(conv); }
+    else if (pinnedIds.includes(conv.channelId)) { pinnedChannels.push(conv); }
+    else { unpinnedChannels.push(conv); }
+  }
+
+  systemChannels.sort((a, b) => SYSTEM_CHANNEL_IDS.indexOf(a.channelId) - SYSTEM_CHANNEL_IDS.indexOf(b.channelId));
+  pinnedChannels.sort((a, b) => pinnedIds.indexOf(a.channelId) - pinnedIds.indexOf(b.channelId));
+  unpinnedChannels.sort((a, b) => {
+    const tA = a.lastNotificationTime || a.lastActivityTime || 0;
+    const tB = b.lastNotificationTime || b.lastActivityTime || 0;
+    return tB !== tA ? tB - tA : a.channelId - b.channelId;
+  });
+
+  const sorted = [...systemChannels, ...pinnedChannels, ...unpinnedChannels];
   channelListEl.replaceChildren();
 
-  const sorted = [...state.channels].sort((a, b) => {
-    const isDefA = Boolean(a.isDefault) || a.channelId === 1;
-    const isDefB = Boolean(b.isDefault) || b.channelId === 1;
-    if (isDefA && !isDefB) return -1;
-    if (!isDefA && isDefB) return 1;
-    const timeA = a.lastActivityTime || 0;
-    const timeB = b.lastActivityTime || 0;
-    if (timeB !== timeA) return timeB - timeA;
-    return a.channelId - b.channelId;
-  });
+  let dragSrcChannelId = null;
 
   sorted.forEach(conv => {
     const isActive = state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(conv.channelId);
+    const isSystem = SYSTEM_CHANNEL_IDS.includes(conv.channelId);
+    const isPinned = pinnedIds.includes(conv.channelId);
+
     const item = document.createElement('li');
     item.className = `sidebar-item conv-item channel-item${isActive ? ' active' : ''}`;
     item.dataset.id = conv.id;
+    item.dataset.channelId = String(conv.channelId);
+
+    if (!isSystem) {
+      item.draggable = true;
+      item.addEventListener('dragstart', (e) => {
+        dragSrcChannelId = conv.channelId;
+        item.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        channelListEl.querySelectorAll('.channel-item').forEach(el => el.classList.remove('drag-over-above', 'drag-over-below'));
+      });
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const mid = item.getBoundingClientRect().top + item.getBoundingClientRect().height / 2;
+        channelListEl.querySelectorAll('.channel-item').forEach(el => el.classList.remove('drag-over-above', 'drag-over-below'));
+        item.classList.add(e.clientY < mid ? 'drag-over-above' : 'drag-over-below');
+      });
+      item.addEventListener('dragleave', () => item.classList.remove('drag-over-above', 'drag-over-below'));
+      item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        item.classList.remove('drag-over-above', 'drag-over-below');
+        if (dragSrcChannelId === null || dragSrcChannelId === conv.channelId) return;
+        if (SYSTEM_CHANNEL_IDS.includes(dragSrcChannelId)) return;
+
+        const pinned = getPinnedChannelIds();
+        if (!pinned.includes(dragSrcChannelId)) pinned.push(dragSrcChannelId);
+
+        const srcIdx = pinned.indexOf(dragSrcChannelId);
+        if (srcIdx !== -1) pinned.splice(srcIdx, 1);
+
+        const dstIdx = pinned.indexOf(conv.channelId);
+        const rect = item.getBoundingClientRect();
+        const insertBefore = e.clientY < rect.top + rect.height / 2;
+        if (dstIdx !== -1) {
+          pinned.splice(insertBefore ? dstIdx : dstIdx + 1, 0, dragSrcChannelId);
+        } else {
+          pinned.push(dragSrcChannelId);
+        }
+        savePinnedChannelIds(pinned);
+        dragSrcChannelId = null;
+        renderChannels(onSwitchConv);
+      });
+    }
 
     const icon = document.createElement('span');
     icon.className = 'conv-icon';
@@ -112,8 +202,18 @@ export function renderChannels(onSwitchConv) {
       item.appendChild(liveBadge);
     }
 
+    if (!isSystem) {
+      const pinBtn = document.createElement('button');
+      pinBtn.className = `channel-pin-btn${isPinned ? ' is-pinned' : ''}`;
+      pinBtn.textContent = '📌';
+      pinBtn.title = isPinned ? '고정 해제' : '채널 고정';
+      pinBtn.setAttribute('aria-label', isPinned ? '고정 해제' : '채널 고정');
+      pinBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleChannelPin(conv.channelId, onSwitchConv); });
+      item.appendChild(pinBtn);
+    }
+
     const activate = () => onSwitchConv('channel', conv.channelId);
-    item.addEventListener('click', activate);
+    item.addEventListener('click', (e) => { if (!e.target.classList.contains('channel-pin-btn')) activate(); });
     makeKeyboardClickable(item, activate);
     channelListEl.appendChild(item);
   });
