@@ -540,34 +540,6 @@ function renderOmBoard(room) {
     }
   }
 }
-          ptDiv.addEventListener('mouseenter', () => {
-            ptDiv.classList.add('hover-preview', myColor === 'b' ? 'preview-b' : 'preview-w');
-            if (foulType && myColor === 'b') {
-              ptDiv.classList.add('preview-forbidden');
-            }
-          });
-          ptDiv.addEventListener('mouseleave', () => {
-            ptDiv.classList.remove('hover-preview', 'preview-b', 'preview-w', 'preview-forbidden');
-          });
-        }
-      }
-
-      ptDiv.addEventListener('click', () => {
-        if (!color && isMyTurn) {
-          if (foulType && myColor === 'b') {
-            const foulKorean = foulType === '33' ? '3-3(삼삼)' : (foulType === '44' ? '4-4(사사)' : '장목(6목 이상)');
-            const proceed = confirm(`⚠️ 경고: [${foulKorean} 금수 자리]입니다!\n착수 시 국제 렌주룰에 의해 즉시 "자동패(금수패)" 처리됩니다.\n\n정말로 착수하시겠습니까?`);
-            if (!proceed) return;
-          }
-          sendOmAction('move', { col: c, row: r });
-          playStoneClickSound();
-        }
-      });
-
-      layer.appendChild(ptDiv);
-    }
-  }
-}
 
 function handleResign() {
   if (!currentRoom || !currentRoom.game_started || currentRoom.result) return;
