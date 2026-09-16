@@ -339,6 +339,12 @@ uv run --locked python -m pytest -q
 uv run --locked pip-audit
 ```
 
+프런트엔드 모듈의 문법 오류는 다음 명령으로 별도 검사할 수 있습니다. 이 검사는 CI에서도 자동 실행됩니다.
+
+```powershell
+node scripts/check_js_syntax.mjs
+```
+
 의존성을 바꿀 때는 `uv add 패키지` 또는 `uv add --dev 패키지`를 사용하고 `pyproject.toml`과 `uv.lock`을 함께 커밋합니다.
 
 ## 주요 파일

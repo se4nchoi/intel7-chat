@@ -36,10 +36,7 @@ import {
   refreshQuizSidebarCounts,
   handleLeaderboardInvalidated,
 } from './quiz.js';
-import { initChessListeners } from './chess.js';
 import { initPlayHubListeners } from './play_hub.js';
-import { initJanggiListeners } from './janggi.js';
-import { initOmokListeners } from './omok.js';
 import { initScreenShareUI, handleConversationSwitch, handleChannelSwitch } from './screenshare.js';
 import {
   openGlobalNotificationModal,
@@ -56,6 +53,28 @@ import {
   isChatActiveAndFocused,
 } from './notifications.js';
 import { playNotificationSound, setSoundMode, setSoundVolume } from './audio.js';
+
+const OPTIONAL_GAME_MODULES = [
+  { name: '체스', path: './chess.js', initializer: 'initChessListeners' },
+  { name: '장기', path: './janggi.js', initializer: 'initJanggiListeners' },
+  { name: '오목', path: './omok.js', initializer: 'initOmokListeners' },
+];
+
+async function initOptionalGameModules() {
+  await Promise.allSettled(OPTIONAL_GAME_MODULES.map(async ({ name, path, initializer }) => {
+    try {
+      const module = await import(path);
+      const init = module[initializer];
+      if (typeof init !== 'function') {
+        throw new TypeError(`${initializer} export is missing`);
+      }
+      init();
+    } catch (error) {
+      console.error(`[BambooChat] ${name} module failed to initialize`, error);
+      showToast(`${name} 기능을 불러오지 못했습니다. 채팅과 로그인은 계속 사용할 수 있습니다.`, 'error');
+    }
+  }));
+}
 
 function syncTouchableViewport() {
   const viewportHeight = window.visualViewport?.height || window.innerHeight;
@@ -554,9 +573,7 @@ function initApp() {
   initPinsListeners();
   initQuizListeners();
   initPlayHubListeners();
-  initChessListeners();
-  initJanggiListeners();
-  initOmokListeners();
+  void initOptionalGameModules();
   initSearchListeners(switchConversation);
   initScreenShareUI();
   initSidebarSections();

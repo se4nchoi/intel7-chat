@@ -1164,15 +1164,15 @@ function renderPlayersAndSpectators() {
 
   box.innerHTML = `
     <div class="player-row">
-      <div class="top" style="display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;">
-        <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;overflow:hidden;">
+      <div class="chess-player-identity">
+        <div class="chess-player-name-wrap">
           <span class="dot w" style="flex-shrink:0;"></span>
           <b style="flex-shrink:0;color:var(--ch-gold-soft);font-size:12px;">백:</b>
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;min-width:0;color:var(--ch-ivory);font-size:13px;">
+          <span class="chess-player-name">
             ${currentRoom.white ? (isWhiteOwner ? '👑 ' : '') + escapeHtml(currentRoom.white.name) : '<span class="empty-seat">비어있음</span>'}
           </span>
         </div>
-        <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+        <div class="chess-player-meta">
           ${whiteReadyBadge}
           ${currentRoom.white ? `<span class="record-badge">${getStat(currentRoom.white.id)}</span>` : ''}
         </div>
@@ -1180,15 +1180,15 @@ function renderPlayersAndSpectators() {
       ${canJoinWhite ? `<button class="ch-btn ch-btn-primary small" style="margin-top:6px;" data-pick-role="w" onclick="window.pickChessRole('w')">백으로 앉기</button>` : ''}
     </div>
     <div class="player-row">
-      <div class="top" style="display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;">
-        <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;overflow:hidden;">
+      <div class="chess-player-identity">
+        <div class="chess-player-name-wrap">
           <span class="dot b" style="flex-shrink:0;"></span>
           <b style="flex-shrink:0;color:var(--ch-gold-soft);font-size:12px;">흑:</b>
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;min-width:0;color:var(--ch-ivory);font-size:13px;">
+          <span class="chess-player-name">
             ${currentRoom.black ? (isBlackOwner ? '👑 ' : '') + escapeHtml(currentRoom.black.name) : '<span class="empty-seat">비어있음</span>'}
           </span>
         </div>
-        <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+        <div class="chess-player-meta">
           ${blackReadyBadge}
           ${currentRoom.black ? `<span class="record-badge">${getStat(currentRoom.black.id)}</span>` : ''}
         </div>

@@ -180,6 +180,31 @@
   overflow-y: auto !important;
 }
 
+/* High-specificity layout rules must never defeat visibility state. */
+#chess-lobby-screen.hidden,
+.play-dialog .chess-lobby-screen.hidden,
+.play-dialog .jg-lobby.hidden,
+.play-dialog .om-lobby.hidden,
+.play-dialog #chess-game-screen.hidden,
+.play-dialog .jg-game-screen.hidden,
+.play-dialog .om-game-screen.hidden,
+.play-dialog .chess-rankings-panel.hidden,
+.play-dialog .play-lobby-actions.hidden {
+  display: none !important;
+}
+
+#chess-game-screen,
+.play-dialog .jg-game-screen,
+.play-dialog .om-game-screen {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
 .chess-game-topbar,
 .jg-game-topbar,
 .om-game-topbar {
@@ -207,7 +232,7 @@
   height: 48px !important;
   min-height: 48px !important;
   max-height: 48px !important;
-  margin: 0 0 16px 0 !important;
+  margin: 0 !important;
   box-sizing: border-box !important;
   flex-shrink: 0 !important;
   gap: 12px !important;
@@ -219,21 +244,25 @@
 .om-tabs {
   display: flex !important;
   align-items: center !important;
-  gap: 8px !important;
-  height: 36px !important;
+  gap: 3px !important;
+  height: 40px !important;
+  padding: 3px !important;
+  border-radius: 10px !important;
+  background: rgba(0, 0, 0, 0.24) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
   box-sizing: border-box !important;
 }
 
 .chess-tab-btn,
 .jg-tab-btn,
 .om-tab-btn {
-  height: 36px !important;
-  min-height: 36px !important;
-  max-height: 36px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
   padding: 0 16px !important;
   box-sizing: border-box !important;
-  border-radius: 8px !important;
-  border: 1.5px solid transparent !important;
+  border-radius: 7px !important;
+  border: 1px solid transparent !important;
   font-size: 13px !important;
   font-weight: 600 !important;
   display: inline-flex !important;
@@ -243,6 +272,22 @@
   cursor: pointer !important;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease !important;
   flex-shrink: 0 !important;
+}
+
+.play-dialog .chess-tab-btn.active,
+.play-dialog .jg-tab-btn.active,
+.play-dialog .om-tab-btn.active {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.24) !important;
+  color: currentColor !important;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.28) !important;
+}
+
+.play-lobby-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 34px !important;
 }
 
 /* Standardized Action Buttons Across Play Hub (34px exact height) */
@@ -345,6 +390,40 @@
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
+}
+
+.play-dialog .chess-player-identity {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+
+.play-dialog .chess-player-name-wrap {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.play-dialog .chess-player-name {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: var(--ch-ivory) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+.play-dialog .chess-player-meta {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 5px !important;
+  padding-left: 18px !important;
+  min-height: 20px !important;
 }
 
 .play-dialog .chess-color-pill {
