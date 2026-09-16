@@ -335,6 +335,24 @@ function updateJgRoomState(room) {
     $('jgScoreBanner').textContent = `초 ${s.cho}점 vs 한 ${s.han}점 (덤 1.5)`;
   }
 
+  // Spectator list
+  const specList = $('jgSpectatorList');
+  const specCount = $('jgSpectatorCount');
+  const spectators = room.spectators || [];
+  if (specCount) specCount.textContent = spectators.length;
+  if (specList) {
+    if (spectators.length === 0) {
+      specList.innerHTML = '<span style="font-size:12px;color:var(--jg-muted);opacity:0.6;">관전자가 없습니다.</span>';
+    } else {
+      specList.innerHTML = spectators.map(s => `
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.04);">
+          <span style="font-size:11px;">👁️</span>
+          <span style="color:var(--jg-text);font-weight:600;">${s.name}</span>
+        </div>
+      `).join('');
+    }
+  }
+
   // Render board
   renderJgBoard(room);
 
@@ -374,28 +392,28 @@ function renderJgBoard(room) {
   for (let r = 0; r < 10; r++) {
     const p1 = getPt(0, r);
     const p2 = getPt(8, r);
-    lines += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#34d399" stroke-opacity="0.5" stroke-width="1.5" />`;
+    lines += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#3e2210" stroke-opacity="0.8" stroke-width="1.5" />`;
   }
 
   // Vertical lines (9 files) - Janggi lines don't break across the river (unlike Xiangqi)
   for (let c = 0; c < 9; c++) {
     const p1 = getPt(c, 0);
     const p2 = getPt(c, 9);
-    lines += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#34d399" stroke-opacity="0.5" stroke-width="1.5" />`;
+    lines += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#3e2210" stroke-opacity="0.8" stroke-width="1.5" />`;
   }
 
   // Palace diagonals:
   // Cho palace (ranks 0..2, cols 3..5)
   const c30 = getPt(3, 0), c52 = getPt(5, 2);
   const c50 = getPt(5, 0), c32 = getPt(3, 2);
-  lines += `<line x1="${c30.x}" y1="${c30.y}" x2="${c52.x}" y2="${c52.y}" stroke="#34d399" stroke-opacity="0.75" stroke-width="1.5" />`;
-  lines += `<line x1="${c50.x}" y1="${c50.y}" x2="${c32.x}" y2="${c32.y}" stroke="#34d399" stroke-opacity="0.75" stroke-width="1.5" />`;
+  lines += `<line x1="${c30.x}" y1="${c30.y}" x2="${c52.x}" y2="${c52.y}" stroke="#3e2210" stroke-opacity="0.85" stroke-width="1.5" />`;
+  lines += `<line x1="${c50.x}" y1="${c50.y}" x2="${c32.x}" y2="${c32.y}" stroke="#3e2210" stroke-opacity="0.85" stroke-width="1.5" />`;
 
   // Han palace (ranks 7..9, cols 3..5)
   const h37 = getPt(3, 7), h59 = getPt(5, 9);
   const h57 = getPt(5, 7), h39 = getPt(3, 9);
-  lines += `<line x1="${h37.x}" y1="${h37.y}" x2="${h59.x}" y2="${h59.y}" stroke="#34d399" stroke-opacity="0.75" stroke-width="1.5" />`;
-  lines += `<line x1="${h57.x}" y1="${h57.y}" x2="${h39.x}" y2="${h39.y}" stroke="#34d399" stroke-opacity="0.75" stroke-width="1.5" />`;
+  lines += `<line x1="${h37.x}" y1="${h37.y}" x2="${h59.x}" y2="${h59.y}" stroke="#3e2210" stroke-opacity="0.85" stroke-width="1.5" />`;
+  lines += `<line x1="${h57.x}" y1="${h57.y}" x2="${h39.x}" y2="${h39.y}" stroke="#3e2210" stroke-opacity="0.85" stroke-width="1.5" />`;
 
   svg.innerHTML = lines;
 

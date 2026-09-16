@@ -298,6 +298,24 @@ function updateOmRoomState(room) {
   // Render move list
   renderOmMoveHistory(room.move_history || []);
 
+  // Spectator list
+  const specList = $('omSpectatorList');
+  const specCount = $('omSpectatorCount');
+  const spectators = room.spectators || [];
+  if (specCount) specCount.textContent = spectators.length;
+  if (specList) {
+    if (spectators.length === 0) {
+      specList.innerHTML = '<span style="font-size:12px;color:var(--om-muted);opacity:0.6;">관전자가 없습니다.</span>';
+    } else {
+      specList.innerHTML = spectators.map(s => `
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.04);">
+          <span style="font-size:11px;">👁️</span>
+          <span style="color:var(--om-text);font-weight:600;">${s.name}</span>
+        </div>
+      `).join('');
+    }
+  }
+
   // Update clocks
   startOmClock(room);
 }

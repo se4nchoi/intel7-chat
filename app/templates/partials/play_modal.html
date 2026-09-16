@@ -81,12 +81,12 @@
                 <table class="chess-table">
                   <thead>
                     <tr>
-                      <th style="width:60px;text-align:center;">순위</th>
+                      <th style="width: 50px;">순위</th>
                       <th>플레이어</th>
-                      <th style="width:70px;text-align:center;">승수</th>
-                      <th style="width:90px;text-align:center;">승률</th>
-                      <th style="width:130px;text-align:center;">전적</th>
-                      <th style="width:140px;text-align:center;">최근 승리</th>
+                      <th style="width: 70px;">승수</th>
+                      <th style="width: 100px;">전적 (승/무/패)</th>
+                      <th style="width: 70px;">승률</th>
+                      <th>칭호</th>
                     </tr>
                   </thead>
                   <tbody id="chess-rankings-tbody"></tbody>
@@ -95,132 +95,151 @@
             </div>
           </div>
 
-          <!-- 체스 대국 화면 -->
-          <div id="chess-game-screen" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+          <!-- 체스 대국 화면 (완전 복원된 3-컬럼 정규 체스 대국실) -->
+          <div id="chess-game-screen" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow-y:auto;padding:16px 20px;">
             <div class="chess-game-topbar">
-              <div class="chess-game-meta">
-                <span id="chRoomTitle" class="chess-room-title-text">체스 대국실</span>
-                <span id="chRoomIdBadge" class="chess-room-id-badge">#chess</span>
+              <div class="ch-row" style="display:flex;align-items:center;gap:10px;">
+                <button id="chLeaveRoomBtn" class="ch-btn ch-btn-ghost small" type="button">← 로비로 나가기</button>
+                <span id="chGameRoomTitle" style="font-weight:700;color:var(--ch-gold-soft);font-size:15px;">대국실</span>
               </div>
-              <div class="chess-game-actions">
-                <button id="chBtnResign" class="ch-btn ch-btn-danger small" type="button">🏳️ 기권</button>
-                <button id="chBtnDraw" class="ch-btn ch-btn-ghost small" type="button">🤝 무승부 제안</button>
-                <button id="chBtnLeave" class="ch-btn ch-btn-ghost small" type="button">🚪 방 나가기</button>
+
+              <!-- 플레이어 액션 버튼 -->
+              <div id="chPlayerActions" class="ch-row" style="display:flex;align-items:center;gap:6px;">
+                <button id="chStartGameBtn" class="ch-btn ch-btn-primary small" type="button">게임 시작</button>
+                <button id="chDrawOfferBtn" class="ch-btn ch-btn-ghost small" type="button" style="display:none;">무승부 신청</button>
+                <button id="chResignBtn" class="ch-btn ch-btn-danger small" type="button" style="display:none;">기권</button>
+                <button id="chReturnToSpecBtn" class="ch-btn ch-btn-ghost small" type="button">관전자로 이동</button>
               </div>
             </div>
 
+            <div id="chStatusLine" class="status-line"></div>
+
             <div class="chess-game-grid">
-              <!-- 플레이어 / 시계 컬럼 -->
-              <div class="chess-players-column">
-                <div id="chBlackCard" class="ch-card chess-player-card">
-                  <div class="chess-card-top">
-                    <div class="chess-avatar-wrap">
-                      <span class="chess-piece-token black">♚</span>
-                    </div>
-                    <div class="chess-player-info">
-                      <div class="chess-name-row">
-                        <span id="chBlackName" class="chess-name-text">흑 플레이어 대기 중</span>
-                        <span class="chess-color-pill black">흑 (Black)</span>
-                      </div>
-                      <div id="chBlackStats" class="chess-stats-text">전적: -</div>
-                    </div>
-                  </div>
-                  <div class="chess-clock-box" id="chBlackClockBox">
-                    <span class="chess-clock-icon">⏱️</span>
-                    <span id="chBlackTimer" class="chess-timer-text">10:00</span>
+              <!-- 체스판 및 가이드 영역 -->
+              <div class="board-outer">
+                <!-- 승패/시작 결과 알림 배너 -->
+                <div id="chResultBanner" class="result-banner">승리!</div>
+
+                <!-- 프로모션 선택 모달 -->
+                <div id="chPromoModal" class="ch-modal-overlay hidden">
+                  <div class="ch-modal-card">
+                    <h3>프로모션할 기물 선택</h3>
+                    <div id="chPromoBtns" class="promo-btns"></div>
+                    <button id="chPromoCloseBtn" class="ch-btn ch-btn-ghost small" type="button" style="margin-top:14px;">취소</button>
                   </div>
                 </div>
 
-                <div class="chess-game-status-card ch-card">
-                  <div class="chess-status-title">대국 현황</div>
-                  <div id="chGameStatusText" class="chess-status-banner">상대방의 참가를 기다리고 있습니다.</div>
-                  <div id="chTurnBadge" class="chess-turn-indicator hidden">
-                    <span class="pulse-dot"></span>
-                    <span id="chTurnText">백(White) 차례</span>
-                  </div>
-                  <div id="chRoleControls" class="chess-role-controls">
-                    <button id="chBtnSitWhite" class="ch-btn ch-btn-outline small" type="button">♔ 백 착석</button>
-                    <button id="chBtnSitBlack" class="ch-btn ch-btn-outline small" type="button">♚ 흑 착석</button>
-                    <button id="chBtnSpectate" class="ch-btn ch-btn-ghost small hidden" type="button">관전 모드</button>
-                  </div>
-                  <div id="chStartControls" class="chess-start-controls hidden">
-                    <button id="chBtnStartGame" class="ch-btn ch-btn-primary full-width" type="button">⚔️ 대국 시작</button>
+                <!-- 내가 무승부 신청 후 대기 모달 -->
+                <div id="chDrawWaitModal" class="ch-modal-overlay hidden">
+                  <div class="ch-modal-card">
+                    <h3>⏳ 무승부 신청 대기 중</h3>
+                    <p style="color:var(--ch-muted);font-size:12.5px;margin:0;">상대방의 수락/거절 결정을 기다리고 있습니다...</p>
                   </div>
                 </div>
 
-                <div id="chWhiteCard" class="ch-card chess-player-card">
-                  <div class="chess-card-top">
-                    <div class="chess-avatar-wrap">
-                      <span class="chess-piece-token white">♔</span>
-                    </div>
-                    <div class="chess-player-info">
-                      <div class="chess-name-row">
-                        <span id="chWhiteName" class="chess-name-text">백 플레이어 대기 중</span>
-                        <span class="chess-color-pill white">백 (White)</span>
-                      </div>
-                      <div id="chWhiteStats" class="chess-stats-text">전적: -</div>
+                <!-- 상대방이 무승부 제안했을 때 모달 -->
+                <div id="chDrawModal" class="ch-modal-overlay hidden">
+                  <div class="ch-modal-card">
+                    <h3>🤝 무승부 제안</h3>
+                    <p style="color:var(--ch-muted);font-size:12.5px;margin-bottom:16px;">상대방이 무승부를 제안했습니다. 수락하시겠습니까?</p>
+                    <div class="ch-row" style="justify-content:center;">
+                      <button id="chAcceptDrawBtn" class="ch-btn ch-btn-primary small" type="button">수락</button>
+                      <button id="chRejectDrawBtn" class="ch-btn ch-btn-danger small" type="button">거절</button>
                     </div>
                   </div>
-                  <div class="chess-clock-box" id="chWhiteClockBox">
-                    <span class="chess-clock-icon">⏱️</span>
-                    <span id="chWhiteTimer" class="chess-timer-text">10:00</span>
+                </div>
+
+                <!-- 시계(타이머) 칩 -->
+                <div class="clocks-row">
+                  <div id="chClockChipWhite" class="clock-chip">
+                    <span id="chClockLabelWhite" class="label">백</span>
+                    <span id="chClockWhite" class="time">10:00</span>
                   </div>
+                  <div id="chClockChipBlack" class="clock-chip">
+                    <span id="chClockLabelBlack" class="label">흑</span>
+                    <span id="chClockBlack" class="time">10:00</span>
+                  </div>
+                </div>
+
+                <!-- 보드 및 랭크 라벨 -->
+                <div class="board-with-ranks">
+                  <div id="chRanksCol" class="ranks-col"></div>
+                  <div id="chBoardFrame" class="board-frame">
+                    <div id="chBoardFreezeOverlay" class="board-freeze-overlay hidden"></div>
+                    <div id="chBoard" class="board"></div>
+                  </div>
+                </div>
+                <div id="chCoords" class="coords"></div>
+
+                <!-- 복기(Inspect) 모드 알림 바 (보드 하단 배치로 보드 위치 불변 유지) -->
+                <div id="chInspectBanner" class="chess-inspect-banner hidden">
+                  <span id="chInspectText">🔍 과거 수순 복기 중 (<b id="chInspectMoveLabel">1수</b>)</span>
+                  <button id="chInspectLiveBtn" class="ch-btn ch-btn-primary small" type="button" style="padding:3px 8px;font-size:11.5px;">실시간으로 복귀</button>
+                </div>
+
+                <!-- 선입력(Premove) 알림 바 -->
+                <div id="chPremoveBar" class="chess-premove-bar hidden">
+                  <span>⚡ 선입력 예약됨: <b id="chPremoveLabel">e2 → e4</b></span>
+                  <button id="chPremoveCancelBtn" class="ch-btn ch-btn-danger small" type="button" style="padding:2px 7px;font-size:11px;">취소 (우클릭)</button>
+                </div>
+
+                <!-- 초보자 가이드 카드 -->
+                <div id="chGuideCardBox" class="guide-card-box">
+                  <h3 id="chGuideTitle">💡 내 차례입니다!</h3>
+                  <p id="chGuideDesc">움직이고 싶은 기물을 터치해 보세요. 갈 수 있는 위치가 판 위에 점으로 표시됩니다.</p>
                 </div>
               </div>
 
-              <!-- 중앙 체스판 컬럼 -->
-              <div class="chess-board-column">
-                <div class="chess-board-wrap">
-                  <div id="chCoords" class="chess-coords-layer">
-                    <div id="chBoard" class="chess-board-grid"></div>
-                  </div>
-                  <div id="chInspectBanner" class="chess-inspect-banner hidden">
-                    <span class="ch-inspect-icon">🔍</span>
-                    <span id="chInspectMoveLabel">과거 수 복기 중</span>
-                    <button id="chInspectExitBtn" class="ch-inspect-exit-btn" type="button">현재 수로 복귀 ↵</button>
-                  </div>
-                  <div id="chPremoveBar" class="chess-premove-bar hidden">
-                    <span id="chPremoveLabel">사전 수 예약됨</span>
-                    <button id="chPremoveCancelBtn" class="ch-btn ch-btn-ghost tiny" type="button">취소</button>
-                  </div>
-                </div>
-                <div class="chess-replay-nav">
-                  <button id="chMoveFirst" class="ch-btn ch-btn-ghost small" type="button" title="첫 수">|◀</button>
-                  <button id="chMovePrev" class="ch-btn ch-btn-ghost small" type="button" title="이전 수">◀</button>
-                  <button id="chMoveNext" class="ch-btn ch-btn-ghost small" type="button" title="다음 수">▶</button>
-                  <button id="chMoveLast" class="ch-btn ch-btn-ghost small" type="button" title="마지막 수">▶|</button>
-                  <button id="chBtnFlip" class="ch-btn ch-btn-ghost small" type="button" title="보드 뒤집기">🔄 회전</button>
-                </div>
-              </div>
-
-              <!-- 기보 및 채팅 컬럼 -->
+              <!-- 컬럼 2: 기보 및 대국자/관전자 정보 -->
               <div class="chess-info-column">
-                <div class="ch-card chess-history-card">
-                  <div class="chess-history-header">기보 기록 (Notation)</div>
-                  <div id="chMoveHistory" class="chess-move-list">
-                    <div class="chess-empty-history">대국이 시작되면 수가 기록됩니다.</div>
+                <!-- 기보 기록 -->
+                <div class="ch-card">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <h3 style="margin:0;">기보 기록 (Moves)</h3>
+                    <button id="chReturnLiveBtn" class="ch-btn ch-btn-ghost small hidden" type="button" style="padding:2px 7px;font-size:11px;">▶ 최신 수</button>
+                  </div>
+                  <div id="chHistoryList" class="history-list">
+                    <span class="placeholder-line">대국이 시작되면 기보가 기록됩니다.</span>
+                  </div>
+                  <div class="history-nav-controls">
+                    <button id="chHistFirstBtn" class="ch-btn ch-btn-ghost small" type="button" title="시작 위치 (|◀)">|◀</button>
+                    <button id="chHistPrevBtn" class="ch-btn ch-btn-ghost small" type="button" title="이전 수 (◀)">◀</button>
+                    <button id="chHistNextBtn" class="ch-btn ch-btn-ghost small" type="button" title="다음 수 (▶)">▶</button>
+                    <button id="chHistLastBtn" class="ch-btn ch-btn-ghost small" type="button" title="최신 수 (▶|)">▶|</button>
                   </div>
                 </div>
-                <div class="ch-card chess-spectators-card">
-                  <div class="chess-spectators-header">관전자 (<span id="chSpectatorCount">0</span>명)</div>
-                  <div id="chSpectatorList" class="chess-spectator-list"></div>
+
+                <!-- 현재 대국자 -->
+                <div class="ch-card">
+                  <h3>현재 대국자</h3>
+                  <div id="chPlayersBox" class="players"></div>
+                </div>
+
+                <!-- 관전자 & 대기열 -->
+                <div class="ch-card">
+                  <h3>관전자 & 대기열</h3>
+                  <div id="chSpectatorsBox" class="spec-list">
+                    <span class="placeholder-line">관전자가 없습니다.</span>
+                  </div>
                 </div>
               </div>
 
+              <!-- 컬럼 3: 실시간 대국실 채팅 (독립 3rd Column) -->
               <div class="chess-chat-column">
                 <div class="ch-card chess-chat-card full-height">
                   <div class="chess-chat-header">
                     <div class="chess-chat-title">
-                      <span>대국실 채팅</span>
+                      <span>💬 대국실 채팅</span>
                       <span class="chess-live-pill"><span class="pulse-dot"></span>LIVE</span>
                     </div>
+                    <span class="chess-chat-sub">임시 채팅 (DB 미저장)</span>
                   </div>
                   <div id="chChatMessages" class="chess-chat-messages">
                     <div class="chess-chat-notice">대국자와 관전자가 실시간으로 대화할 수 있습니다.</div>
                   </div>
                   <form id="chChatForm" class="chess-chat-form">
-                    <input type="text" id="chChatInput" class="ch-input" placeholder="메시지 입력..." maxlength="150" autocomplete="off" />
-                    <button type="submit" class="ch-btn ch-btn-primary small">전송</button>
+                    <input type="text" id="chChatInput" class="ch-input" placeholder="메시지 입력 (Enter)" maxlength="100" autocomplete="off" />
+                    <button type="submit" class="ch-btn ch-btn-primary small" style="padding:6px 12px;white-space:nowrap;">전송</button>
                   </form>
                 </div>
               </div>
@@ -231,7 +250,7 @@
 
 
       <!-- =======================================================
-           VIEW 2: 장기 (JANGGI) - Green-ish Tone
+           VIEW 2: 장기 (JANGGI) - Wood Board & Bamboo Mist Tone
            ======================================================= -->
       <div id="play-view-janggi" class="play-view hidden">
         <div class="janggi-container">
@@ -252,7 +271,7 @@
             </div>
 
             <!-- 장기 방 생성 폼 -->
-            <div id="jgCreatePanel" class="chess-create-panel hidden" style="border-color:rgba(52,211,153,0.3);">
+            <div id="jgCreatePanel" class="chess-create-panel hidden" style="border-color:rgba(167,243,208,0.3);">
               <h3 style="margin-top:0;margin-bottom:12px;color:#a7f3d0;font-size:15px;">새 장기 대국실 개설</h3>
               <div class="ch-row" style="margin-bottom:12px;">
                 <div style="flex:2;min-width:200px;">
@@ -305,8 +324,8 @@
             <div class="jg-game-topbar">
               <div class="chess-game-meta">
                 <span id="jgRoomTitle" class="chess-room-title-text" style="color:#a7f3d0;">장기 대국실</span>
-                <span id="jgRoomIdBadge" class="chess-room-id-badge" style="background:#133525;color:#6ee7b7;">#janggi</span>
-                <span id="jgScoreBanner" style="font-size:12.5px;font-weight:700;color:#6ee7b7;margin-left:10px;">초 72.0 vs 한 73.5</span>
+                <span id="jgRoomIdBadge" class="chess-room-id-badge" style="background:#1b3629;color:#86efac;">#janggi</span>
+                <span id="jgScoreBanner" style="font-size:12.5px;font-weight:700;color:#86efac;margin-left:10px;">초 72.0 vs 한 73.5</span>
               </div>
               <div style="display:flex;gap:6px;">
                 <button id="jgBtnPass" class="jg-btn-ghost" type="button">⏸️ 한수 쉼</button>
@@ -320,17 +339,17 @@
               <!-- 플레이어 / 시계 컬럼 -->
               <div class="chess-players-column">
                 <!-- 한 (Han / Red) -->
-                <div id="jgHanCard" class="ch-card chess-player-card" style="border-color:rgba(244,63,94,0.3);">
+                <div id="jgHanCard" class="ch-card chess-player-card">
                   <div class="chess-card-top">
-                    <div class="chess-avatar-wrap" style="background:var(--jg-han-bg);border:1.5px solid var(--jg-han-border);">
-                      <span style="font-family:'Batang',serif;font-weight:800;color:#fecdd3;">漢</span>
+                    <div class="chess-avatar-wrap jg-avatar-han">
+                      <span class="jg-token-text">漢</span>
                     </div>
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="jgHanName" class="chess-name-text">한 플레이어 대기 중</span>
-                        <span class="chess-color-pill" style="background:rgba(244,63,94,0.2);color:#fda4af;border:1px solid rgba(244,63,94,0.4);">한 (漢)</span>
+                        <span class="chess-color-pill jg-pill-han">한 (漢)</span>
                       </div>
-                      <div id="jgHanFormationBadge" style="font-size:11px;color:#f43f5e;font-weight:600;">[원앙마]</div>
+                      <div id="jgHanFormationBadge" class="jg-formation-badge">[원앙마]</div>
                     </div>
                   </div>
                   <div class="chess-clock-box">
@@ -358,17 +377,17 @@
                 </div>
 
                 <!-- 초 (Cho / Blue) -->
-                <div id="jgChoCard" class="ch-card chess-player-card" style="border-color:rgba(6,182,212,0.3);">
+                <div id="jgChoCard" class="ch-card chess-player-card">
                   <div class="chess-card-top">
-                    <div class="chess-avatar-wrap" style="background:var(--jg-cho-bg);border:1.5px solid var(--jg-cho-border);">
-                      <span style="font-family:'Batang',serif;font-weight:800;color:#a5f3fc;">楚</span>
+                    <div class="chess-avatar-wrap jg-avatar-cho">
+                      <span class="jg-token-text">楚</span>
                     </div>
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="jgChoName" class="chess-name-text">초 플레이어 대기 중</span>
-                        <span class="chess-color-pill" style="background:rgba(6,182,212,0.2);color:#a5f3fc;border:1px solid rgba(6,182,212,0.4);">초 (楚)</span>
+                        <span class="chess-color-pill jg-pill-cho">초 (楚)</span>
                       </div>
-                      <div id="jgChoFormationBadge" style="font-size:11px;color:#06b6d4;font-weight:600;">[원앙마]</div>
+                      <div id="jgChoFormationBadge" class="jg-formation-badge">[원앙마]</div>
                     </div>
                   </div>
                   <div class="chess-clock-box">
@@ -378,7 +397,7 @@
                 </div>
               </div>
 
-              <!-- 중앙 9x10 장기판 컬럼 -->
+              <!-- 중앙 9x10 전통 원목 장기판 컬럼 -->
               <div class="jg-board-wrapper">
                 <div class="jg-board-box" id="jgBoardBox">
                   <svg id="jgBoardSvg" class="jg-board-svg"></svg>
@@ -386,19 +405,29 @@
                 </div>
               </div>
 
-              <!-- 기보 및 채팅 컬럼 -->
+              <!-- 기보, 관전자, 채팅 컬럼 -->
               <div class="chess-chat-column jg-chat-col">
-                <div class="ch-card chess-history-card" style="height:170px;margin-bottom:8px;">
+                <div class="ch-card chess-history-card" style="height:130px;margin-bottom:8px;">
                   <div class="chess-history-header">기보 (Moves)</div>
                   <div id="jgMoveList" class="chess-move-list">
                     <div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>
                   </div>
                 </div>
+
+                <!-- 관전자 리스트 (참관 리스트) -->
+                <div class="ch-card chess-spectators-card" style="height:110px;margin-bottom:8px;padding:10px 12px;box-sizing:border-box;display:flex;flex-direction:column;">
+                  <div class="chess-spectators-header" style="font-size:12px;font-weight:700;color:var(--jg-gold-soft);margin-bottom:6px;">관전자 (<span id="jgSpectatorCount">0</span>명)</div>
+                  <div id="jgSpectatorList" class="chess-spectator-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
+                    <span style="font-size:12px;color:var(--jg-muted);opacity:0.6;">관전자가 없습니다.</span>
+                  </div>
+                </div>
+
+                <!-- 대국실 채팅 -->
                 <div class="ch-card chess-chat-card" style="flex:1;">
                   <div class="chess-chat-header">
                     <div class="chess-chat-title">
                       <span>대국실 채팅</span>
-                      <span class="chess-live-pill" style="background:rgba(52,211,153,0.2);color:#6ee7b7;"><span class="pulse-dot"></span>LIVE</span>
+                      <span class="chess-live-pill" style="background:rgba(52,211,153,0.15);color:#86efac;"><span class="pulse-dot"></span>LIVE</span>
                     </div>
                   </div>
                   <div id="jgChatMessages" class="chess-chat-messages">
@@ -443,7 +472,7 @@
 
 
       <!-- =======================================================
-           VIEW 3: 오목 (OMOK) - Woody Tone
+           VIEW 3: 오목 (OMOK) - Warm Woody Kaya Tone
            ======================================================= -->
       <div id="play-view-omok" class="play-view hidden">
         <div class="omok-container">
@@ -529,15 +558,15 @@
               <!-- 플레이어 / 시계 컬럼 -->
               <div class="chess-players-column">
                 <!-- 백 (White) -->
-                <div id="omWhiteCard" class="ch-card chess-player-card" style="border-color:rgba(255,255,255,0.2);">
+                <div id="omWhiteCard" class="ch-card chess-player-card">
                   <div class="chess-card-top">
-                    <div class="chess-avatar-wrap" style="background:#f4f4f5;border:1.5px solid #d4d4d8;">
-                      <span style="color:#18181b;font-size:16px;">⚪</span>
+                    <div class="chess-avatar-wrap om-avatar-white">
+                      <span class="om-stone-icon">⚪</span>
                     </div>
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="omWhiteName" class="chess-name-text">백 플레이어 대기 중</span>
-                        <span class="chess-color-pill white">백 (White)</span>
+                        <span class="chess-color-pill om-pill-white">백 (White)</span>
                       </div>
                       <div id="omWhiteStats" class="chess-stats-text">전적: -</div>
                     </div>
@@ -566,15 +595,15 @@
                 </div>
 
                 <!-- 흑 (Black) -->
-                <div id="omBlackCard" class="ch-card chess-player-card" style="border-color:rgba(0,0,0,0.4);">
+                <div id="omBlackCard" class="ch-card chess-player-card">
                   <div class="chess-card-top">
-                    <div class="chess-avatar-wrap" style="background:#18181b;border:1.5px solid #3f3f46;">
-                      <span style="color:#ffffff;font-size:16px;">⚫</span>
+                    <div class="chess-avatar-wrap om-avatar-black">
+                      <span class="om-stone-icon">⚫</span>
                     </div>
                     <div class="chess-player-info">
                       <div class="chess-name-row">
                         <span id="omBlackName" class="chess-name-text">흑 플레이어 대기 중</span>
-                        <span class="chess-color-pill black">흑 (Black)</span>
+                        <span class="chess-color-pill om-pill-black">흑 (Black)</span>
                       </div>
                       <div id="omBlackStats" class="chess-stats-text">전적: -</div>
                     </div>
@@ -594,14 +623,24 @@
                 </div>
               </div>
 
-              <!-- 기보 및 채팅 컬럼 -->
+              <!-- 기보, 관전자, 채팅 컬럼 -->
               <div class="chess-chat-column om-chat-col">
-                <div class="ch-card chess-history-card" style="height:170px;margin-bottom:8px;">
+                <div class="ch-card chess-history-card" style="height:130px;margin-bottom:8px;">
                   <div class="chess-history-header">착수 기록 (<span id="omMoveCount">0</span>수)</div>
                   <div id="omMoveList" class="chess-move-list">
                     <div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>
                   </div>
                 </div>
+
+                <!-- 관전자 리스트 (참관 리스트) -->
+                <div class="ch-card chess-spectators-card" style="height:110px;margin-bottom:8px;padding:10px 12px;box-sizing:border-box;display:flex;flex-direction:column;">
+                  <div class="chess-spectators-header" style="font-size:12px;font-weight:700;color:#fde68a;margin-bottom:6px;">관전자 (<span id="omSpectatorCount">0</span>명)</div>
+                  <div id="omSpectatorList" class="chess-spectator-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
+                    <span style="font-size:12px;color:var(--om-muted);opacity:0.6;">관전자가 없습니다.</span>
+                  </div>
+                </div>
+
+                <!-- 대국실 채팅 -->
                 <div class="ch-card chess-chat-card" style="flex:1;">
                   <div class="chess-chat-header">
                     <div class="chess-chat-title">

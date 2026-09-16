@@ -4,25 +4,25 @@
    ============================================================ */
 
 :root {
-  --jg-bg: #0a1811;
-  --jg-panel: #11281d;
-  --jg-panel-2: #183627;
-  --jg-board-bg: #143224;
-  --jg-board-line: #34d399;
-  --jg-board-line-soft: rgba(52, 211, 153, 0.45);
-  --jg-palace-x: rgba(52, 211, 153, 0.6);
-  --jg-cho: #06b6d4;
-  --jg-cho-bg: radial-gradient(circle at 35% 30%, #155e75, #083344);
-  --jg-cho-border: #22d3ee;
-  --jg-han: #f43f5e;
-  --jg-han-bg: radial-gradient(circle at 35% 30%, #9f1239, #4c0519);
-  --jg-han-border: #fb7185;
-  --jg-gold: #34d399;
+  --jg-bg: #15241c;
+  --jg-panel: #1b2f25;
+  --jg-panel-2: #223c2f;
+  --jg-board-bg: linear-gradient(135deg, #e4ba82 0%, #d8aa6d 35%, #cca062 70%, #dcb277 100%);
+  --jg-board-line: #3e2210;
+  --jg-board-line-soft: rgba(62, 34, 16, 0.4);
+  --jg-palace-x: rgba(62, 34, 16, 0.8);
+  --jg-cho: #0284c7;
+  --jg-cho-bg: radial-gradient(circle at 35% 30%, #1e3a8a, #0f172a);
+  --jg-cho-border: #3b82f6;
+  --jg-han: #e11d48;
+  --jg-han-bg: radial-gradient(circle at 35% 30%, #991b1b, #450a0a);
+  --jg-han-border: #ef4444;
+  --jg-gold: #52b788;
   --jg-gold-soft: #a7f3d0;
-  --jg-text: #ecfdf5;
-  --jg-muted: #6ee7b7;
-  --jg-last-move: rgba(52, 211, 153, 0.25);
-  --jg-legal-dot: rgba(52, 211, 153, 0.7);
+  --jg-text: #f0fdf4;
+  --jg-muted: #86efac;
+  --jg-last-move: rgba(217, 119, 6, 0.3);
+  --jg-legal-dot: rgba(21, 128, 61, 0.85);
 }
 
 .janggi-container {
@@ -200,7 +200,7 @@
   align-items: center;
   justify-content: center;
   padding: 12px;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.05), transparent 70%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, rgba(20, 83, 45, 0.05) 50%, transparent 75%);
   position: relative;
   overflow: hidden;
 }
@@ -210,8 +210,8 @@
   height: 560px;
   background: var(--jg-board-bg);
   border-radius: 8px;
-  border: 3px solid #064e3b;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), inset 0 0 40px rgba(0, 0, 0, 0.4);
+  border: 4px solid #78451f;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 0 24px rgba(90, 48, 15, 0.25);
   position: relative;
   user-select: none;
   box-sizing: border-box;
@@ -276,16 +276,16 @@
 
 .jg-piece.cho {
   background: var(--jg-cho-bg);
-  color: #a5f3fc;
+  color: #bfdbfe;
   border-color: var(--jg-cho-border);
-  text-shadow: 0 0 6px rgba(6, 182, 212, 0.6);
+  text-shadow: 0 1px 2px #000;
 }
 
 .jg-piece.han {
   background: var(--jg-han-bg);
-  color: #fecdd3;
+  color: #fecaca;
   border-color: var(--jg-han-border);
-  text-shadow: 0 0 6px rgba(244, 63, 94, 0.6);
+  text-shadow: 0 1px 2px #000;
 }
 
 .jg-point.selected .jg-piece {
