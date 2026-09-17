@@ -655,6 +655,30 @@ def _migrate_v26(conn: sqlite3.Connection) -> None:
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     )""")
 
+def _migrate_v27(conn: sqlite3.Connection) -> None:
+    """Create quiz_subject_titles table and add custom title columns to user_quiz_sets."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS quiz_subject_titles (
+        category TEXT PRIMARY KEY,
+        icon TEXT NOT NULL DEFAULT '📚',
+        rank3_title TEXT NOT NULL DEFAULT '',
+        rank2_title TEXT NOT NULL DEFAULT '',
+        rank1_title TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""")
+    now = utc_now()
+    for cat, (icon, r3, r2, r1) in QUIZ_SUBJECT_TITLES.items():
+        conn.execute("""
+            INSERT OR IGNORE INTO quiz_subject_titles
+            (category, icon, rank3_title, rank2_title, rank1_title, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (cat, icon, r3, r2, r1, now, now))
+
+    _add_column_if_missing(conn, "user_quiz_sets", "rank1_title", "TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "user_quiz_sets", "rank2_title", "TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "user_quiz_sets", "rank3_title", "TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "user_quiz_sets", "icon", "TEXT NOT NULL DEFAULT ''")
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -682,6 +706,7 @@ _MIGRATIONS = [
     _migrate_v24,
     _migrate_v25,
     _migrate_v26,
+    _migrate_v27,
 ]
 
 
@@ -1915,20 +1940,129 @@ QUIZ_SUBJECT_TITLES = {
 }
 
 
+def save_quiz_subject_titles(
+    category: str,
+    rank1_title: str = "",
+    rank2_title: str = "",
+    rank3_title: str = "",
+    icon: Optional[str] = None,
+    conn: Optional[sqlite3.Connection] = None,
+) -> Dict[str, Any]:
+    """Save or update custom 1st, 2nd, 3rd place titles and icon for a quiz subject/category."""
+    cat = normalize_quiz_expertise(category)
+    r1 = str(rank1_title or "").strip()
+    r2 = str(rank2_title or "").strip()
+    r3 = str(rank3_title or "").strip()
+    if not r1:
+        r1 = f"{cat}의 신"
+    if not r2:
+        r2 = f"{cat} 고인물"
+    if not r3:
+        r3 = f"{cat} 조교"
+    ic = str(icon or "").strip() or "📚"
+    now = utc_now()
+    if conn is not None:
+        conn.execute("""
+            INSERT INTO quiz_subject_titles
+            (category, icon, rank1_title, rank2_title, rank3_title, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(category) DO UPDATE SET
+                icon = excluded.icon,
+                rank1_title = excluded.rank1_title,
+                rank2_title = excluded.rank2_title,
+                rank3_title = excluded.rank3_title,
+                updated_at = excluded.updated_at
+        """, (cat, ic, r1, r2, r3, now, now))
+    else:
+        with get_connection() as local_conn:
+            local_conn.execute("""
+                INSERT INTO quiz_subject_titles
+                (category, icon, rank1_title, rank2_title, rank3_title, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(category) DO UPDATE SET
+                    icon = excluded.icon,
+                    rank1_title = excluded.rank1_title,
+                    rank2_title = excluded.rank2_title,
+                    rank3_title = excluded.rank3_title,
+                    updated_at = excluded.updated_at
+            """, (cat, ic, r1, r2, r3, now, now))
+            local_conn.commit()
+    return {
+        "category": cat,
+        "icon": ic,
+        "rank1_title": r1,
+        "rank2_title": r2,
+        "rank3_title": r3,
+    }
+
+
+def get_quiz_subject_titles(category: str) -> Optional[Dict[str, Any]]:
+    """Retrieve custom titles for a category from DB, fallback to QUIZ_SUBJECT_TITLES."""
+    if not category:
+        return None
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT category, icon, rank1_title, rank2_title, rank3_title FROM quiz_subject_titles WHERE category = ?",
+                (category,)
+            ).fetchone()
+            if row:
+                return dict(row)
+    except Exception:
+        pass
+    if category in QUIZ_SUBJECT_TITLES:
+        ic, r3, r2, r1 = QUIZ_SUBJECT_TITLES[category]
+        return {
+            "category": category,
+            "icon": ic,
+            "rank1_title": r1,
+            "rank2_title": r2,
+            "rank3_title": r3,
+        }
+    return {
+        "category": category,
+        "icon": "📚",
+        "rank1_title": f"{category} 고인물",
+        "rank2_title": f"{category} 좀 함",
+        "rank3_title": f"{category} 찍먹",
+    }
+
+
+def get_all_quiz_subject_titles() -> Dict[str, Dict[str, Any]]:
+    """Return dictionary of all registered quiz subject titles keyed by category."""
+    results: Dict[str, Dict[str, Any]] = {}
+    for cat, (ic, r3, r2, r1) in QUIZ_SUBJECT_TITLES.items():
+        results[cat] = {
+            "category": cat,
+            "icon": ic,
+            "rank1_title": r1,
+            "rank2_title": r2,
+            "rank3_title": r3,
+        }
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT category, icon, rank1_title, rank2_title, rank3_title FROM quiz_subject_titles"
+            ).fetchall()
+            for r in rows:
+                results[r["category"]] = dict(r)
+    except Exception:
+        pass
+    return results
+
+
 def _subject_quiz_badge(category: Optional[str], subject_rank: int,
                         subject_score: int) -> Optional[Dict[str, Any]]:
     if not category or subject_rank not in {1, 2, 3}:
         return None
-    subject = QUIZ_SUBJECT_TITLES.get(
-        category, ("📚", "주제 찍먹", "주제 좀 함", "주제 고인물")
-    )
-    icon, beginner_label, skilled_label, master_label = subject
+    info = get_quiz_subject_titles(category)
+    icon = info.get("icon", "📚") if info else "📚"
     if subject_rank == 1:
-        label = master_label
+        label = info.get("rank1_title", f"{category} 고인물") if info else f"{category} 고인물"
     elif subject_rank == 2:
-        label = skilled_label
+        label = info.get("rank2_title", f"{category} 좀 함") if info else f"{category} 좀 함"
     else:
-        label = beginner_label
+        label = info.get("rank3_title", f"{category} 찍먹") if info else f"{category} 찍먹"
     return {
         "type": "subject",
         "icon": icon,
@@ -2177,22 +2311,29 @@ def analyze_quiz_set(items: Any, expertise: str) -> Dict[str, Any]:
         "warnings": warnings,
     }
 
-def create_user_quiz_set(owner_user_id: int, expertise: str, title: str, items: Any) -> Dict[str, Any]:
+def create_user_quiz_set(owner_user_id: int, expertise: str, title: str, items: Any,
+                        rank1_title: str = "", rank2_title: str = "", rank3_title: str = "", icon: str = "") -> Dict[str, Any]:
     title = title.strip()
     if not 2 <= len(title) <= 80:
         raise ValueError("문제집 제목은 2~80자여야 합니다.")
     quizzes = normalize_quiz_import(items, expertise)
     expertise = quizzes[0]["category"]
     now = utc_now()
+    r1 = rank1_title.strip()
+    r2 = rank2_title.strip()
+    r3 = rank3_title.strip()
+    ic = icon.strip()
     with get_connection() as conn:
         cur = conn.execute("""INSERT INTO user_quiz_sets
-            (owner_user_id, expertise, title, status, quizzes_json, created_at, updated_at)
-            VALUES (?, ?, ?, 'draft', ?, ?, ?)""",
-            (owner_user_id, expertise, title, json.dumps(quizzes, ensure_ascii=False), now, now))
+            (owner_user_id, expertise, title, status, quizzes_json, rank1_title, rank2_title, rank3_title, icon, created_at, updated_at)
+            VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)""",
+            (owner_user_id, expertise, title, json.dumps(quizzes, ensure_ascii=False), r1, r2, r3, ic, now, now))
         conn.commit()
         return get_user_quiz_set(int(cur.lastrowid), owner_user_id)
 
-def update_user_quiz_set(set_id: int, owner_user_id: int, expertise: str, title: str, items: Any) -> Optional[Dict[str, Any]]:
+def update_user_quiz_set(set_id: int, owner_user_id: int, expertise: str, title: str, items: Any,
+                        rank1_title: Optional[str] = None, rank2_title: Optional[str] = None,
+                        rank3_title: Optional[str] = None, icon: Optional[str] = None) -> Optional[Dict[str, Any]]:
     title = title.strip()
     if not 2 <= len(title) <= 80:
         raise ValueError("문제집 제목은 2~80자여야 합니다.")
@@ -2200,11 +2341,16 @@ def update_user_quiz_set(set_id: int, owner_user_id: int, expertise: str, title:
     expertise = quizzes[0]["category"]
     now = utc_now()
     with get_connection() as conn:
+        row = conn.execute("SELECT rank1_title, rank2_title, rank3_title, icon FROM user_quiz_sets WHERE id=? AND owner_user_id=?", (set_id, owner_user_id)).fetchone()
+        r1 = rank1_title.strip() if rank1_title is not None else ((row["rank1_title"] or "") if row else "")
+        r2 = rank2_title.strip() if rank2_title is not None else ((row["rank2_title"] or "") if row else "")
+        r3 = rank3_title.strip() if rank3_title is not None else ((row["rank3_title"] or "") if row else "")
+        ic = icon.strip() if icon is not None else ((row["icon"] or "") if row else "")
         cur = conn.execute("""UPDATE user_quiz_sets
-            SET expertise=?, title=?, quizzes_json=?, status='draft', review_note='',
+            SET expertise=?, title=?, quizzes_json=?, rank1_title=?, rank2_title=?, rank3_title=?, icon=?, status='draft', review_note='',
                 submitted_at=NULL, updated_at=?
             WHERE id=? AND owner_user_id=? AND status IN ('draft','rejected')""",
-            (expertise, title, json.dumps(quizzes, ensure_ascii=False), now, set_id, owner_user_id))
+            (expertise, title, json.dumps(quizzes, ensure_ascii=False), r1, r2, r3, ic, now, set_id, owner_user_id))
         conn.commit()
         return get_user_quiz_set(set_id, owner_user_id) if cur.rowcount else None
 
@@ -2240,7 +2386,11 @@ def submit_user_quiz_set(set_id: int, owner_user_id: int) -> bool:
 
 def review_user_quiz_set(set_id: int, admin_user_id: int, approve: bool, note: str = "",
                          items: Any = None, expertise: Optional[str] = None,
-                         title: Optional[str] = None) -> List[int]:
+                         title: Optional[str] = None,
+                         rank1_title: Optional[str] = None,
+                         rank2_title: Optional[str] = None,
+                         rank3_title: Optional[str] = None,
+                         icon: Optional[str] = None) -> List[int]:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM user_quiz_sets WHERE id=?", (set_id,)).fetchone()
         if not row or row["status"] != "pending_review":
@@ -2286,12 +2436,24 @@ def review_user_quiz_set(set_id: int, admin_user_id: int, approve: bool, note: s
                     row["owner_user_id"], item_author,
                 ))
                 created_ids.append(int(cur.lastrowid))
+            
+            # Register category custom titles if present in submission
+            row_keys = row.keys() if hasattr(row, 'keys') else []
+            r1 = rank1_title.strip() if rank1_title is not None else ((row["rank1_title"] or "").strip() if "rank1_title" in row_keys else "")
+            r2 = rank2_title.strip() if rank2_title is not None else ((row["rank2_title"] or "").strip() if "rank2_title" in row_keys else "")
+            r3 = rank3_title.strip() if rank3_title is not None else ((row["rank3_title"] or "").strip() if "rank3_title" in row_keys else "")
+            ic = icon.strip() if icon is not None else ((row["icon"] or "").strip() if "icon" in row_keys else "")
+            if r1 or r2 or r3 or ic:
+                save_quiz_subject_titles(quizzes[0]["category"], r1, r2, r3, ic, conn=conn)
+
         conn.execute("UPDATE user_quiz_sets SET status=?, review_note=?, approved_by_user_id=?, approved_at=?, updated_at=? WHERE id=?",
                      (status, note[:1000], admin_user_id, now if approve else None, now, set_id))
         conn.commit()
     return created_ids
 
-def update_pending_user_quiz_set(set_id: int, expertise: str, title: str, items: Any) -> Dict[str, Any]:
+def update_pending_user_quiz_set(set_id: int, expertise: str, title: str, items: Any,
+                                rank1_title: Optional[str] = None, rank2_title: Optional[str] = None,
+                                rank3_title: Optional[str] = None, icon: Optional[str] = None) -> Dict[str, Any]:
     """Allow an administrator to correct a submission before making a review decision."""
     title = title.strip()
     if not 2 <= len(title) <= 80:
@@ -2299,10 +2461,15 @@ def update_pending_user_quiz_set(set_id: int, expertise: str, title: str, items:
     quizzes = normalize_quiz_import(items, expertise)
     expertise = quizzes[0]["category"]
     with get_connection() as conn:
+        row = conn.execute("SELECT rank1_title, rank2_title, rank3_title, icon FROM user_quiz_sets WHERE id=?", (set_id,)).fetchone()
+        r1 = rank1_title.strip() if rank1_title is not None else ((row["rank1_title"] or "") if row else "")
+        r2 = rank2_title.strip() if rank2_title is not None else ((row["rank2_title"] or "") if row else "")
+        r3 = rank3_title.strip() if rank3_title is not None else ((row["rank3_title"] or "") if row else "")
+        ic = icon.strip() if icon is not None else ((row["icon"] or "") if row else "")
         cur = conn.execute("""UPDATE user_quiz_sets
-            SET expertise=?, title=?, quizzes_json=?, updated_at=?
+            SET expertise=?, title=?, quizzes_json=?, rank1_title=?, rank2_title=?, rank3_title=?, icon=?, updated_at=?
             WHERE id=? AND status='pending_review'""",
-            (expertise, title, json.dumps(quizzes, ensure_ascii=False), utc_now(), set_id))
+            (expertise, title, json.dumps(quizzes, ensure_ascii=False), r1, r2, r3, ic, utc_now(), set_id))
         conn.commit()
         if not cur.rowcount:
             raise ValueError("검토 대기 중인 문제집이 아닙니다.")
@@ -2739,7 +2906,8 @@ def get_user_quiz_bookmarks_set(user_id: int) -> Set[int]:
 
 
 def get_quiz_categories_summary() -> List[Dict[str, Any]]:
-    """Returns unique categories and their active quiz counts."""
+    """Returns unique categories and their active quiz counts with title information."""
+    titles_map = get_all_quiz_subject_titles()
     with get_connection() as conn:
         rows = conn.execute("""
             SELECT category, COUNT(*) as count
@@ -2748,7 +2916,17 @@ def get_quiz_categories_summary() -> List[Dict[str, Any]]:
             GROUP BY category
             ORDER BY count DESC, category ASC
         """).fetchall()
-        return [dict(r) for r in rows]
+        results = []
+        for r in rows:
+            item = dict(r)
+            cat = item["category"]
+            t = titles_map.get(cat) or get_quiz_subject_titles(cat) or {}
+            item["icon"] = t.get("icon") or "📚"
+            item["rank1_title"] = t.get("rank1_title") or f"{cat}의 신"
+            item["rank2_title"] = t.get("rank2_title") or f"{cat} 고인물"
+            item["rank3_title"] = t.get("rank3_title") or f"{cat} 조교"
+            results.append(item)
+        return results
 
 
 def get_quiz_sidebar_counts(user_id: int) -> Dict[str, int]:

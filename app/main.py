@@ -52,7 +52,8 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     toggle_quiz_bookmark, get_quiz_review_list, retry_quiz_answer,
     get_quiz_categories_summary, get_quiz_sidebar_counts, search_conversation_history,
     QUIZ_EXPERTISES, normalize_quiz_import, analyze_quiz_set, create_user_quiz_set, update_user_quiz_set, list_user_quiz_sets, submit_user_quiz_set,
-    review_user_quiz_set, update_pending_user_quiz_set, assign_daily_quizzes)
+    review_user_quiz_set, update_pending_user_quiz_set, assign_daily_quizzes,
+    save_quiz_subject_titles, get_quiz_subject_titles, get_all_quiz_subject_titles)
 from app.quiz_ai import generate_quizzes_with_gemini, check_quiz_answer, normalize_quiz_answer
 from app.chess_manager import chess_manager
 from app.janggi_manager import janggi_manager
@@ -1469,6 +1470,37 @@ async def api_quiz_expertises(request: Request):
     request_user(request)
     return {"expertises": list(QUIZ_EXPERTISES)}
 
+@app.get("/api/quiz/subject-titles")
+async def api_quiz_subject_titles(request: Request):
+    request_user(request)
+    return {"titles": get_all_quiz_subject_titles()}
+
+@app.get("/api/quiz/subject-titles/{category}")
+async def api_quiz_subject_title_detail(category: str, request: Request):
+    request_user(request)
+    titles = get_quiz_subject_titles(category)
+    if not titles:
+        raise HTTPException(404, "해당 주제의 칭호를 찾을 수 없습니다.")
+    return titles
+
+@app.post("/api/admin/quiz/subject-titles")
+async def api_admin_save_subject_titles(request: Request):
+    if not request_origin_is_allowed(request):
+        raise HTTPException(403, "허용되지 않은 요청입니다.")
+    require_admin(request)
+    data = await read_json_body(request)
+    category = str(data.get("category", "")).strip()
+    if not category:
+        raise HTTPException(400, "과목명을 입력하세요.")
+    res = save_quiz_subject_titles(
+        category=category,
+        rank1_title=str(data.get("rank1_title", "")).strip(),
+        rank2_title=str(data.get("rank2_title", "")).strip(),
+        rank3_title=str(data.get("rank3_title", "")).strip(),
+        icon=str(data.get("icon", "")).strip() or "📚",
+    )
+    return {"status": "ok", **res}
+
 @app.get("/api/quiz/my-sets")
 async def api_my_quiz_sets(request: Request):
     user=request_user(request)
@@ -1490,7 +1522,13 @@ async def api_create_my_quiz_set(request: Request):
     if not request_origin_is_allowed(request): raise HTTPException(403, "허용되지 않은 요청입니다.")
     user=request_user(request); data=await read_json_body(request)
     try:
-        created=create_user_quiz_set(user["id"], str(data.get("expertise", "")), str(data.get("title", "")), data.get("quizzes"))
+        created=create_user_quiz_set(
+            user["id"], str(data.get("expertise", "")), str(data.get("title", "")), data.get("quizzes"),
+            rank1_title=str(data.get("rank1_title", "")),
+            rank2_title=str(data.get("rank2_title", "")),
+            rank3_title=str(data.get("rank3_title", "")),
+            icon=str(data.get("icon", "")),
+        )
     except ValueError as exc: raise HTTPException(400, str(exc)) from exc
     return created
 
@@ -1499,7 +1537,13 @@ async def api_update_my_quiz_set(set_id: int, request: Request):
     if not request_origin_is_allowed(request): raise HTTPException(403, "허용되지 않은 요청입니다.")
     user=request_user(request); data=await read_json_body(request)
     try:
-        updated=update_user_quiz_set(set_id, user["id"], str(data.get("expertise", "")), str(data.get("title", "")), data.get("quizzes"))
+        updated=update_user_quiz_set(
+            set_id, user["id"], str(data.get("expertise", "")), str(data.get("title", "")), data.get("quizzes"),
+            rank1_title=str(data.get("rank1_title", "")) if "rank1_title" in data else None,
+            rank2_title=str(data.get("rank2_title", "")) if "rank2_title" in data else None,
+            rank3_title=str(data.get("rank3_title", "")) if "rank3_title" in data else None,
+            icon=str(data.get("icon", "")) if "icon" in data else None,
+        )
     except ValueError as exc: raise HTTPException(400, str(exc)) from exc
     if not updated: raise HTTPException(409, "초안 또는 반려된 문제집만 수정할 수 있습니다.")
     return updated
@@ -1526,6 +1570,10 @@ async def api_admin_review_quiz_submission(set_id: int, request: Request):
         created_ids=review_user_quiz_set(
             set_id, admin["id"], approve, note,
             items=data.get("quizzes"), expertise=data.get("expertise"), title=data.get("title"),
+            rank1_title=str(data.get("rank1_title", "")) if "rank1_title" in data else None,
+            rank2_title=str(data.get("rank2_title", "")) if "rank2_title" in data else None,
+            rank3_title=str(data.get("rank3_title", "")) if "rank3_title" in data else None,
+            icon=str(data.get("icon", "")) if "icon" in data else None,
         )
     except ValueError as exc: raise HTTPException(409, str(exc)) from exc
     return {"status":"approved" if approve else "rejected", "created_ids":created_ids}
@@ -1538,7 +1586,12 @@ async def api_admin_update_quiz_submission(set_id: int, request: Request):
     data = await read_json_body(request)
     try:
         updated = update_pending_user_quiz_set(
-            set_id, str(data.get("expertise", "")), str(data.get("title", "")), data.get("quizzes"))
+            set_id, str(data.get("expertise", "")), str(data.get("title", "")), data.get("quizzes"),
+            rank1_title=str(data.get("rank1_title", "")) if "rank1_title" in data else None,
+            rank2_title=str(data.get("rank2_title", "")) if "rank2_title" in data else None,
+            rank3_title=str(data.get("rank3_title", "")) if "rank3_title" in data else None,
+            icon=str(data.get("icon", "")) if "icon" in data else None,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"status": "ok", "set": updated}
@@ -1621,6 +1674,12 @@ async def api_admin_quiz_ai_generate(request: Request):
 
     admin_name = admin.get("display_name") or admin.get("username") or "관리자"
     created_ids = create_quiz_batch(quizzes, source_doc_id=doc_id, author_id=admin["id"], author_name=f"{admin_name} (AI)")
+    r1 = str(form.get("rank1_title", "") if "form" in locals() else (data.get("rank1_title", "") if "data" in locals() else "")).strip()
+    r2 = str(form.get("rank2_title", "") if "form" in locals() else (data.get("rank2_title", "") if "data" in locals() else "")).strip()
+    r3 = str(form.get("rank3_title", "") if "form" in locals() else (data.get("rank3_title", "") if "data" in locals() else "")).strip()
+    ic = str(form.get("icon", "") if "form" in locals() else (data.get("icon", "") if "data" in locals() else "")).strip()
+    if category and (r1 or r2 or r3 or ic):
+        save_quiz_subject_titles(category, rank1_title=r1, rank2_title=r2, rank3_title=r3, icon=ic)
     return {
         "status": "ok",
         "created_count": len(created_ids),
@@ -1646,6 +1705,13 @@ async def api_admin_quiz_import_json(request: Request):
         raise HTTPException(400, "퀴즈 목록(배열)이 비어 있거나 올바르지 않습니다.")
 
     created_ids = create_quiz_batch(raw_quizzes, author_id=admin["id"], author_name=admin_name)
+    cat = str(data.get("category") or (raw_quizzes[0].get("category") if raw_quizzes and isinstance(raw_quizzes[0], dict) else "") or "").strip()
+    r1 = str(data.get("rank1_title") or "").strip()
+    r2 = str(data.get("rank2_title") or "").strip()
+    r3 = str(data.get("rank3_title") or "").strip()
+    ic = str(data.get("icon") or "").strip()
+    if cat and (r1 or r2 or r3 or ic):
+        save_quiz_subject_titles(cat, rank1_title=r1, rank2_title=r2, rank3_title=r3, icon=ic)
     return {"status": "ok", "created_count": len(created_ids), "ids": created_ids}
 
 
@@ -1722,6 +1788,12 @@ async def api_admin_quiz_create(request: Request):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     created_ids = create_quiz_batch([normalized], author_id=admin["id"], author_name=author_name)
+    r1 = str(data.get("rank1_title") or "").strip()
+    r2 = str(data.get("rank2_title") or "").strip()
+    r3 = str(data.get("rank3_title") or "").strip()
+    ic = str(data.get("icon") or "").strip()
+    if r1 or r2 or r3 or ic:
+        save_quiz_subject_titles(category, rank1_title=r1, rank2_title=r2, rank3_title=r3, icon=ic)
     return {"status": "ok", "quiz_id": created_ids[0]}
 
 @app.patch("/api/admin/quiz/{quiz_id}")
@@ -1736,6 +1808,13 @@ async def api_admin_quiz_update(quiz_id: int, request: Request):
         raise HTTPException(400, str(exc)) from exc
     if not updated:
         raise HTTPException(404, "퀴즈를 찾을 수 없습니다.")
+    category = str(data.get("category") or updated.get("category") or "").strip()
+    r1 = str(data.get("rank1_title") or "").strip()
+    r2 = str(data.get("rank2_title") or "").strip()
+    r3 = str(data.get("rank3_title") or "").strip()
+    ic = str(data.get("icon") or "").strip()
+    if category and (r1 or r2 or r3 or ic):
+        save_quiz_subject_titles(category, rank1_title=r1, rank2_title=r2, rank3_title=r3, icon=ic)
     return {"status": "ok", "quiz": updated}
 
 

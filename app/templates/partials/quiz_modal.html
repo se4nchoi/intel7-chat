@@ -253,6 +253,30 @@
               <input id="quiz-set-expertise" class="form-input hidden" type="text" minlength="2" maxlength="40"
                 value="PLC" placeholder="새로운 주제명 (2~40자)" aria-label="새 문제집 주제 직접 입력" />
               <p class="field-hint">목록의 ‘새 주제 직접 입력’을 선택하면 새 분야를 만들 수 있습니다.</p>
+              <div class="quiz-titles-config-box">
+                <div class="quiz-titles-config-header">
+                  <span class="quiz-titles-config-title">🎖️ 과목 랭킹 칭호 설정 (1·2·3위)</span>
+                  <span class="quiz-titles-config-desc">이 주제에서 1~3위를 달성한 사용자에게 부여되는 칭호입니다.</span>
+                </div>
+                <div class="quiz-titles-inputs-grid">
+                  <div class="quiz-title-input-item">
+                    <span class="quiz-rank-badge rank-1">🥇 1위</span>
+                    <input id="quiz-set-rank1" type="text" maxlength="30" placeholder="1위 칭호 (예: PLC의 신)" />
+                  </div>
+                  <div class="quiz-title-input-item">
+                    <span class="quiz-rank-badge rank-2">🥈 2위</span>
+                    <input id="quiz-set-rank2" type="text" maxlength="30" placeholder="2위 칭호 (예: 래더고인물)" />
+                  </div>
+                  <div class="quiz-title-input-item">
+                    <span class="quiz-rank-badge rank-3">🥉 3위</span>
+                    <input id="quiz-set-rank3" type="text" maxlength="30" placeholder="3위 칭호 (예: PLC조교)" />
+                  </div>
+                  <div class="quiz-title-input-item icon-item">
+                    <span class="quiz-rank-badge rank-icon">🏷️ 아이콘</span>
+                    <input id="quiz-set-icon" type="text" maxlength="4" placeholder="이모지 (예: ⚡)" />
+                  </div>
+                </div>
+              </div>
               <label for="quiz-notebook-prompt">NotebookLM 프롬프트</label>
               <textarea id="quiz-notebook-prompt" class="quiz-prompt-box" rows="9" readonly></textarea>
               <button id="quiz-copy-prompt-btn" type="button" class="secondary-btn">프롬프트 복사</button>
@@ -385,6 +409,29 @@
                     </select>
                   </div>
                 </div>
+                <div class="quiz-titles-config-box compact">
+                  <div class="quiz-titles-config-header">
+                    <span class="quiz-titles-config-title">🎖️ 과목 랭킹 칭호 설정 (1·2·3위)</span>
+                  </div>
+                  <div class="quiz-titles-inputs-grid">
+                    <div class="quiz-title-input-item">
+                      <span class="quiz-rank-badge rank-1">🥇 1위</span>
+                      <input id="quiz-gen-rank1" type="text" maxlength="30" placeholder="1위 칭호" />
+                    </div>
+                    <div class="quiz-title-input-item">
+                      <span class="quiz-rank-badge rank-2">🥈 2위</span>
+                      <input id="quiz-gen-rank2" type="text" maxlength="30" placeholder="2위 칭호" />
+                    </div>
+                    <div class="quiz-title-input-item">
+                      <span class="quiz-rank-badge rank-3">🥉 3위</span>
+                      <input id="quiz-gen-rank3" type="text" maxlength="30" placeholder="3위 칭호" />
+                    </div>
+                    <div class="quiz-title-input-item icon-item">
+                      <span class="quiz-rank-badge rank-icon">🏷️ 아이콘</span>
+                      <input id="quiz-gen-icon" type="text" maxlength="4" placeholder="아이콘" />
+                    </div>
+                  </div>
+                </div>
                 <label for="quiz-gen-file">강의자료 PDF / 문서 첨부</label>
                 <input id="quiz-gen-file" type="file" accept=".pdf,.txt,.md" />
                 <label for="quiz-gen-text">또는 강의 내용 직접 입력</label>
@@ -400,6 +447,29 @@
               <p class="cbt-admin-desc">NotebookLM에서 생성된 JSON 코드 블록을 그대로 붙여넣어 일괄 등록합니다.</p>
               <form id="quiz-json-import-form" class="channel-form">
                 <label for="quiz-json-input">JSON 데이터</label>
+                <div class="quiz-titles-config-box compact">
+                  <div class="quiz-titles-config-header">
+                    <span class="quiz-titles-config-title">🎖️ 과목 랭킹 칭호 설정 (1·2·3위)</span>
+                  </div>
+                  <div class="quiz-titles-inputs-grid">
+                    <div class="quiz-title-input-item">
+                      <span class="quiz-rank-badge rank-1">🥇 1위</span>
+                      <input id="quiz-json-rank1" type="text" maxlength="30" placeholder="1위 칭호" />
+                    </div>
+                    <div class="quiz-title-input-item">
+                      <span class="quiz-rank-badge rank-2">🥈 2위</span>
+                      <input id="quiz-json-rank2" type="text" maxlength="30" placeholder="2위 칭호" />
+                    </div>
+                    <div class="quiz-title-input-item">
+                      <span class="quiz-rank-badge rank-3">🥉 3위</span>
+                      <input id="quiz-json-rank3" type="text" maxlength="30" placeholder="3위 칭호" />
+                    </div>
+                    <div class="quiz-title-input-item icon-item">
+                      <span class="quiz-rank-badge rank-icon">🏷️ 아이콘</span>
+                      <input id="quiz-json-icon" type="text" maxlength="4" placeholder="아이콘" />
+                    </div>
+                  </div>
+                </div>
                 <textarea id="quiz-json-input" rows="4"
                   placeholder='[{"category":"PLC","question":"...","correct_answers":["X0"]}]' required></textarea>
                 <p id="quiz-json-status" class="admin-status-msg"></p>
@@ -459,6 +529,30 @@
                       <option value="short_answer">단답형</option>
                       <option value="ladder_input">래더 입력</option>
                     </select></div>
+                </div>
+                <div class="quiz-titles-config-box compact">
+                  <div class="quiz-titles-config-header">
+                    <span class="quiz-titles-config-title">🎖️ 과목 랭킹 칭호 설정 (1·2·3위)</span>
+                    <span class="quiz-titles-config-desc">이 과목에서 1~3위를 달성한 사용자에게 부여되는 칭호입니다.</span>
+                  </div>
+                  <div class="quiz-titles-inputs-grid">
+                    <div class="quiz-title-input-item">
+                      <span class="quiz-rank-badge rank-1">🥇 1위</span>
+                      <input id="admin-quiz-rank1" type="text" maxlength="30" placeholder="1위 칭호" />
+                    </div>
+                    <div class="quiz-title-input-item">
+                      <span class="quiz-rank-badge rank-2">🥈 2위</span>
+                      <input id="admin-quiz-rank2" type="text" maxlength="30" placeholder="2위 칭호" />
+                    </div>
+                    <div class="quiz-title-input-item">
+                      <span class="quiz-rank-badge rank-3">🥉 3위</span>
+                      <input id="admin-quiz-rank3" type="text" maxlength="30" placeholder="3위 칭호" />
+                    </div>
+                    <div class="quiz-title-input-item icon-item">
+                      <span class="quiz-rank-badge rank-icon">🏷️ 아이콘</span>
+                      <input id="admin-quiz-icon" type="text" maxlength="4" placeholder="아이콘" />
+                    </div>
+                  </div>
                 </div>
                 <label for="admin-quiz-question">문제</label><textarea id="admin-quiz-question" rows="4"
                   required></textarea>

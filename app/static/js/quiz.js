@@ -28,7 +28,34 @@ let adminQuizFlaggedOnly = false;
 let adminQuizSearchTimer = null;
 let currentFlagTargetQuiz = null;
 
+let categoryTitlesMap = {};
+
+export async function fetchSubjectTitlesMap() {
+  try {
+    const res = await fetch('/api/quiz/subject-titles');
+    if (!res.ok) return;
+    const data = await res.json();
+    categoryTitlesMap = data.titles || {};
+  } catch { /* ignore */ }
+}
+
+export function applyTitlesToInputs(category, rank1Id, rank2Id, rank3Id, iconId) {
+  if (!category) return;
+  const info = categoryTitlesMap[category];
+  const r1 = document.getElementById(rank1Id);
+  const r2 = document.getElementById(rank2Id);
+  const r3 = document.getElementById(rank3Id);
+  const ic = document.getElementById(iconId);
+  if (info) {
+    if (r1) r1.value = info.rank1_title || '';
+    if (r2) r2.value = info.rank2_title || '';
+    if (r3) r3.value = info.rank3_title || '';
+    if (ic) ic.value = info.icon || '';
+  }
+}
+
 export function getCategoryIcon(catName = '') {
+  if (catName && categoryTitlesMap[catName]?.icon) return categoryTitlesMap[catName].icon;
   const lower = catName.toLowerCase();
   if (lower.includes('로봇') || lower.includes('robot')) return '🤖';
   if (lower.includes('plc') || lower.includes('시퀀스')) return '⚡';
@@ -91,6 +118,31 @@ export async function fetchCategoriesSummary() {
     const categories = data.categories || [];
     quizSidebarCategoriesList.replaceChildren();
 
+    categories.forEach(cat => {
+      if (!categoryTitlesMap[cat.category]) {
+        categoryTitlesMap[cat.category] = {
+          icon: cat.icon || '',
+          rank1_title: cat.rank1_title || '',
+          rank2_title: cat.rank2_title || '',
+          rank3_title: cat.rank3_title || '',
+        };
+      }
+    });
+
+    const subjectSelect = document.getElementById('cbt-subject-lb-select');
+    if (subjectSelect) {
+      const currentVal = subjectSelect.value;
+      subjectSelect.innerHTML = '<option value="">전체 종합 순위</option>';
+      categories.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat.category;
+        const icon = cat.icon || getCategoryIcon(cat.category);
+        opt.textContent = `${icon} ${cat.category}`;
+        subjectSelect.appendChild(opt);
+      });
+      if (currentVal) subjectSelect.value = currentVal;
+    }
+
     if (categories.length === 0) {
       const emptyDiv = document.createElement('div');
       emptyDiv.className = 'field-hint';
@@ -108,7 +160,7 @@ export async function fetchCategoriesSummary() {
 
       const icon = document.createElement('span');
       icon.className = 'cbt-nav-icon';
-      icon.textContent = getCategoryIcon(cat.category);
+      icon.textContent = cat.icon || getCategoryIcon(cat.category);
 
       const text = document.createElement('span');
       text.className = 'cbt-nav-text';
@@ -131,7 +183,7 @@ export async function fetchCategoriesSummary() {
   } catch { /* ignore */ }
 }
 
-export function openQuizModal(nav = 'daily') {
+export async function openQuizModal(nav = 'daily') {
   const quizModal = document.getElementById('quiz-modal');
   const quizNavAdminBtn = document.getElementById('quiz-nav-admin-btn');
   if (!quizModal || !state.currentUser) return;
@@ -139,6 +191,7 @@ export function openQuizModal(nav = 'daily') {
   if (quizNavAdminBtn) {
     quizNavAdminBtn.classList.toggle('hidden', state.currentUser?.role !== 'admin');
   }
+  await fetchSubjectTitlesMap();
   fetchCategoriesSummary();
   refreshQuizSidebarCounts();
   switchQuizNav(nav);
@@ -523,6 +576,7 @@ function syncExpertiseChoice(value, focusCustom = false) {
   custom.classList.toggle('hidden', predefined);
   custom.value = predefined ? value : (value === '__custom__' ? '' : value);
   updateExpertiseEmoji(custom.value);
+  applyTitlesToInputs(custom.value, 'quiz-set-rank1', 'quiz-set-rank2', 'quiz-set-rank3', 'quiz-set-icon');
   if (focusCustom && !predefined) setTimeout(() => custom.focus(), 0);
 }
 
@@ -1239,6 +1293,7 @@ export async function loadMyQuizSets() {
         });
         expertise.addEventListener('input', () => {
           updateExpertiseEmoji(expertise.value);
+          applyTitlesToInputs(expertise.value, 'quiz-set-rank1', 'quiz-set-rank2', 'quiz-set-rank3', 'quiz-set-icon');
           if (prompt) prompt.value = notebookPromptV2(expertise.value || '새 주제');
         });
       }
@@ -1275,6 +1330,14 @@ function renderMyQuizSets(sets) {
         if (expertise) syncExpertiseChoice(set.expertise);
         if (titleInput) titleInput.value = set.title;
         if (jsonInput) jsonInput.value = JSON.stringify(set.quizzes, null, 2);
+        const r1 = document.getElementById('quiz-set-rank1');
+        const r2 = document.getElementById('quiz-set-rank2');
+        const r3 = document.getElementById('quiz-set-rank3');
+        const ic = document.getElementById('quiz-set-icon');
+        if (r1) r1.value = set.rank1_title || '';
+        if (r2) r2.value = set.rank2_title || '';
+        if (r3) r3.value = set.rank3_title || '';
+        if (ic) ic.value = set.icon || '';
         document.getElementById('quiz-set-save-btn').textContent = '수정 저장';
         document.getElementById('quiz-set-status').textContent = '문제집을 수정 중입니다.';
       });
@@ -1312,7 +1375,8 @@ export async function fetchAdminQuizSubmissions() {
       const card = document.createElement('details'); card.className = 'admin-submission-card';
       const summary = document.createElement('summary');
       const heading = document.createElement('span'); heading.className = 'admin-submission-heading'; heading.textContent = set.title;
-      const meta = document.createElement('span'); meta.className = 'admin-submission-meta'; meta.textContent = `${set.display_name || set.username} · ${set.expertise} · ${set.quizzes.length}문항`;
+      const titleExtra = set.rank1_title ? ` · 칭호: ${set.icon || ''} 🥇${set.rank1_title} 🥈${set.rank2_title || ''} 🥉${set.rank3_title || ''}` : '';
+      const meta = document.createElement('span'); meta.className = 'admin-submission-meta'; meta.textContent = `${set.display_name || set.username} · ${set.expertise} · ${set.quizzes.length}문항${titleExtra}`;
       summary.append(heading, meta); card.appendChild(summary);
 
       const body = document.createElement('div'); body.className = 'admin-submission-body';
@@ -1359,7 +1423,19 @@ export async function fetchAdminQuizSubmissions() {
       save.addEventListener('click', async () => {
         try {
           const quizzes = JSON.parse(editor.value);
-          const response = await fetch(`/api/admin/quiz/submissions/${set.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: set.title, expertise: set.expertise, quizzes }) });
+          const response = await fetch(`/api/admin/quiz/submissions/${set.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: set.title,
+              expertise: set.expertise,
+              quizzes,
+              rank1_title: set.rank1_title,
+              rank2_title: set.rank2_title,
+              rank3_title: set.rank3_title,
+              icon: set.icon,
+            })
+          });
           const data = await response.json(); if (!response.ok) throw new Error(data.detail || '저장 실패');
           status.className = 'admin-status-msg success'; status.textContent = '수정 내용을 저장했습니다. 다시 검토한 뒤 승인하세요.';
           showToast('제출 문제집을 수정했습니다.', 'success');
@@ -1381,7 +1457,21 @@ export async function fetchAdminQuizSubmissions() {
               const warningText = validation.warnings?.length ? `\n\n주의: ${validation.warnings.join(' ')}` : '';
               if (!confirm(`${quizzes.length}개 문항을 공용 풀에 게시하시겠습니까?${warningText}`)) return;
             }
-            const review = await fetch(`/api/admin/quiz/submissions/${set.id}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approve, note: note.value, title: set.title, expertise: set.expertise, quizzes }) });
+            const review = await fetch(`/api/admin/quiz/submissions/${set.id}/review`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                approve,
+                note: note.value,
+                title: set.title,
+                expertise: set.expertise,
+                quizzes,
+                rank1_title: set.rank1_title,
+                rank2_title: set.rank2_title,
+                rank3_title: set.rank3_title,
+                icon: set.icon,
+              })
+            });
             const data = await review.json(); if (!review.ok) throw new Error(data.detail || `${label} 실패`);
             if (data.created_ids?.length) document.getElementById('quiz-daily-ids').value = data.created_ids.join(', ');
             showToast(approve ? '승인되어 공용 풀에 추가됐습니다.' : '문제집을 반려했습니다.', 'success');
@@ -1400,7 +1490,9 @@ export async function openAdminQuizEditor(quiz = null) {
   if (!editor) return;
   editor.classList.remove('hidden');
   document.getElementById('admin-quiz-edit-id').value = quiz?.id || '';
-  document.getElementById('admin-quiz-category').value = quiz?.category || 'PLC';
+  const cat = quiz?.category || 'PLC';
+  document.getElementById('admin-quiz-category').value = cat;
+  applyTitlesToInputs(cat, 'admin-quiz-rank1', 'admin-quiz-rank2', 'admin-quiz-rank3', 'admin-quiz-icon');
   document.getElementById('admin-quiz-difficulty').value = quiz?.difficulty || 'medium';
   document.getElementById('admin-quiz-type').value = quiz?.question_type || 'multiple_choice';
   document.getElementById('admin-quiz-question').value = quiz?.question || '';
@@ -1789,6 +1881,14 @@ export function initQuizListeners() {
   quizFarmPointsBtn?.addEventListener('click', () => switchQuizNav('random'));
   adminQuizNewBtn?.addEventListener('click', () => openAdminQuizEditor());
   adminQuizEditorCancel?.addEventListener('click', () => adminQuizEditor?.classList.add('hidden'));
+
+  const adminQuizCat = document.getElementById('admin-quiz-category');
+  if (adminQuizCat && !adminQuizCat.dataset.boundTitle) {
+    adminQuizCat.dataset.boundTitle = 'true';
+    adminQuizCat.addEventListener('input', (e) => {
+      applyTitlesToInputs(e.target.value.trim(), 'admin-quiz-rank1', 'admin-quiz-rank2', 'admin-quiz-rank3', 'admin-quiz-icon');
+    });
+  }
   adminQuizEditor?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const status = document.getElementById('admin-quiz-editor-status');
@@ -1808,6 +1908,14 @@ export function initQuizListeners() {
         explanation: document.getElementById('admin-quiz-explanation').value.trim(),
       };
       if (authorVal) payload.author_name = authorVal;
+      const rank1 = document.getElementById('admin-quiz-rank1')?.value.trim();
+      const rank2 = document.getElementById('admin-quiz-rank2')?.value.trim();
+      const rank3 = document.getElementById('admin-quiz-rank3')?.value.trim();
+      const icon = document.getElementById('admin-quiz-icon')?.value.trim();
+      if (rank1) payload.rank1_title = rank1;
+      if (rank2) payload.rank2_title = rank2;
+      if (rank3) payload.rank3_title = rank3;
+      if (icon) payload.icon = icon;
       const id = document.getElementById('admin-quiz-edit-id').value;
       const response = await fetch(id ? `/api/admin/quiz/${id}` : '/api/admin/quiz', {
         method: id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -1815,6 +1923,7 @@ export function initQuizListeners() {
       const data = await response.json(); if (!response.ok) throw new Error(data.detail || '저장 실패');
       status.className = 'admin-status-msg success'; status.textContent = id ? `#${id} 문항을 수정했습니다.` : `#${data.quiz_id} 문항을 생성했습니다.`;
       showToast(id ? '퀴즈를 수정했습니다.' : '새 퀴즈를 등록했습니다.', 'success');
+      await fetchSubjectTitlesMap();
       await fetchAdminQuizzes(); fetchCategoriesSummary();
       if (!id) adminQuizEditor.reset();
     } catch (err) { status.className = 'admin-status-msg error'; status.textContent = err.message; }
@@ -1844,7 +1953,15 @@ export function initQuizListeners() {
     try {
       const quizzes = JSON.parse(document.getElementById('quiz-set-json')?.value || '');
       const validation = await validateQuizDraft();
-      const body = { title: document.getElementById('quiz-set-title')?.value || '', expertise: document.getElementById('quiz-set-expertise')?.value || '', quizzes };
+      const body = {
+        title: document.getElementById('quiz-set-title')?.value || '',
+        expertise: document.getElementById('quiz-set-expertise')?.value || '',
+        rank1_title: document.getElementById('quiz-set-rank1')?.value?.trim() || '',
+        rank2_title: document.getElementById('quiz-set-rank2')?.value?.trim() || '',
+        rank3_title: document.getElementById('quiz-set-rank3')?.value?.trim() || '',
+        icon: document.getElementById('quiz-set-icon')?.value?.trim() || '',
+        quizzes,
+      };
       const editing = editingMySetId !== null;
       const res = await fetch(editing ? `/api/quiz/my-sets/${editingMySetId}` : '/api/quiz/my-sets', { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json(); if (!res.ok) throw new Error(data.detail || '저장 실패');
@@ -1854,7 +1971,12 @@ export function initQuizListeners() {
           ? `초안 저장 완료 · 검토 필요: ${validation.warnings.join(' ')}`
           : 'JSON·DB 유사도·정답 분포 검증을 통과해 초안으로 저장했습니다.';
       }
-      document.getElementById('quiz-set-json').value = ''; editingMySetId = null; quizSetSaveBtn.textContent = '초안 저장'; loadMyQuizSets();
+      document.getElementById('quiz-set-json').value = '';
+      if (document.getElementById('quiz-set-rank1')) document.getElementById('quiz-set-rank1').value = '';
+      if (document.getElementById('quiz-set-rank2')) document.getElementById('quiz-set-rank2').value = '';
+      if (document.getElementById('quiz-set-rank3')) document.getElementById('quiz-set-rank3').value = '';
+      if (document.getElementById('quiz-set-icon')) document.getElementById('quiz-set-icon').value = '';
+      editingMySetId = null; quizSetSaveBtn.textContent = '초안 저장'; loadMyQuizSets();
     } catch (err) {
       if (status) { status.className = 'admin-status-msg error'; status.textContent = err instanceof SyntaxError ? '유효한 JSON 배열인지 확인하세요.' : err.message; }
     }
@@ -2045,6 +2167,14 @@ export function initQuizListeners() {
       const formData = new FormData();
       formData.append('category', quizGenCategory ? quizGenCategory.value : 'PLC');
       formData.append('count', quizGenCount ? quizGenCount.value : '5');
+      const aiRank1 = document.getElementById('quiz-ai-rank1')?.value.trim();
+      const aiRank2 = document.getElementById('quiz-ai-rank2')?.value.trim();
+      const aiRank3 = document.getElementById('quiz-ai-rank3')?.value.trim();
+      const aiIcon = document.getElementById('quiz-ai-icon')?.value.trim();
+      if (aiRank1) formData.append('rank1_title', aiRank1);
+      if (aiRank2) formData.append('rank2_title', aiRank2);
+      if (aiRank3) formData.append('rank3_title', aiRank3);
+      if (aiIcon) formData.append('icon', aiIcon);
       if (quizGenFile && quizGenFile.files[0]) {
         formData.append('file', quizGenFile.files[0]);
       }
@@ -2064,6 +2194,7 @@ export function initQuizListeners() {
           quizGenStatus.className = 'admin-status-msg success';
         }
         quizAiGenForm.reset();
+        await fetchSubjectTitlesMap();
         fetchAdminQuizzes();
         fetchCategoriesSummary();
         showToast(`${data.created_count}개 AI 퀴즈가 자동 등록되었습니다!`, 'success');
@@ -2093,10 +2224,21 @@ export function initQuizListeners() {
 
       try {
         const parsed = JSON.parse(quizJsonInput.value.trim());
+        const jsonCat = document.getElementById('quiz-json-category')?.value.trim();
+        const jsonRank1 = document.getElementById('quiz-json-rank1')?.value.trim();
+        const jsonRank2 = document.getElementById('quiz-json-rank2')?.value.trim();
+        const jsonRank3 = document.getElementById('quiz-json-rank3')?.value.trim();
+        const jsonIcon = document.getElementById('quiz-json-icon')?.value.trim();
+        const payload = { quizzes: parsed };
+        if (jsonCat) payload.category = jsonCat;
+        if (jsonRank1) payload.rank1_title = jsonRank1;
+        if (jsonRank2) payload.rank2_title = jsonRank2;
+        if (jsonRank3) payload.rank3_title = jsonRank3;
+        if (jsonIcon) payload.icon = jsonIcon;
         const res = await fetch('/api/admin/quiz/import-json', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ quizzes: parsed }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'JSON 등록 실패');
@@ -2105,6 +2247,7 @@ export function initQuizListeners() {
           quizJsonStatus.className = 'admin-status-msg success';
         }
         quizJsonImportForm.reset();
+        await fetchSubjectTitlesMap();
         fetchAdminQuizzes();
         fetchCategoriesSummary();
         showToast(`${data.created_count}개 퀴즈가 등록되었습니다.`, 'success');

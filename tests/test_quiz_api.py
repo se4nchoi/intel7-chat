@@ -486,5 +486,149 @@ def test_category_quiz_api_pagination_with_exclude():
     assert all(q["is_solved"] is False for q in b2)
 
 
+def test_subject_titles_api_and_custom_titles_flow():
+    admin, _ = session_client("admin_user", role="admin")
+    student, student_user = session_client("student_user", role="student")
+
+    # 1. Check GET /api/quiz/subject-titles
+    all_titles_res = student.get("/api/quiz/subject-titles")
+    assert all_titles_res.status_code == 200
+    titles_map = all_titles_res.json()["titles"]
+    assert "PLC" in titles_map
+    assert titles_map["PLC"]["rank1_title"] == "PLC의 신"
+    assert titles_map["PLC"]["icon"] == "⚡"
+
+    # 2. Check GET /api/quiz/subject-titles/{category}
+    plc_res = student.get("/api/quiz/subject-titles/PLC")
+    assert plc_res.status_code == 200
+    assert plc_res.json()["rank1_title"] == "PLC의 신"
+
+    # 3. Non-admin cannot POST /api/admin/quiz/subject-titles
+    forbidden_res = student.post(
+        "/api/admin/quiz/subject-titles",
+        json={"category": "인공지능", "icon": "🧠", "rank1_title": "튜링의 후예", "rank2_title": "신경망 마스터", "rank3_title": "프롬프트 입문"},
+        headers=ORIGIN,
+    )
+    assert forbidden_res.status_code == 403
+
+    # 4. Admin saves subject titles directly
+    admin_save_res = admin.post(
+        "/api/admin/quiz/subject-titles",
+        json={"category": "인공지능", "icon": "🧠", "rank1_title": "튜링의 후예", "rank2_title": "신경망 마스터", "rank3_title": "프롬프트 입문"},
+        headers=ORIGIN,
+    )
+    assert admin_save_res.status_code == 200
+    ai_titles = student.get("/api/quiz/subject-titles/인공지능").json()
+    assert ai_titles["rank1_title"] == "튜링의 후예"
+    assert ai_titles["icon"] == "🧠"
+
+    # 5. Student submits a set with custom rank titles
+    set_payload = {
+        "title": "임베디드 기초",
+        "expertise": "임베디드",
+        "rank1_title": "펌웨어의 신",
+        "rank2_title": "납땜 장인",
+        "rank3_title": "회로 분석가",
+        "icon": "💻",
+        "quizzes": [{
+            "difficulty": "easy",
+            "question_type": "short_answer",
+            "question": "GPIO는 무엇의 약자인가?",
+            "correct_answers": ["General Purpose Input Output", "일반 목적 입출력"],
+            "hint": "입출력 핀",
+            "explanation": "GPIO 설명",
+        }],
+    }
+    create_res = student.post("/api/quiz/my-sets", json=set_payload, headers=ORIGIN)
+    assert create_res.status_code == 201
+    set_id = create_res.json()["id"]
+
+    # Verify student my-sets contains the titles
+    my_sets = student.get("/api/quiz/my-sets").json()["sets"]
+    created_set = next(s for s in my_sets if s["id"] == set_id)
+    assert created_set["rank1_title"] == "펌웨어의 신"
+    assert created_set["icon"] == "💻"
+
+    # Student updates set with modified rank2 title
+    update_res = student.patch(
+        f"/api/quiz/my-sets/{set_id}",
+        json={**set_payload, "rank2_title": "오실로스코프 고수"},
+        headers=ORIGIN,
+    )
+    assert update_res.status_code == 200
+
+    # Student requests review
+    assert student.post(f"/api/quiz/my-sets/{set_id}/submit", headers=ORIGIN).status_code == 200
+
+    # Admin reviews and approves
+    admin_review_res = admin.post(
+        f"/api/admin/quiz/submissions/{set_id}/review",
+        json={"approve": True, "note": "승인합니다", "expertise": "임베디드", "rank1_title": "펌웨어의 신", "rank2_title": "오실로스코프 고수", "rank3_title": "회로 분석가", "icon": "💻"},
+        headers=ORIGIN,
+    )
+    assert admin_review_res.status_code == 200
+    created_quiz_id = admin_review_res.json()["created_ids"][0]
+
+    # Check that 임베디드 subject titles were registered
+    embedded_titles = student.get("/api/quiz/subject-titles/임베디드").json()
+    assert embedded_titles["rank1_title"] == "펌웨어의 신"
+    assert embedded_titles["rank2_title"] == "오실로스코프 고수"
+    assert embedded_titles["rank3_title"] == "회로 분석가"
+    assert embedded_titles["icon"] == "💻"
+
+    # Check categories summary has rank titles
+    cats_summary = student.get("/api/quiz/categories").json()["categories"]
+    emb_cat = next((c for c in cats_summary if c["category"] == "임베디드"), None)
+    assert emb_cat is not None
+    assert emb_cat["rank1_title"] == "펌웨어의 신"
+    assert emb_cat["icon"] == "💻"
+
+    # Student solves the quiz and checks leaderboard
+    solve_res = student.post(
+        "/api/quiz/submit",
+        json={"quiz_id": created_quiz_id, "answer": "General Purpose Input Output"},
+        headers=ORIGIN,
+    )
+    assert solve_res.status_code == 200
+
+    lb_res = student.get("/api/quiz/leaderboard?category=임베디드")
+    assert lb_res.status_code == 200
+    lb = lb_res.json()["leaderboard"]
+    assert len(lb) >= 1
+    assert lb[0]["rank"] == 1
+    assert lb[0]["badge"] is not None
+    assert lb[0]["badge"]["label"] == "펌웨어의 신"
+    assert lb[0]["badge"]["icon"] == "💻"
+
+
+def test_admin_quiz_creation_with_subject_titles():
+    admin, _ = session_client("admin_user", role="admin")
+    student, _ = session_client("student_user", role="student")
+
+    res = admin.post(
+        "/api/admin/quiz",
+        json={
+            "category": "반도체",
+            "icon": "🔬",
+            "rank1_title": "웨이퍼 마스터",
+            "rank2_title": "공정 장인",
+            "rank3_title": "수율 분석가",
+            "difficulty": "medium",
+            "question_type": "short_answer",
+            "question": "반도체 8대 공정 중 포토공정이란?",
+            "correct_answers": ["빛을 이용해 회로 패턴을 형성하는 공정"],
+        },
+        headers=ORIGIN,
+    )
+    assert res.status_code == 200
+
+    semi_titles = student.get("/api/quiz/subject-titles/반도체").json()
+    assert semi_titles["rank1_title"] == "웨이퍼 마스터"
+    assert semi_titles["rank2_title"] == "공정 장인"
+    assert semi_titles["rank3_title"] == "수율 분석가"
+    assert semi_titles["icon"] == "🔬"
+
+
+
 
 
