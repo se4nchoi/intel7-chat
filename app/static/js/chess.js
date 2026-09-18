@@ -147,6 +147,7 @@ export function initChessListeners() {
   const acceptDrawBtn = $('chAcceptDrawBtn');
   const rejectDrawBtn = $('chRejectDrawBtn');
   const resignBtn = $('chResignBtn');
+  const resignTopBtn = $('chResignTopBtn');
   const returnToSpecBtn = $('chReturnToSpecBtn');
   const readyBtn = $('chReadyBtn');
   const promoCloseBtn = $('chPromoCloseBtn');
@@ -159,6 +160,7 @@ export function initChessListeners() {
   if (acceptDrawBtn) acceptDrawBtn.addEventListener('click', () => handleRespondDraw(true));
   if (rejectDrawBtn) rejectDrawBtn.addEventListener('click', () => handleRespondDraw(false));
   if (resignBtn) resignBtn.addEventListener('click', handleResign);
+  if (resignTopBtn) resignTopBtn.addEventListener('click', handleResign);
   if (returnToSpecBtn) returnToSpecBtn.addEventListener('click', handleReturnToSpec);
   if (promoCloseBtn) promoCloseBtn.addEventListener('click', closePromotionModal);
   if (returnLiveBtn) {
@@ -510,45 +512,43 @@ function renderLobby(rooms) {
     grid.classList.remove('hidden');
   }
 
-  rooms.forEach(r => {
-    const card = document.createElement('div');
-    card.className = 'chess-room-card';
-
+  grid.innerHTML = rooms.map(r => {
     let statusText = '대기 중';
-    let statusClass = 'waiting';
+    let statusColor = '#34d399';
     if (r.game_started && !r.result) {
-      statusText = '대국 중';
-      statusClass = 'playing';
+      statusText = '⚔️ 대국 중';
+      statusColor = '#60a5fa';
     } else if (r.result) {
       statusText = '종료';
-      statusClass = 'ended';
+      statusColor = '#9ca3af';
     }
 
-    const hasSeat = (!r.white || !r.black) && !r.game_started;
+    const whiteName = r.white ? escapeHtml(r.white) : '비어있음';
+    const blackName = r.black ? escapeHtml(r.black) : '비어있음';
 
-    card.innerHTML = `
-      <div>
-        <div class="chess-room-header">
-          <h4 class="chess-room-title">${escapeHtml(r.title)}</h4>
-          <span class="chess-room-badge ${statusClass}">${statusText}</span>
+    return `
+      <div class="ch-room-card chess-room-card" data-room-id="${r.id}">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:700;font-size:15px;color:#93c5fd;">${escapeHtml(r.title)}</span>
+          <span style="font-size:11px;background:rgba(59,130,246,0.15);color:#93c5fd;padding:2px 8px;border-radius:6px;">⏱️ ${r.time_minutes}분</span>
         </div>
-        <div class="chess-room-info">
-          <div>👑 개설자: ${escapeHtml(r.created_by)}</div>
-          <div>⚔️ 백: ${r.white ? escapeHtml(r.white) : '<span class="empty-seat">비어있음</span>'} | 흑: ${r.black ? escapeHtml(r.black) : '<span class="empty-seat">비어있음</span>'}</div>
-          <div>⏱️ ${r.time_minutes}분 대국 | 👁️ 관전자 ${r.spectator_count}명</div>
+        <div style="font-size:12.5px;color:var(--ch-muted);display:flex;justify-content:space-between;">
+          <span>백: ${whiteName}</span>
+          <span>흑: ${blackName}</span>
         </div>
-      </div>
-      <div class="chess-room-actions">
-        ${hasSeat ? `<button class="ch-btn ch-btn-primary small" data-chess-action="join" data-room-id="${r.id}" onclick="window.chessJoin('${r.id}', 'play')">참가하기</button>` : ''}
-        <button class="ch-btn ch-btn-ghost small" data-chess-action="spectate" data-room-id="${r.id}" onclick="window.chessJoin('${r.id}', 'spectator')">관전하기</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--ch-muted);">
+          <span>관전 ${r.spectator_count}명</span>
+          <span style="color:${statusColor};font-weight:600;">${statusText}</span>
+        </div>
       </div>
     `;
-    card.querySelectorAll('.chess-join-btn').forEach(button => {
-      button.addEventListener('click', () => {
-        joinRoomFromLobby(button.dataset.roomId, button.dataset.mode === 'play' ? null : 'spectator');
-      });
+  }).join('');
+
+  grid.querySelectorAll('.ch-room-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const rId = card.getAttribute('data-room-id');
+      joinRoomFromLobby(rId, null);
     });
-    grid.appendChild(card);
   });
 }
 
@@ -579,6 +579,10 @@ function syncRoomState(room) {
   else myColor = null;
 
   $('chGameRoomTitle').textContent = `${room.title} (${room.time_minutes}분)`;
+  if ($('chRoomIdBadge')) {
+    const rawId = String(room.id || '');
+    $('chRoomIdBadge').textContent = '#' + (rawId.startsWith('chess_room_') ? rawId.slice(11) : rawId.slice(-4));
+  }
 
   const history = room.move_history || [{ fen: room.fen, move: 'Start' }];
   const wasAtLatest = isNewRoom || currentHistoryIndex >= prevLatestIdx;
@@ -712,6 +716,8 @@ function updateRoleUI() {
 
   $('chDrawOfferBtn').style.display = isActiveGame ? 'inline-flex' : 'none';
   $('chResignBtn').style.display = isActiveGame ? 'inline-flex' : 'none';
+  const resignTopBtn = $('chResignTopBtn');
+  if (resignTopBtn) resignTopBtn.style.display = isActiveGame ? 'inline-flex' : 'none';
   $('chReturnToSpecBtn').style.display = isPlayer && isWaitingState ? 'inline-flex' : 'none';
   $('chStartGameBtn').style.display = isOwner && isWaitingState ? 'inline-flex' : 'none';
 }
@@ -1145,6 +1151,23 @@ function updateStatusUI() {
     if (localGame.in_check()) el.innerHTML += '<span class="badge check">체크!</span>';
     $('chStartGameBtn').disabled = true;
   }
+
+  const turnBadge = $('chTurnBadge');
+  const turnText = $('chTurnText');
+  const whiteCard = $('chWhiteCard');
+  const blackCard = $('chBlackCard');
+
+  if (currentRoom.game_started && !currentRoom.result) {
+    const isWhiteTurn = localGame ? localGame.turn() === 'w' : currentRoom.turn === 'w';
+    if (turnBadge) turnBadge.classList.remove('hidden');
+    if (turnText) turnText.textContent = isWhiteTurn ? '백(White) 차례' : '흑(Black) 차례';
+    if (whiteCard) whiteCard.classList.toggle('turn-active', isWhiteTurn);
+    if (blackCard) blackCard.classList.toggle('turn-active', !isWhiteTurn);
+  } else {
+    if (turnBadge) turnBadge.classList.add('hidden');
+    if (whiteCard) whiteCard.classList.remove('turn-active');
+    if (blackCard) blackCard.classList.remove('turn-active');
+  }
 }
 
 function getChessStatText(id) {
@@ -1162,51 +1185,69 @@ function renderPlayersAndSpectators() {
   const canJoinWhite = !currentRoom.white && !currentRoom.game_started && !myColor;
   const canJoinBlack = !currentRoom.black && !currentRoom.game_started && !myColor;
 
-  const whiteReadyBadge = currentRoom.white ? (currentRoom.white_ready ? '<span class="chess-ready-badge is-ready">READY</span>' : '<span class="chess-ready-badge not-ready">대기 중</span>') : '';
-  const blackReadyBadge = currentRoom.black ? (currentRoom.black_ready ? '<span class="chess-ready-badge is-ready">READY</span>' : '<span class="chess-ready-badge not-ready">대기 중</span>') : '';
   const isWhiteOwner = currentRoom.white && String(currentRoom.owner_id) === String(currentRoom.white.id);
   const isBlackOwner = currentRoom.black && String(currentRoom.owner_id) === String(currentRoom.black.id);
 
-  box.innerHTML = `
-    <div class="player-row">
-      <div class="chess-player-identity">
-        <div class="chess-player-name-wrap">
-          <span class="dot w" style="flex-shrink:0;"></span>
-          <b style="flex-shrink:0;color:var(--ch-gold-soft);font-size:12px;">백:</b>
-          <span class="chess-player-name">
-            ${currentRoom.white ? (isWhiteOwner ? '👑 ' : '') + escapeHtml(currentRoom.white.name) : '<span class="empty-seat">비어있음</span>'}
-          </span>
-        </div>
-        <div class="chess-player-meta">
-          ${currentRoom.white ? `<span class="record-badge">${getChessStatText(currentRoom.white.id)}</span>` : ''}
-          ${whiteReadyBadge}
-        </div>
-      </div>
-      ${canJoinWhite ? `<button class="ch-btn ch-btn-primary small" style="margin-top:6px;" data-pick-role="w" onclick="window.pickChessRole('w')">백으로 앉기</button>` : ''}
-    </div>
-    <div class="player-row">
-      <div class="chess-player-identity">
-        <div class="chess-player-name-wrap">
-          <span class="dot b" style="flex-shrink:0;"></span>
-          <b style="flex-shrink:0;color:var(--ch-gold-soft);font-size:12px;">흑:</b>
-          <span class="chess-player-name">
-            ${currentRoom.black ? (isBlackOwner ? '👑 ' : '') + escapeHtml(currentRoom.black.name) : '<span class="empty-seat">비어있음</span>'}
-          </span>
-        </div>
-        <div class="chess-player-meta">
-          ${currentRoom.black ? `<span class="record-badge">${getChessStatText(currentRoom.black.id)}</span>` : ''}
-          ${blackReadyBadge}
-        </div>
-      </div>
-      ${canJoinBlack ? `<button class="ch-btn ch-btn-primary small" style="margin-top:6px;" data-pick-role="b" onclick="window.pickChessRole('b')">흑으로 앉기</button>` : ''}
-    </div>
-  `;
+  // Sync White Player Card in Column 1
+  const whiteNameEl = $('chWhiteName');
+  const whiteBadgeEl = $('chWhiteBadge');
+  const whiteReadyEl = $('chWhiteReadyBadge');
+  if (whiteNameEl) {
+    if (currentRoom.white) {
+      whiteNameEl.textContent = (isWhiteOwner ? '👑 ' : '') + currentRoom.white.name;
+      if (whiteBadgeEl) {
+        whiteBadgeEl.textContent = getChessStatText(currentRoom.white.id);
+        whiteBadgeEl.classList.remove('hidden');
+      }
+      if (whiteReadyEl) {
+        whiteReadyEl.className = `chess-ready-badge ${currentRoom.white_ready ? 'is-ready' : 'not-ready'}`;
+        whiteReadyEl.textContent = currentRoom.white_ready ? 'READY' : '대기 중';
+        whiteReadyEl.classList.remove('hidden');
+      }
+    } else {
+      whiteNameEl.textContent = '백 플레이어 대기 중';
+      if (whiteBadgeEl) whiteBadgeEl.classList.add('hidden');
+      if (whiteReadyEl) whiteReadyEl.classList.add('hidden');
+    }
+  }
 
-  box.querySelectorAll('.chess-role-btn').forEach(button => {
-    button.addEventListener('click', () => {
-      sendWs({ action: 'pick_role', room_id: currentRoom.id, role: button.dataset.role });
-    });
-  });
+  // Sync Black Player Card in Column 1
+  const blackNameEl = $('chBlackName');
+  const blackBadgeEl = $('chBlackBadge');
+  const blackReadyEl = $('chBlackReadyBadge');
+  if (blackNameEl) {
+    if (currentRoom.black) {
+      blackNameEl.textContent = (isBlackOwner ? '👑 ' : '') + currentRoom.black.name;
+      if (blackBadgeEl) {
+        blackBadgeEl.textContent = getChessStatText(currentRoom.black.id);
+        blackBadgeEl.classList.remove('hidden');
+      }
+      if (blackReadyEl) {
+        blackReadyEl.className = `chess-ready-badge ${currentRoom.black_ready ? 'is-ready' : 'not-ready'}`;
+        blackReadyEl.textContent = currentRoom.black_ready ? 'READY' : '대기 중';
+        blackReadyEl.classList.remove('hidden');
+      }
+    } else {
+      blackNameEl.textContent = '흑 플레이어 대기 중';
+      if (blackBadgeEl) blackBadgeEl.classList.add('hidden');
+      if (blackReadyEl) blackReadyEl.classList.add('hidden');
+    }
+  }
+
+  if (box) {
+    if (canJoinWhite || canJoinBlack) {
+      box.innerHTML = `
+        <div style="display:flex;gap:6px;margin-bottom:4px;">
+          ${canJoinWhite ? `<button class="ch-btn ch-btn-primary small" style="flex:1;" data-pick-role="w" onclick="window.pickChessRole('w')">백으로 앉기</button>` : ''}
+          ${canJoinBlack ? `<button class="ch-btn ch-btn-primary small" style="flex:1;" data-pick-role="b" onclick="window.pickChessRole('b')">흑으로 앉기</button>` : ''}
+        </div>
+      `;
+      box.style.display = 'block';
+    } else {
+      box.innerHTML = '';
+      box.style.display = 'none';
+    }
+  }
 
   const specBox = $('chSpectatorsBox');
   const specCountEl = $('chSpectatorCount');
@@ -1234,7 +1275,11 @@ function renderPlayersAndSpectators() {
 
 function renderHistoryUI() {
   const listEl = $('chHistoryList');
+  const moveCountEl = $('chMoveCount');
   const history = currentRoom?.move_history || [];
+  if (moveCountEl) {
+    moveCountEl.textContent = Math.max(0, history.length - 1);
+  }
   if (history.length <= 1) {
     listEl.innerHTML = '<span class="placeholder-line">대국이 시작되면 기보가 기록됩니다.</span>';
     updateReturnLiveBtn();
@@ -1377,6 +1422,8 @@ function realtimeClockTick() {
   $('chClockChipWhite').classList.toggle('my-turn', currentTurn === 'w' && isMyTurn);
   $('chClockChipBlack').classList.toggle('active', currentTurn === 'b');
   $('chClockChipBlack').classList.toggle('my-turn', currentTurn === 'b' && isMyTurn);
+  $('chWhiteCard')?.classList.toggle('turn-active', currentTurn === 'w');
+  $('chBlackCard')?.classList.toggle('turn-active', currentTurn === 'b');
 
   if ((whiteRemain <= 0 || blackRemain <= 0) && !currentRoom.result) {
     sendWs({

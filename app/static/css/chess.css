@@ -220,12 +220,87 @@
   margin-bottom: 16px;
 }
 
+/* -------------------------------------------------------------
+   Unified Container & Lobby (Matching Janggi & Omok)
+   ------------------------------------------------------------- */
+.chess-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  color: var(--ch-ivory);
+}
+
+.ch-lobby {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 20px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  gap: 16px;
+}
+
+.ch-lobby-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ch-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.ch-tab-btn {
+  padding: 8px 16px;
+  background: var(--ch-panel);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: var(--ch-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ch-tab-btn:hover {
+  color: var(--ch-ivory);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.ch-tab-btn.active {
+  background: var(--ch-panel-2);
+  color: var(--ch-gold-soft);
+  border-color: rgba(204, 159, 69, 0.4);
+}
+
 .chess-room-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-  min-height: 380px;
-  align-content: start;
+  gap: 14px;
+}
+
+.ch-room-card {
+  background: var(--ch-panel);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.ch-room-card:hover {
+  border-color: var(--ch-gold-soft);
+  background: var(--ch-panel-2);
+  transform: translateY(-2px);
 }
 
 .chess-room-card {
@@ -317,11 +392,37 @@
   }
 }
 
+.ch-game-body,
 .chess-game-grid {
+  flex: 1;
   display: grid;
-  grid-template-columns: minmax(320px, 460px) 270px minmax(280px, 1fr);
+  grid-template-columns: 280px 1fr 280px;
+  overflow: hidden;
+  height: calc(100% - 50px);
   gap: 16px;
-  align-items: stretch;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1080px) {
+  .ch-game-body,
+  .chess-game-grid {
+    grid-template-columns: 220px 1fr;
+  }
+  .ch-chat-col,
+  .chess-chat-column {
+    display: none;
+  }
+}
+
+.ch-board-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .chess-info-column {
@@ -345,32 +446,17 @@
 .chess-chat-column {
   display: flex;
   flex-direction: column;
+  gap: 10px;
   min-width: 0;
   height: 100%;
-}
-
-@media (max-width: 1180px) {
-  .chess-game-grid {
-    grid-template-columns: minmax(320px, 460px) 1fr;
-  }
-  .chess-chat-column {
-    grid-column: 1 / -1;
-  }
-  .chess-chat-card.full-height {
-    min-height: 280px;
-  }
-  .chess-chat-messages {
-    min-height: 180px;
-    max-height: 250px;
-  }
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 @media (max-width: 780px) {
+  .ch-game-body,
   .chess-game-grid {
     grid-template-columns: 1fr;
-  }
-  .chess-chat-column {
-    grid-column: auto;
   }
 }
 
