@@ -88,9 +88,9 @@
 }
 
 .play-tab-btn {
-  width: 106px;
-  min-width: 106px;
-  max-width: 106px;
+  width: 98px;
+  min-width: 98px;
+  max-width: 98px;
   height: 34px;
   min-height: 34px;
   max-height: 34px;
@@ -168,7 +168,8 @@
 #chess-lobby-screen,
 .chess-lobby-screen,
 .jg-lobby,
-.om-lobby {
+.om-lobby,
+.oth-lobby {
   display: flex !important;
   flex-direction: column !important;
   height: 100% !important;
@@ -185,9 +186,11 @@
 .play-dialog .chess-lobby-screen.hidden,
 .play-dialog .jg-lobby.hidden,
 .play-dialog .om-lobby.hidden,
+.play-dialog .oth-lobby.hidden,
 .play-dialog #chess-game-screen.hidden,
 .play-dialog .jg-game-screen.hidden,
 .play-dialog .om-game-screen.hidden,
+.play-dialog .oth-game-screen.hidden,
 .play-dialog .chess-rankings-panel.hidden,
 .play-dialog .play-lobby-actions.hidden {
   display: none !important;
@@ -195,7 +198,8 @@
 
 #chess-game-screen,
 .play-dialog .jg-game-screen,
-.play-dialog .om-game-screen {
+.play-dialog .om-game-screen,
+.play-dialog .oth-game-screen {
   flex: 1 1 0 !important;
   min-height: 0 !important;
   width: 100% !important;
@@ -207,7 +211,8 @@
 
 .chess-game-topbar,
 .jg-game-topbar,
-.om-game-topbar {
+.om-game-topbar,
+.oth-game-topbar {
   height: 50px !important;
   min-height: 50px !important;
   max-height: 50px !important;
@@ -225,7 +230,8 @@
 
 .chess-lobby-header,
 .jg-lobby-top,
-.om-lobby-top {
+.om-lobby-top,
+.oth-lobby-top {
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
@@ -241,7 +247,8 @@
 /* Standardized Lobby Sub-Tabs (36px fixed height) */
 .chess-lobby-tabs,
 .jg-tabs,
-.om-tabs {
+.om-tabs,
+.oth-tabs {
   display: flex !important;
   align-items: center !important;
   gap: 3px !important;
@@ -255,7 +262,8 @@
 
 .chess-tab-btn,
 .jg-tab-btn,
-.om-tab-btn {
+.om-tab-btn,
+.oth-tab-btn {
   height: 32px !important;
   min-height: 32px !important;
   max-height: 32px !important;
@@ -276,7 +284,8 @@
 
 .play-dialog .chess-tab-btn.active,
 .play-dialog .jg-tab-btn.active,
-.play-dialog .om-tab-btn.active {
+.play-dialog .om-tab-btn.active,
+.play-dialog .oth-tab-btn.active {
   background: rgba(255, 255, 255, 0.12) !important;
   border-color: rgba(255, 255, 255, 0.24) !important;
   color: currentColor !important;
@@ -297,7 +306,10 @@
 .play-dialog .jg-btn-danger,
 .play-dialog .om-btn-primary,
 .play-dialog .om-btn-ghost,
-.play-dialog .om-btn-danger {
+.play-dialog .om-btn-danger,
+.play-dialog .oth-btn-primary,
+.play-dialog .oth-btn-ghost,
+.play-dialog .oth-btn-danger {
   height: 34px !important;
   min-height: 34px !important;
   max-height: 34px !important;
@@ -598,6 +610,35 @@
   color: #fef08a;
   box-shadow: 0 2px 8px rgba(35, 18, 5, 0.6);
   border-color: rgba(245, 158, 11, 0.5);
+}
+
+/* -------------------------------------------------------------
+   THEME 4: OTHELLO (Burgundy & Tournament Green Tone)
+   ------------------------------------------------------------- */
+.play-dialog.theme-othello {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(225, 29, 72, 0.12), transparent 45%),
+    radial-gradient(circle at 82% 100%, rgba(136, 19, 55, 0.22), transparent 50%),
+    #18060f;
+  color: #ffe4e6;
+  border: 1px solid rgba(244, 63, 94, 0.28);
+}
+
+.play-dialog.theme-othello .play-hub-title {
+  color: #fda4af;
+}
+
+.play-dialog.theme-othello .play-tab-btn.active {
+  background: #3b0d20;
+  color: #fecdd3;
+  box-shadow: 0 2px 8px rgba(35, 6, 18, 0.6);
+  border-color: rgba(244, 63, 94, 0.5);
+}
+
+.play-dialog.theme-othello .record-badge {
+  color: #fda4af !important;
+  background: rgba(244, 63, 94, 0.15) !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
 }
 
 /* -------------------------------------------------------------
@@ -1063,6 +1104,7 @@
 /* Floating pill indicator on top of the board */
 .om-board-box.review-mode::after,
 .jg-board-box.review-mode::after,
+.oth-board-box.review-mode::after,
 .board-frame.inspect-active::after {
   content: "🔍 복기 모드";
   position: absolute;
@@ -1186,5 +1228,21 @@
 
 .play-dialog.theme-omok .chess-table tr.my-row td {
   background: rgba(245, 158, 11, 0.14) !important;
+  font-weight: 700 !important;
+}
+
+.play-dialog.theme-othello .chess-table-box {
+  background: rgba(28, 8, 16, 0.85) !important;
+  border: 1px solid rgba(244, 63, 94, 0.25) !important;
+}
+
+.play-dialog.theme-othello .chess-table thead th {
+  background: #240a15 !important;
+  color: #fecdd3 !important;
+  border-bottom: 1px solid rgba(244, 63, 94, 0.2) !important;
+}
+
+.play-dialog.theme-othello .chess-table tr.my-row td {
+  background: rgba(244, 63, 94, 0.14) !important;
   font-weight: 700 !important;
 }

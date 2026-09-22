@@ -64,6 +64,25 @@ def _omok_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:
     }
 
 
+OTHELLO_TITLES = {
+    1: ("👑", "오셀로 신"),
+    2: ("🟢", "오셀로 왕"),
+    3: ("🟢", "오셀로고인물"),
+}
+
+
+def _othello_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:
+    if rank not in OTHELLO_TITLES:
+        return None
+    icon, label = OTHELLO_TITLES[rank]
+    return {
+        "type": "othello",
+        "icon": icon,
+        "label": label,
+        "title": f"오셀로 {rank}위 · {wins}승",
+    }
+
+
 PLAY_GOD_TITLE = ("👑", "놀이의 신")
 
 
@@ -89,6 +108,7 @@ def get_play_god_qualifications(
         ("chess", "chess_player_stats"),
         ("janggi", "janggi_player_stats"),
         ("omok", "omok_player_stats"),
+        ("othello", "othello_player_stats"),
     ]
     total_disciplines = len(disciplines)
     results = {uid: {"first_count": 0, "disciplines": [], "is_god": False} for uid in user_ids}
@@ -377,6 +397,92 @@ def get_omok_leaderboard(limit: int = 20) -> List[Dict[str, Any]]:
     return results
 
 
+def record_othello_result(black_id: int, white_id: int, winner: Optional[str]) -> None:
+    """Persist one completed othello result for both players. Winner: 'b', 'w', 'black', 'white', or None."""
+    now = utc_now()
+    with get_connection() as conn:
+        for user_id in (black_id, white_id):
+            conn.execute("INSERT OR IGNORE INTO othello_player_stats (user_id) VALUES (?)", (user_id,))
+        if winner in ("b", "w", "black", "white"):
+            winner_id = black_id if winner in ("b", "black") else white_id
+            loser_id = white_id if winner in ("b", "black") else black_id
+            conn.execute(
+                "UPDATE othello_player_stats SET wins = wins + 1, last_win_at = ? WHERE user_id = ?",
+                (now, winner_id),
+            )
+            conn.execute(
+                "UPDATE othello_player_stats SET losses = losses + 1 WHERE user_id = ?",
+                (loser_id,),
+            )
+        else:
+            conn.execute(
+                "UPDATE othello_player_stats SET draws = draws + 1 WHERE user_id IN (?, ?)",
+                (black_id, white_id),
+            )
+
+
+def get_othello_stats(user_id: int) -> Dict[str, int]:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT wins, draws, losses FROM othello_player_stats WHERE user_id = ?", (user_id,)
+        ).fetchone()
+    return dict(row) if row else {"wins": 0, "draws": 0, "losses": 0}
+
+
+def get_othello_rankings(limit: int = 20) -> List[Dict[str, Any]]:
+    """Return top othello players sorted by wins (desc) and time achieved (asc)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT ps.user_id, u.username, u.display_name,
+                   ps.wins, ps.draws, ps.losses, ps.last_win_at,
+                   ROW_NUMBER() OVER (
+                       ORDER BY ps.wins DESC, ps.last_win_at ASC, ps.user_id ASC
+                   ) AS rank
+            FROM othello_player_stats ps
+            JOIN users u ON u.id = ps.user_id
+            WHERE ps.wins > 0
+            ORDER BY rank ASC
+            LIMIT ?
+        """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def reset_othello_records() -> None:
+    """Resets all othello player stats."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM othello_player_stats")
+
+
+def get_othello_leaderboard(limit: int = 20) -> List[Dict[str, Any]]:
+    """Return enriched othello rankings with win rates and badges."""
+    rankings = get_othello_rankings(limit=limit)
+    results = []
+    for r in rankings:
+        rank = int(r["rank"])
+        badge = _othello_badge(rank, int(r["wins"]))
+        total = r["wins"] + r.get("draws", 0) + r.get("losses", 0)
+        win_rate = round((r["wins"] / total * 100), 1) if total > 0 else 0.0
+        results.append(
+            {
+                "user_id": r["user_id"],
+                "username": r["username"],
+                "display_name": r["display_name"],
+                "rank": rank,
+                "score": r["wins"],
+                "wins": r["wins"],
+                "draws": r.get("draws", 0),
+                "losses": r.get("losses", 0),
+                "win_rate": win_rate,
+                "badge": badge,
+                "last_win_at": r.get("last_win_at"),
+            }
+        )
+    return results
+
+
 def get_user_quiz_title_options(user_id: int) -> List[Dict[str, Any]]:
     """Return every subject title the user currently holds (top three by score or chess wins)."""
     from app.db.quiz import _subject_quiz_badge
@@ -511,6 +617,37 @@ def get_user_quiz_title_options(user_id: int) -> List[Dict[str, Any]]:
                     **badge,
                     "category": "오목",
                     "selection": "omok",
+                    "rank": rank,
+                    "score": wins,
+                }
+            )
+    with get_connection() as conn:
+        oth_row = conn.execute(
+            """
+            WITH ranked_othello AS (
+                SELECT user_id, wins,
+                       ROW_NUMBER() OVER (
+                           ORDER BY wins DESC, last_win_at ASC, user_id ASC
+                       ) AS oth_rank
+                FROM othello_player_stats
+                WHERE wins > 0
+            )
+            SELECT oth_rank, wins
+            FROM ranked_othello
+            WHERE user_id = ? AND oth_rank <= 3
+        """,
+            (user_id,),
+        ).fetchone()
+    if oth_row:
+        rank = int(oth_row["oth_rank"])
+        wins = int(oth_row["wins"])
+        badge = _othello_badge(rank, wins)
+        if badge:
+            options.append(
+                {
+                    **badge,
+                    "category": "오셀로",
+                    "selection": "othello",
                     "rank": rank,
                     "score": wins,
                 }
@@ -698,6 +835,24 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
             user_ids,
         ).fetchall()
         omok_map = {r["user_id"]: dict(r) for r in omok_rows}
+
+        othello_rows = conn.execute(
+            f"""
+            WITH ranked_oth AS (
+                SELECT user_id, wins,
+                       ROW_NUMBER() OVER (
+                           ORDER BY wins DESC, last_win_at ASC, user_id ASC
+                       ) AS oth_rank
+                FROM othello_player_stats
+                WHERE wins > 0
+            )
+            SELECT user_id, wins, oth_rank
+            FROM ranked_oth
+            WHERE user_id IN ({placeholders}) AND oth_rank <= 3
+        """,
+            user_ids,
+        ).fetchall()
+        othello_map = {r["user_id"]: dict(r) for r in othello_rows}
         god_map = get_play_god_qualifications(conn, user_ids)
 
         for uid in user_ids:
@@ -725,6 +880,10 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
             elif selection == "omok" and uid in omok_map:
                 badges[uid] = _omok_badge(
                     int(omok_map[uid]["om_rank"]), int(omok_map[uid]["wins"])
+                )
+            elif selection == "othello" and uid in othello_map:
+                badges[uid] = _othello_badge(
+                    int(othello_map[uid]["oth_rank"]), int(othello_map[uid]["wins"])
                 )
             elif (
                 selection == "streak"
