@@ -29,8 +29,8 @@ let queuedPreMove = null; // { from, to, promotion }
 let previousTurnForSound = null;
 const SAVED_CHESS_ROOM_KEY = 'bamboochat_chess_room_id';
 
-const FILES = ['a','b','c','d','e','f','g','h'];
-const RANKS = ['8','7','6','5','4','3','2','1'];
+const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'];
 const PIECE_UNICODE = {
   w: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' },
   b: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' }
@@ -440,7 +440,7 @@ function joinRoomFromLobby(roomId, rolePref) {
   sendWs({ action: 'join_room', room_id: roomId, role_pref: rolePref });
 }
 
-window.pickChessRole = function(role) {
+window.pickChessRole = function (role) {
   if (!currentRoom) return;
   sendWs({ action: 'pick_role', room_id: currentRoom.id, role: role });
 };
@@ -552,7 +552,7 @@ function renderLobby(rooms) {
   });
 }
 
-window.chessJoin = function(roomId, mode) {
+window.chessJoin = function (roomId, mode) {
   joinRoomFromLobby(roomId, mode === 'play' ? null : 'spectator');
 };
 
@@ -1255,17 +1255,16 @@ function renderPlayersAndSpectators() {
   if (specCountEl) specCountEl.textContent = specs.length;
   if (specs.length === 0) {
     specBox.innerHTML = '<span class="placeholder-line">관전자가 없습니다.</span>';
-  } else {
     specBox.innerHTML = specs.map(s => {
       const qIndex = (currentRoom.match_queue || []).findIndex(q => q.id === s.id);
       const isQueued = qIndex !== -1;
       const statText = getChessStatText(s.id);
       return `
-        <div class="spec-item" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">👁️ ${escapeHtml(s.name)} ${sameUser(s.id, myUserId) ? '(나)' : ''}</span>
-          <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
-            <span class="record-badge">${statText}</span>
-            ${isQueued ? `<span style="color:var(--ch-gold);font-weight:bold;font-size:11px;">[대기 ${qIndex + 1}번]</span>` : ''}
+        <div class="spec-item" style="display:flex;flex-direction:column;gap:1px;padding:3px 5px;border-radius:4px;background:rgba(255,255,255,0.04);font-size:11.5px;">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">👁️ ${escapeHtml(s.name)} ${sameUser(s.id, myUserId) ? '(나)' : ''}</span>
+          <div style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--ch-muted);padding-left:14px;">
+            <span>${statText}</span>
+            ${isQueued ? `<span style="color:var(--ch-gold);font-weight:bold;">[대기 ${qIndex + 1}]</span>` : ''}
           </div>
         </div>
       `;
@@ -1577,7 +1576,7 @@ function clearRoomChatStorage(roomId) {
   try {
     sessionStorage.removeItem(getRoomChatKey(roomId));
     localStorage.removeItem(getRoomChatKey(roomId));
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function cleanupLegacyStorageResidue() {
@@ -1588,7 +1587,7 @@ function cleanupLegacyStorageResidue() {
         localStorage.removeItem(k);
       }
     }
-  } catch (_) {}
+  } catch (_) { }
 }
 cleanupLegacyStorageResidue();
 
@@ -1599,7 +1598,7 @@ function loadRoomChat(roomId) {
   if (!roomId) return;
   try {
     // Clear any lingering localStorage key for this room
-    try { localStorage.removeItem(getRoomChatKey(roomId)); } catch (_) {}
+    try { localStorage.removeItem(getRoomChatKey(roomId)); } catch (_) { }
     const raw = sessionStorage.getItem(getRoomChatKey(roomId));
     if (raw) {
       const list = JSON.parse(raw);

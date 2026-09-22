@@ -396,7 +396,7 @@
 .chess-game-grid {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px 1fr 280px;
+  grid-template-columns: 270px 1fr 350px;
   overflow: hidden;
   height: calc(100% - 50px);
   gap: 16px;

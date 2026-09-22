@@ -178,7 +178,7 @@
 .jg-game-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px 1fr 280px;
+  grid-template-columns: 270px 1fr 350px;
   overflow: hidden;
   height: calc(100% - 46px);
 }
@@ -246,62 +246,135 @@
   z-index: 10;
 }
 
+/* -------------------------------------------------------------
+   Traditional Octagonal Polygon Janggi Piece (팔각형 장기알)
+   ------------------------------------------------------------- */
 .jg-piece {
+  position: relative;
   width: 42px;
   height: 42px;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: 'Noto Serif KR', 'Batang', serif;
   font-weight: 800;
   font-size: 20px;
-  background: #ffffff !important;
-  border: 2.5px solid #18181b !important;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), inset 0 2px 3px rgba(255, 255, 255, 0.8) !important;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  clip-path: polygon(28% 0%, 72% 0%, 100% 28%, 100% 72%, 72% 100%, 28% 100%, 0% 72%, 0% 28%);
+  background: #27272a !important; /* Outer chamfer rim */
+  border: none !important;
+  border-radius: 0 !important;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.45));
+  transition: transform 0.12s ease, filter 0.12s ease, background 0.15s ease;
   user-select: none;
 }
 
+.jg-piece::before {
+  content: '';
+  position: absolute;
+  inset: 2.2px;
+  clip-path: polygon(28% 0%, 72% 0%, 100% 28%, 100% 72%, 72% 100%, 28% 100%, 0% 72%, 0% 28%);
+  background: linear-gradient(150deg, #ffffff 0%, #f6f3eb 42%, #eae2d0 100%);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.95), inset 0 -2px 3px rgba(60, 40, 20, 0.16);
+  z-index: 1;
+}
+
+.jg-piece-text {
+  position: relative;
+  z-index: 2;
+  display: block;
+  line-height: 1;
+  margin-top: -1px;
+}
+
 .jg-piece.king {
-  width: 46px;
-  height: 46px;
+  width: 47px;
+  height: 47px;
   font-size: 23px;
 }
 
 .jg-piece.soldier, .jg-piece.guard {
   width: 38px;
   height: 38px;
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .jg-piece.cho {
   color: #15803d !important;
-  border-color: #18181b !important;
-  text-shadow: none !important;
+  text-shadow: 0 0.5px 1px rgba(21, 128, 61, 0.25);
 }
 
 .jg-piece.han {
   color: #dc2626 !important;
-  border-color: #18181b !important;
-  text-shadow: none !important;
+  text-shadow: 0 0.5px 1px rgba(220, 38, 38, 0.25);
 }
 
+/* Selected piece state */
 .jg-point.selected .jg-piece {
-  transform: scale(1.18);
-  border-color: #ca8a04 !important;
-  box-shadow: 0 0 16px rgba(234, 179, 8, 0.95), 0 4px 12px rgba(0, 0, 0, 0.45) !important;
+  transform: scale(1.16);
+  background: #f59e0b !important; /* Glow gold outer rim */
+  filter: drop-shadow(0 0 12px rgba(245, 158, 11, 0.95)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5)) !important;
+  z-index: 25;
 }
 
-.jg-point.last-move::after {
+/* -------------------------------------------------------------
+   Last Placed Piece Indicator (착수 위치 표시)
+   ------------------------------------------------------------- */
+.jg-piece.last-placed {
+  background: #f59e0b !important; /* Warm gold rim */
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.85)) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5)) !important;
+  z-index: 18;
+}
+
+.jg-piece.last-placed::after {
   content: '';
   position: absolute;
-  width: 46px;
-  height: 46px;
+  top: 1px;
+  right: 1px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--jg-last-move);
-  border: 1.5px dashed #34d399;
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b, 0 0 10px #fbbf24;
+  z-index: 5;
+  animation: jg-beacon-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes jg-beacon-ping {
+  0%, 100% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 1;
+    box-shadow: 0 0 10px #f59e0b, 0 0 16px #fbbf24;
+  }
+}
+
+/* Origin square indicator (where piece departed from) */
+.jg-point.last-from::after {
+  content: '';
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  clip-path: polygon(28% 0%, 72% 0%, 100% 28%, 100% 72%, 72% 100%, 28% 100%, 0% 72%, 0% 28%);
+  background: rgba(245, 158, 11, 0.16);
+  border: 1.5px dashed rgba(245, 158, 11, 0.7);
   pointer-events: none;
+  z-index: 8;
+}
+
+/* Target square backdrop under last-to piece */
+.jg-point.last-move::after,
+.jg-point.last-to::after {
+  content: '';
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  clip-path: polygon(28% 0%, 72% 0%, 100% 28%, 100% 72%, 72% 100%, 28% 100%, 0% 72%, 0% 28%);
+  background: rgba(245, 158, 11, 0.22);
+  pointer-events: none;
+  z-index: 5;
 }
 
 .jg-point.legal-dest {
@@ -415,4 +488,115 @@
 .jg-formation-card-desc {
   font-size: 11px;
   color: var(--jg-muted);
+}
+
+/* -------------------------------------------------------------
+   Right Panel: Expanded 복기 (History) & Combined Chat+Spectators
+   ------------------------------------------------------------- */
+.play-dialog .jg-chat-col .chess-history-card.jg-history-card {
+  height: 220px !important;
+  min-height: 200px !important;
+  max-height: 240px !important;
+  padding: 8px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  flex-shrink: 0 !important;
+  background: var(--jg-panel);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 10px;
+}
+
+.jg-move-list {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  padding-right: 4px !important;
+}
+
+.play-dialog .jg-comm-card {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 10px 12px !important;
+  box-sizing: border-box !important;
+  background: var(--jg-panel);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 10px;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.jg-comm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(52, 211, 153, 0.12);
+}
+
+.jg-comm-body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.jg-chat-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.play-dialog .jg-chat-messages {
+  flex: 1 1 0 !important;
+  min-height: 80px !important;
+  overflow-y: auto !important;
+  margin-bottom: 6px !important;
+  padding: 6px 8px !important;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+}
+
+.jg-spec-sidebar {
+  width: 105px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  border-left: 1px solid rgba(52, 211, 153, 0.15);
+  padding-left: 8px;
+}
+
+.jg-spec-sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--jg-gold-soft);
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+
+.play-dialog .jg-spec-list {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  padding-right: 2px !important;
 }

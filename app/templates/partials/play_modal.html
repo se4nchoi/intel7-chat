@@ -249,13 +249,13 @@
 
               <!-- 컬럼 3: 기보 / 관전자 / 실시간 대국실 채팅 -->
               <div class="chess-chat-column ch-chat-col">
-                <!-- 기보 기록 -->
-                <div class="ch-card chess-history-card">
+                <!-- 기보 기록 (확장 220px) -->
+                <div class="ch-card chess-history-card ch-history-card">
                   <div class="chess-history-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px;">
                     <span style="font-weight:700;font-size:13px;">기보 (<span id="chMoveCount">0</span>수)</span>
-                    <button id="chReturnLiveBtn" class="ch-btn ch-btn-primary small hidden" type="button" style="padding:2px 10px;font-size:11px;height:24px;line-height:1;font-weight:700;background:var(--ch-gold);color:#18181b;border:none;">▶ 복기 종료</button>
+                    <button id="chReturnLiveBtn" class="ch-btn ch-btn-primary small hidden" type="button" style="padding:2px 10px;font-size:11px;height:24px;line-height:1;font-weight:700;background:var(--ch-gold);color:#18181b;border:none;border-radius:6px;cursor:pointer;">▶ 복기 종료</button>
                   </div>
-                  <div id="chHistoryList" class="chess-move-list history-list">
+                  <div id="chHistoryList" class="chess-move-list history-list ch-move-list">
                     <span class="placeholder-line">대국이 시작되면 기보가 기록됩니다.</span>
                   </div>
                   <div class="history-nav-controls">
@@ -266,29 +266,36 @@
                   </div>
                 </div>
 
-                <!-- 관전자 리스트 (참관 리스트) -->
-                <div class="ch-card chess-spectators-card">
-                  <div class="chess-spectators-header" style="font-size:12px;font-weight:700;color:var(--ch-gold-soft);margin-bottom:4px;">관전자 (<span id="chSpectatorCount">0</span>명)</div>
-                  <div id="chSpectatorsBox" class="chess-spectator-list spec-list">
-                    <span class="placeholder-line">관전자가 없습니다.</span>
-                  </div>
-                </div>
-
-                <!-- 대국실 채팅 -->
-                <div class="ch-card chess-chat-card full-height" style="flex:1;">
-                  <div class="chess-chat-header">
+                <!-- 대국실 채팅 & 관전자 통합 패널 (좌: 채팅, 우: 관전자 사이드바) -->
+                <div class="ch-card ch-comm-card" style="flex:1;">
+                  <div class="ch-comm-header">
                     <div class="chess-chat-title">
                       <span>대국실 채팅</span>
                       <span class="chess-live-pill"><span class="pulse-dot"></span>LIVE</span>
                     </div>
+                    <div class="ch-spec-header-pill">
+                      <span style="color:var(--ch-gold-soft);font-weight:700;font-size:11.5px;">👥 관전자 (<span id="chSpectatorCount">0</span>)</span>
+                    </div>
                   </div>
-                  <div id="chChatMessages" class="chess-chat-messages">
-                    <div class="chess-chat-notice">실시간 대화창입니다.</div>
+                  <div class="ch-comm-body">
+                    <!-- 채팅 영역 -->
+                    <div class="ch-chat-main">
+                      <div id="chChatMessages" class="chess-chat-messages ch-chat-messages">
+                        <div class="chess-chat-notice">실시간 대화창입니다.</div>
+                      </div>
+                      <form id="chChatForm" class="chess-chat-form">
+                        <input type="text" id="chChatInput" class="ch-input" placeholder="메시지 입력..." maxlength="150" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+                        <button type="submit" class="ch-btn ch-btn-primary small" style="padding:6px 12px;white-space:nowrap;">전송</button>
+                      </form>
+                    </div>
+                    <!-- 관전자 사이드바 -->
+                    <div class="ch-spec-sidebar">
+                      <div class="ch-spec-sidebar-title">참관 목록</div>
+                      <div id="chSpectatorsBox" class="chess-spectator-list spec-list ch-spec-list">
+                        <span class="placeholder-line">관전자가 없습니다.</span>
+                      </div>
+                    </div>
                   </div>
-                  <form id="chChatForm" class="chess-chat-form">
-                    <input type="text" id="chChatInput" class="ch-input" placeholder="메시지 입력..." maxlength="150" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
-                    <button type="submit" class="ch-btn ch-btn-primary small" style="padding:6px 12px;white-space:nowrap;">전송</button>
-                  </form>
                 </div>
               </div>
             </div>
@@ -471,39 +478,47 @@
 
               <!-- 기보, 관전자, 채팅 컬럼 -->
               <div class="chess-chat-column jg-chat-col">
-                <div class="ch-card chess-history-card">
+                <!-- 기보 / 복기 패널 (크기 확장) -->
+                <div class="ch-card chess-history-card jg-history-card">
                   <div class="chess-history-header" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-                    <span style="font-weight:700;">기보 (<span id="jgMoveCount">0</span>수)</span>
-                    <button id="jgBtnReturnLive" class="ch-btn ch-btn-primary small hidden" type="button" style="padding:2px 10px;font-size:11px;height:24px;line-height:1;font-weight:700;background:#10b981;color:#18181b;border:none;">▶ 복기 종료</button>
+                    <span style="font-weight:700;color:#a7f3d0;">📜 기보 / 복기 (<span id="jgMoveCount">0</span>수)</span>
+                    <button id="jgBtnReturnLive" class="ch-btn ch-btn-primary small hidden" type="button" style="padding:2px 10px;font-size:11px;height:24px;line-height:1;font-weight:700;background:#10b981;color:#18181b;border:none;border-radius:6px;cursor:pointer;">▶ 복기 종료</button>
                   </div>
-                  <div id="jgMoveList" class="chess-move-list">
+                  <div id="jgMoveList" class="chess-move-list jg-move-list">
                     <div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>
                   </div>
                 </div>
 
-                <!-- 관전자 리스트 (참관 리스트) -->
-                <div class="ch-card chess-spectators-card">
-                  <div class="chess-spectators-header" style="font-size:12px;font-weight:700;color:var(--jg-gold-soft);margin-bottom:4px;">관전자 (<span id="jgSpectatorCount">0</span>명)</div>
-                  <div id="jgSpectatorList" class="chess-spectator-list">
-                    <span style="font-size:12px;color:var(--jg-muted);opacity:0.6;">관전자가 없습니다.</span>
-                  </div>
-                </div>
-
-                <!-- 대국실 채팅 -->
-                <div class="ch-card chess-chat-card" style="flex:1;">
-                  <div class="chess-chat-header">
+                <!-- 대국실 채팅 & 관전자 통합 패널 (좌: 채팅, 우: 관전자 사이드바) -->
+                <div class="ch-card jg-comm-card" style="flex:1;">
+                  <div class="jg-comm-header">
                     <div class="chess-chat-title">
                       <span>대국실 채팅</span>
                       <span class="chess-live-pill" style="background:rgba(52,211,153,0.15);color:#86efac;"><span class="pulse-dot"></span>LIVE</span>
                     </div>
+                    <div class="jg-spec-header-pill">
+                      <span style="color:var(--jg-gold-soft);font-weight:700;font-size:11.5px;">👥 관전자 (<span id="jgSpectatorCount">0</span>)</span>
+                    </div>
                   </div>
-                  <div id="jgChatMessages" class="chess-chat-messages">
-                    <div class="chess-chat-notice">실시간 대화창입니다.</div>
+                  <div class="jg-comm-body">
+                    <!-- 채팅 영역 -->
+                    <div class="jg-chat-main">
+                      <div id="jgChatMessages" class="chess-chat-messages jg-chat-messages">
+                        <div class="chess-chat-notice">실시간 대화창입니다.</div>
+                      </div>
+                      <form id="jgChatForm" class="chess-chat-form">
+                        <input type="text" id="jgChatInput" class="ch-input" placeholder="메시지 입력..." maxlength="150" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+                        <button type="submit" class="jg-btn-primary" style="padding:6px 12px;white-space:nowrap;">전송</button>
+                      </form>
+                    </div>
+                    <!-- 관전자 사이드바 -->
+                    <div class="jg-spec-sidebar">
+                      <div class="jg-spec-sidebar-title">참관 목록</div>
+                      <div id="jgSpectatorList" class="chess-spectator-list jg-spec-list">
+                        <span style="font-size:11.5px;color:var(--jg-muted);opacity:0.6;">관전자가 없습니다.</span>
+                      </div>
+                    </div>
                   </div>
-                  <form id="jgChatForm" class="chess-chat-form">
-                    <input type="text" id="jgChatInput" class="ch-input" placeholder="메시지 입력..." maxlength="150" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
-                    <button type="submit" class="jg-btn-primary" style="padding:6px 12px;">전송</button>
-                  </form>
                 </div>
               </div>
             </div>
@@ -702,39 +717,47 @@
 
               <!-- 기보, 관전자, 채팅 컬럼 -->
               <div class="chess-chat-column om-chat-col">
-                <div class="ch-card chess-history-card">
+                <!-- 착수 기록 / 복기 패널 (크기 확장 220px) -->
+                <div class="ch-card chess-history-card om-history-card">
                   <div class="chess-history-header" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-                    <span style="font-weight:700;">착수 기록 (<span id="omMoveCount">0</span>수)</span>
-                    <button id="omBtnReturnLive" class="ch-btn ch-btn-primary small hidden" type="button" style="padding:2px 10px;font-size:11px;height:24px;line-height:1;font-weight:700;background:#f59e0b;color:#18181b;border:none;">▶ 복기 종료</button>
+                    <span style="font-weight:700;color:#fde68a;">📜 착수 기록 (<span id="omMoveCount">0</span>수)</span>
+                    <button id="omBtnReturnLive" class="ch-btn ch-btn-primary small hidden" type="button" style="padding:2px 10px;font-size:11px;height:24px;line-height:1;font-weight:700;background:#f59e0b;color:#18181b;border:none;border-radius:6px;cursor:pointer;">▶ 복기 종료</button>
                   </div>
-                  <div id="omMoveList" class="chess-move-list">
+                  <div id="omMoveList" class="chess-move-list om-move-list">
                     <div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>
                   </div>
                 </div>
 
-                <!-- 관전자 리스트 (참관 리스트) -->
-                <div class="ch-card chess-spectators-card">
-                  <div class="chess-spectators-header" style="font-size:12px;font-weight:700;color:#fde68a;margin-bottom:4px;">관전자 (<span id="omSpectatorCount">0</span>명)</div>
-                  <div id="omSpectatorList" class="chess-spectator-list">
-                    <span style="font-size:12px;color:var(--om-muted);opacity:0.6;">관전자가 없습니다.</span>
-                  </div>
-                </div>
-
-                <!-- 대국실 채팅 -->
-                <div class="ch-card chess-chat-card" style="flex:1;">
-                  <div class="chess-chat-header">
+                <!-- 대국실 채팅 & 관전자 통합 패널 (좌: 채팅, 우: 관전자 사이드바) -->
+                <div class="ch-card om-comm-card" style="flex:1;">
+                  <div class="om-comm-header">
                     <div class="chess-chat-title">
                       <span>대국실 채팅</span>
                       <span class="chess-live-pill" style="background:rgba(245,158,11,0.2);color:#fde68a;"><span class="pulse-dot"></span>LIVE</span>
                     </div>
+                    <div class="om-spec-header-pill">
+                      <span style="color:var(--om-gold-soft);font-weight:700;font-size:11.5px;">👥 관전자 (<span id="omSpectatorCount">0</span>)</span>
+                    </div>
                   </div>
-                  <div id="omChatMessages" class="chess-chat-messages">
-                    <div class="chess-chat-notice">실시간 대화창입니다.</div>
+                  <div class="om-comm-body">
+                    <!-- 채팅 영역 -->
+                    <div class="om-chat-main">
+                      <div id="omChatMessages" class="chess-chat-messages om-chat-messages">
+                        <div class="chess-chat-notice">실시간 대화창입니다.</div>
+                      </div>
+                      <form id="omChatForm" class="chess-chat-form">
+                        <input type="text" id="omChatInput" class="ch-input" placeholder="메시지 입력..." maxlength="150" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+                        <button type="submit" class="om-btn-primary" style="padding:6px 12px;white-space:nowrap;">전송</button>
+                      </form>
+                    </div>
+                    <!-- 관전자 사이드바 -->
+                    <div class="om-spec-sidebar">
+                      <div class="om-spec-sidebar-title">참관 목록</div>
+                      <div id="omSpectatorList" class="chess-spectator-list om-spec-list">
+                        <span style="font-size:11.5px;color:var(--om-muted);opacity:0.6;">관전자가 없습니다.</span>
+                      </div>
+                    </div>
                   </div>
-                  <form id="omChatForm" class="chess-chat-form">
-                    <input type="text" id="omChatInput" class="ch-input" placeholder="메시지 입력..." maxlength="150" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
-                    <button type="submit" class="om-btn-primary" style="padding:6px 12px;">전송</button>
-                  </form>
                 </div>
               </div>
             </div>

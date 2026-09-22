@@ -479,15 +479,15 @@ function updateJgRoomState(room) {
   if (specCount) specCount.textContent = spectators.length;
   if (specList) {
     if (spectators.length === 0) {
-      specList.innerHTML = '<span style="font-size:12px;color:var(--jg-muted);opacity:0.6;">관전자가 없습니다.</span>';
+      specList.innerHTML = '<span style="font-size:11px;color:var(--jg-muted);opacity:0.6;">관전자가 없습니다.</span>';
     } else {
       specList.innerHTML = spectators.map(s => `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.04);">
-          <div style="display:flex;align-items:center;gap:5px;min-width:0;">
-            <span style="font-size:11px;flex-shrink:0;">👁️</span>
-            <span style="color:var(--jg-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.name)}</span>
+        <div style="display:flex;flex-direction:column;gap:1px;font-size:11.5px;padding:3px 5px;border-radius:4px;background:rgba(255,255,255,0.04);">
+          <div style="display:flex;align-items:center;gap:4px;min-width:0;">
+            <span style="font-size:10px;flex-shrink:0;">👁️</span>
+            <span style="color:var(--jg-text);font-weight:600;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.name)}</span>
           </div>
-          <span class="record-badge">${getJgStatText(s.id)}</span>
+          <span style="font-size:10px;color:var(--jg-muted);padding-left:14px;">${getJgStatText(s.id)}</span>
         </div>
       `).join('');
     }
@@ -560,18 +560,20 @@ function renderJgBoard(room) {
 
   svg.innerHTML = lines;
 
-  // History preview: if reviewing, use snapshot board & last_to from history entry
+  // History preview: if reviewing, use snapshot board & last_to/from from history entry
   const isHistoryPreview = jgHistoryPreviewIndex !== null;
   if (box) box.classList.toggle('review-mode', isHistoryPreview);
-  let boardData, lastTo, effectiveIsMyTurn;
+  let boardData, lastTo, lastFrom, effectiveIsMyTurn;
   if (isHistoryPreview) {
     const snap = room.move_history?.[jgHistoryPreviewIndex];
     boardData = snap?.board || room.board;
     lastTo = snap?.to || null;
+    lastFrom = snap?.from || null;
     effectiveIsMyTurn = false; // disable interaction during review
   } else {
     boardData = room.board;
     lastTo = room.last_to;
+    lastFrom = room.last_from;
     effectiveIsMyTurn = (room.game_started && !room.result && myColor && room.active_turn === myColor);
   }
 
@@ -596,11 +598,12 @@ function renderJgBoard(room) {
       const pt = getPt(c, r);
       const piece = pieceMap[`${c},${r}`];
       const isSelected = !isHistoryPreview && selectedPoint && selectedPoint.col === c && selectedPoint.row === r;
-      const isLastMove = lastTo && lastTo[0] === c && lastTo[1] === r;
+      const isLastTo = lastTo && lastTo[0] === c && lastTo[1] === r;
+      const isLastFrom = lastFrom && lastFrom[0] === c && lastFrom[1] === r;
       const isLegalDest = legalDests.has(`${c},${r}`);
 
       const ptDiv = document.createElement('div');
-      ptDiv.className = `jg-point ${isSelected ? 'selected' : ''} ${isLastMove ? 'last-move' : ''} ${isLegalDest ? 'legal-dest' : ''}`;
+      ptDiv.className = `jg-point ${isSelected ? 'selected' : ''} ${isLastTo ? 'last-move last-to' : ''} ${isLastFrom ? 'last-from' : ''} ${isLegalDest ? 'legal-dest' : ''}`.trim();
       ptDiv.style.left = `${pt.x}px`;
       ptDiv.style.top = `${pt.y}px`;
 
@@ -608,8 +611,10 @@ function renderJgBoard(room) {
         const pieceDiv = document.createElement('div');
         const pType = piece.piece.toUpperCase();
         const sizeClass = (pType === 'K') ? 'king' : (pType === 'P' || pType === 'A') ? 'soldier' : '';
-        pieceDiv.className = `jg-piece ${piece.color} ${sizeClass}`;
-        pieceDiv.textContent = HANJA_MAP[piece.piece] || piece.piece;
+        const lastPlacedClass = isLastTo ? 'last-placed' : '';
+        pieceDiv.className = `jg-piece ${piece.color} ${sizeClass} ${lastPlacedClass}`.trim();
+        const hanja = HANJA_MAP[piece.piece] || piece.piece;
+        pieceDiv.innerHTML = `<span class="jg-piece-text">${escapeHtml(hanja)}</span>`;
         ptDiv.appendChild(pieceDiv);
 
         if (isLegalDest) {

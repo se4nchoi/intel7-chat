@@ -66,6 +66,8 @@ class JanggiManager(BaseTurnBasedGameManager):
                 "board": room["board"].to_dict() if room["board"] else None,
                 "active_turn": room["active_turn"],
                 "move_history": room["move_history"],
+                "last_from": room.get("last_from"),
+                "last_to": room.get("last_to"),
                 "owner_id": room.get("owner_id"),
                 "cho_ready": bool(room.get("cho_ready", False)),
                 "han_ready": bool(room.get("han_ready", False)),
@@ -500,6 +502,8 @@ class JanggiManager(BaseTurnBasedGameManager):
         room["active_turn"] = next_turn
         room["clock"][f"{expected}_deadline"] = None
         room["clock"][f"{next_turn}_deadline"] = now + room["clock"][f"{next_turn}_remain"]
+        room["last_from"] = None
+        room["last_to"] = None
 
         room["move_history"].append({
             "move": pass_res["notation"],

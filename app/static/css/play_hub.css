@@ -660,12 +660,12 @@
 }
 
 /* -------------------------------------------------------------
-   Move History (기보 / 착수 기록) Strict Overflow Containment
+   Move History (기보 / 착수 기록) Expanded to 220px Across All Games
    ------------------------------------------------------------- */
 .play-dialog .chess-history-card {
-  height: 125px !important;
-  min-height: 125px !important;
-  max-height: 125px !important;
+  height: 220px !important;
+  min-height: 200px !important;
+  max-height: 240px !important;
   padding: 8px 12px !important;
   display: flex !important;
   flex-direction: column !important;
@@ -710,39 +710,128 @@
 }
 
 /* -------------------------------------------------------------
-   Spectators List Card Strict Overflow Containment (~4 visible)
+   Unified Chat + Spectators Side-by-Side Comm Card (All Games)
    ------------------------------------------------------------- */
-.play-dialog .chess-spectators-card {
-  height: 125px !important;
-  min-height: 125px !important;
-  max-height: 125px !important;
-  padding: 8px 12px !important;
+.play-dialog .ch-comm-card,
+.play-dialog .jg-comm-card,
+.play-dialog .om-comm-card {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
+  padding: 10px 12px !important;
   box-sizing: border-box !important;
-  flex-shrink: 0 !important;
+  border-radius: 10px !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
 }
 
-.play-dialog .chess-spectator-list,
-.play-dialog .spec-list {
+.play-dialog .ch-comm-card {
+  background: rgba(24, 24, 27, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.play-dialog .jg-comm-card {
+  background: var(--jg-panel, #1b2f25);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+}
+
+.play-dialog .om-comm-card {
+  background: var(--om-panel, #26180e);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+.ch-comm-header,
+.jg-comm-header,
+.om-comm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ch-comm-body,
+.jg-comm-body,
+.om-comm-body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.ch-chat-main,
+.jg-chat-main,
+.om-chat-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.play-dialog .ch-chat-messages,
+.play-dialog .jg-chat-messages,
+.play-dialog .om-chat-messages {
+  flex: 1 1 0 !important;
+  min-height: 80px !important;
+  overflow-y: auto !important;
+  margin-bottom: 6px !important;
+  padding: 6px 8px !important;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+}
+
+.ch-spec-sidebar,
+.jg-spec-sidebar,
+.om-spec-sidebar {
+  width: 105px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  padding-left: 8px;
+}
+
+.ch-spec-sidebar-title,
+.jg-spec-sidebar-title,
+.om-spec-sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ch-gold-soft, #fde68a);
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+
+.play-dialog .ch-spec-list,
+.play-dialog .jg-spec-list,
+.play-dialog .om-spec-list {
   flex: 1 1 0 !important;
   min-height: 0 !important;
-  max-height: 110px !important;
+  max-height: none !important;
   overflow-y: auto !important;
   display: flex !important;
   flex-direction: column !important;
   gap: 4px !important;
-  padding-right: 4px !important;
+  padding-right: 2px !important;
 }
 
-/* Game Body Heights */
+/* Game Body Layout: Standardized 270px / 1fr / 350px Across All Games */
 .play-dialog .jg-game-body,
 .play-dialog .om-game-body,
 .play-dialog .ch-game-body {
   height: calc(100% - 50px) !important;
   min-height: 0 !important;
   overflow: hidden !important;
+  grid-template-columns: 270px 1fr 350px !important;
 }
 
 /* -------------------------------------------------------------

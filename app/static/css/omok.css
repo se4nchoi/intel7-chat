@@ -170,7 +170,7 @@
 .om-game-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px 1fr 280px;
+  grid-template-columns: 270px 1fr 350px;
   overflow: hidden;
   height: calc(100% - 46px);
 }
@@ -264,13 +264,30 @@
 .om-point.last-move::after {
   content: '';
   position: absolute;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #f59e0b;
-  box-shadow: 0 0 8px #f59e0b;
+  box-shadow: 0 0 8px #f59e0b, 0 0 14px #fbbf24;
   z-index: 15;
   pointer-events: none;
+  animation: om-last-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.om-point.last-move .om-stone {
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.75), 0 3px 6px rgba(0, 0, 0, 0.5) !important;
+}
+
+@keyframes om-last-ping {
+  0%, 100% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 1;
+    box-shadow: 0 0 12px #f59e0b, 0 0 20px #fbbf24;
+  }
 }
 
 /* Winning stone pulse */

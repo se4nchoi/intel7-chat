@@ -464,15 +464,15 @@ function updateOmRoomState(room) {
   if (specCount) specCount.textContent = spectators.length;
   if (specList) {
     if (spectators.length === 0) {
-      specList.innerHTML = '<span style="font-size:12px;color:var(--om-muted);opacity:0.6;">관전자가 없습니다.</span>';
+      specList.innerHTML = '<span style="font-size:11px;color:var(--om-muted);opacity:0.6;">관전자가 없습니다.</span>';
     } else {
       specList.innerHTML = spectators.map(s => `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.04);">
-          <div style="display:flex;align-items:center;gap:5px;min-width:0;">
-            <span style="font-size:11px;flex-shrink:0;">👁️</span>
-            <span style="color:var(--om-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.name)}</span>
+        <div style="display:flex;flex-direction:column;gap:1px;font-size:11.5px;padding:3px 5px;border-radius:4px;background:rgba(255,255,255,0.04);">
+          <div style="display:flex;align-items:center;gap:4px;min-width:0;">
+            <span style="font-size:10px;flex-shrink:0;">👁️</span>
+            <span style="color:var(--om-text);font-weight:600;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.name)}</span>
           </div>
-          <span class="record-badge">${getOmStatText(s.id)}</span>
+          <span style="font-size:10px;color:var(--om-muted);padding-left:14px;">${getOmStatText(s.id)}</span>
         </div>
       `).join('');
     }
