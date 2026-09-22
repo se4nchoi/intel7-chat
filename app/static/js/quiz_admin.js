@@ -7,6 +7,8 @@ import { showToast } from './utils.js';
 import { applyTitlesToInputs, fetchCategoriesSummary, getCategoryIcon } from './quiz.js';
 
 let editingMySetId = null;
+export const getEditingMySetId = () => editingMySetId;
+export const setEditingMySetId = (v) => { editingMySetId = v; };
 let adminQuizSearch = '';
 let adminQuizCategory = '';
 let adminQuizFlaggedOnly = false;

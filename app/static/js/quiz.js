@@ -25,6 +25,8 @@ import {
   notebookPromptV2,
   notebookPromptLegacy,
   setStatusLabel,
+  getEditingMySetId,
+  setEditingMySetId,
 } from './quiz_admin.js';
 
 
@@ -1263,8 +1265,9 @@ export function initQuizListeners() {
         icon: document.getElementById('quiz-set-icon')?.value?.trim() || '',
         quizzes,
       };
-      const editing = editingMySetId !== null;
-      const res = await fetch(editing ? `/api/quiz/my-sets/${editingMySetId}` : '/api/quiz/my-sets', { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const editId = getEditingMySetId();
+      const editing = editId !== null;
+      const res = await fetch(editing ? `/api/quiz/my-sets/${editId}` : '/api/quiz/my-sets', { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json(); if (!res.ok) throw new Error(data.detail || '저장 실패');
       if (status) {
         status.className = `admin-status-msg ${validation.warnings?.length ? 'warning' : 'success'}`;
@@ -1277,7 +1280,7 @@ export function initQuizListeners() {
       if (document.getElementById('quiz-set-rank2')) document.getElementById('quiz-set-rank2').value = '';
       if (document.getElementById('quiz-set-rank3')) document.getElementById('quiz-set-rank3').value = '';
       if (document.getElementById('quiz-set-icon')) document.getElementById('quiz-set-icon').value = '';
-      editingMySetId = null; quizSetSaveBtn.textContent = '초안 저장'; loadMyQuizSets(); fetchCategoriesSummary();
+      setEditingMySetId(null); quizSetSaveBtn.textContent = '초안 저장'; loadMyQuizSets(); fetchCategoriesSummary();
     } catch (err) {
       if (status) { status.className = 'admin-status-msg error'; status.textContent = err instanceof SyntaxError ? '유효한 JSON 배열인지 확인하세요.' : err.message; }
     }
