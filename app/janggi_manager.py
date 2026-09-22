@@ -8,107 +8,20 @@ import time
 import uuid
 from typing import Dict, List, Optional, Set
 from fastapi import WebSocket
-from app.janggi_engine import JanggiBoard
+from app.game_base import BaseTurnBasedGameManager
+from app.engines.janggi import JanggiBoard
 from app.database import get_janggi_stats, get_user_by_id, record_janggi_result
 
 logger = logging.getLogger("bamboochat.janggi")
 
 
-class JanggiManager:
-    def __init__(self) -> None:
-        self.rooms: Dict[str, dict] = {}
-        self.lobby_sockets: Set[WebSocket] = set()
-        self.room_sockets: Dict[str, Set[WebSocket]] = {}
-        self.socket_user: Dict[WebSocket, dict] = {}
-        self.socket_room: Dict[WebSocket, str] = {}
-        self.clock_task: Optional[asyncio.Task] = None
-        self.result_reset_tasks: Dict[str, asyncio.Task] = {}
-        self.result_display_seconds = 3.0
-        self.disconnect_tasks: Dict[tuple[str, str], asyncio.Task] = {}
-        self.disconnect_grace_seconds = 30.0
+class JanggiManager(BaseTurnBasedGameManager):
+    player_roles = ("cho", "han")
+    logger = logger
 
-    def start_clock_monitor(self) -> None:
-        if self.clock_task is None or self.clock_task.done():
-            self.clock_task = asyncio.create_task(self._clock_monitor())
-
-    async def _clock_monitor(self) -> None:
-        while True:
-            try:
-                await asyncio.sleep(0.2)
-                for room_id in list(self.rooms):
-                    room = self.rooms.get(room_id)
-                    if not room or not room["game_started"] or room["result"]:
-                        continue
-                    if not room["cho"] or not room["han"] or room["draw_offer"]:
-                        continue
-                    now = time.time()
-                    self._refresh_clock(room, now)
-                    turn_key = f"{room['active_turn']}_remain"
-                    if room["clock"][turn_key] <= 0:
-                        expected = room["active_turn"]
-                        winner = "han" if expected == "cho" else "cho"
-                        self._complete_game(room, {
-                            "type": "timeout",
-                            "winner": winner,
-                            "desc": f"{'한(漢)' if winner == 'han' else '초(楚)'} 시간승"
-                        })
-                        await self.broadcast_room(room_id)
-                    elif now - room["clock"].get("last_broadcast_at", 0) >= 5.0:
-                        room["clock"]["last_broadcast_at"] = now
-                        await self.broadcast_room(room_id)
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                logger.exception("Unexpected error in janggi _clock_monitor")
-                await asyncio.sleep(1.0)
-
-    def register_client(self, ws: WebSocket, user: dict) -> None:
-        self.socket_user[ws] = user
-        self.lobby_sockets.add(ws)
-
-    @staticmethod
-    def _player_for(user: dict) -> dict:
-        current = None
-        try:
-            current = get_user_by_id(int(user["id"]))
-        except Exception:
-            current = None
-        display_name = (current or user).get("display_name") or user.get("username", "")
-        return {"id": user["id"], "username": user.get("username", ""), "name": display_name}
-
-    async def unregister_client(self, ws: WebSocket) -> None:
-        user = self.socket_user.pop(ws, None)
-        self.lobby_sockets.discard(ws)
-        room_id = self.socket_room.pop(ws, None)
-        if room_id and room_id in self.room_sockets:
-            self.room_sockets[room_id].discard(ws)
-            if user:
-                self._schedule_disconnect(user, room_id)
-
-    def _schedule_disconnect(self, user: dict, room_id: str) -> None:
-        key = (room_id, str(user["id"]))
-        previous = self.disconnect_tasks.pop(key, None)
-        if previous and not previous.done():
-            previous.cancel()
-        self.disconnect_tasks[key] = asyncio.create_task(
-            self._handle_disconnect_after_grace(user, room_id, key)
-        )
-
-    async def _handle_disconnect_after_grace(self, user: dict, room_id: str, key: tuple[str, str]) -> None:
-        try:
-            await asyncio.sleep(self.disconnect_grace_seconds)
-            room = self.rooms.get(room_id)
-            if not room:
-                return
-            if any(str(self.socket_user.get(ws, {}).get("id")) == key[1]
-                   for ws in self.room_sockets.get(room_id, set())):
-                return
-            await self.handle_disconnect_from_room(user, room_id)
-        except asyncio.CancelledError:
-            return
-        finally:
-            if self.disconnect_tasks.get(key) is asyncio.current_task():
-                self.disconnect_tasks.pop(key, None)
+    def _timeout_winner_and_desc(self, expected_color: str) -> tuple[str, str]:
+        winner = "han" if expected_color == "cho" else "cho"
+        return winner, f"{'한(漢)' if winner == 'han' else '초(楚)'} 시간승"
 
     def get_lobby_summary(self) -> List[dict]:
         summary = []
@@ -127,17 +40,6 @@ class JanggiManager:
             })
         summary.sort(key=lambda x: x["created_at"], reverse=True)
         return summary
-
-    async def broadcast_lobby(self) -> None:
-        payload = json.dumps({"type": "lobby_update", "rooms": self.get_lobby_summary()}, ensure_ascii=False)
-        stale = []
-        for ws in list(self.lobby_sockets):
-            try:
-                await ws.send_text(payload)
-            except Exception:
-                stale.append(ws)
-        for ws in stale:
-            self.lobby_sockets.discard(ws)
 
     async def broadcast_room(self, room_id: str) -> None:
         room = self.rooms.get(room_id)
@@ -243,33 +145,6 @@ class JanggiManager:
         await self.broadcast_lobby()
         await self.broadcast_room(room_id)
         return room
-
-    def _sync_room_owner(self, room: dict, leaving_owner_id: Optional[int] = None) -> None:
-        cho = room.get("cho")
-        han = room.get("han")
-        owner_id = room.get("owner_id")
-
-        if leaving_owner_id is not None and owner_id == leaving_owner_id:
-            if cho and cho["id"] != leaving_owner_id:
-                room["owner_id"] = cho["id"]
-                room["created_by"] = cho["name"]
-            elif han and han["id"] != leaving_owner_id:
-                room["owner_id"] = han["id"]
-                room["created_by"] = han["name"]
-            else:
-                room["owner_id"] = None
-                room["created_by"] = None
-            return
-
-        seated = [p for p in (cho, han) if p]
-        seated_ids = [p["id"] for p in seated]
-        if not seated:
-            room["owner_id"] = None
-            room["created_by"] = None
-        elif owner_id is None or owner_id not in seated_ids:
-            first = seated[0]
-            room["owner_id"] = first["id"]
-            room["created_by"] = first["name"]
 
     async def join_room(self, ws: WebSocket, user: dict, room_id: str, role_pref: Optional[str] = None) -> Optional[dict]:
         room = self.rooms.get(room_id)
@@ -530,17 +405,6 @@ class JanggiManager:
             await self.broadcast_lobby()
         finally:
             self.result_reset_tasks.pop(room_id, None)
-
-    def _refresh_clock(self, room: dict, now: float) -> None:
-        if room["game_started"] and not room["result"] and room["cho"] and room["han"] and not room["draw_offer"]:
-            turn = room["active_turn"]
-            deadline_key = f"{turn}_deadline"
-            deadline = room["clock"].get(deadline_key)
-            if deadline is None:
-                deadline = now + room["clock"][f"{turn}_remain"]
-                room["clock"][deadline_key] = deadline
-            room["clock"][f"{turn}_remain"] = max(0.0, deadline - now)
-        room["clock"]["last_tick_at"] = now
 
     def _refresh_player_stats(self, room: dict) -> None:
         for player in (room.get("cho"), room.get("han"), *room.get("spectators", [])):

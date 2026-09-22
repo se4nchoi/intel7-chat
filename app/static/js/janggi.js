@@ -5,6 +5,7 @@
 
 import { state } from './state.js';
 import { showToast, escapeHtml } from './utils.js';
+import { getAudioContext } from './audio.js';
 
 const sameUser = (left, right) => left != null && right != null && String(left) === String(right);
 
@@ -27,9 +28,8 @@ const HANJA_MAP = {
 // Wooden piece placement sound via Web Audio API
 function playWoodClickSound() {
   try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
+    const ctx = getAudioContext();
+    if (!ctx) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();

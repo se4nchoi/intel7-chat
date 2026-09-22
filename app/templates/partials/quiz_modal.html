@@ -241,17 +241,10 @@
                 <span id="quiz-set-expertise-emoji" class="quiz-expertise-emoji" aria-hidden="true">📚</span>
                 <select id="quiz-set-expertise-choice" class="form-select" aria-label="문제집 주제 선택">
                   <option value="__custom__">＋ 새 주제 직접 입력</option>
-                  <option value="PLC" selected>PLC</option>
-                  <option value="전기">전기</option>
-                  <option value="전자">전자</option>
-                  <option value="전기기능사">전기기능사</option>
-                  <option value="전기기사">전기기사</option>
-                  <option value="산업안전기사">산업안전기사</option>
-                  <option value="로봇 Python">로봇 Python</option>
                 </select>
               </div>
               <input id="quiz-set-expertise" class="form-input hidden" type="text" minlength="2" maxlength="40"
-                value="PLC" placeholder="새로운 주제명 (2~40자)" aria-label="새 문제집 주제 직접 입력" />
+                value="" placeholder="새로운 주제명 (2~40자)" aria-label="새 문제집 주제 직접 입력" list="quiz-categories-datalist" />
               <p class="field-hint">목록의 ‘새 주제 직접 입력’을 선택하면 새 분야를 만들 수 있습니다.</p>
               <div class="quiz-titles-config-box">
                 <div class="quiz-titles-config-header">
@@ -343,15 +336,6 @@
               <label for="cbt-subject-lb-select" class="cbt-subject-lb-label">주제별 랭킹:</label>
               <select id="cbt-subject-lb-select" class="cbt-subject-lb-select">
                 <option value="">전체 종합 순위</option>
-                <option value="PLC">⚡ PLC</option>
-                <option value="전기">🔌 전기</option>
-                <option value="전자">🔋 전자</option>
-                <option value="전기기능사">🧰 전기기능사</option>
-                <option value="전기기사">📐 전기기사</option>
-                <option value="산업안전기사">⛑️ 산업안전기사</option>
-                <option value="로봇 Python">🤖 로봇 Python</option>
-                <option value="상식">🌏 상식</option>
-                <option value="넌센스퀴즈">💡 넌센스퀴즈</option>
               </select>
             </div>
           </div>
@@ -398,7 +382,7 @@
                 <div class="form-row-2">
                   <div>
                     <label for="quiz-gen-category">과목 / 카테고리</label>
-                    <input id="quiz-gen-category" type="text" value="PLC" required />
+                    <input id="quiz-gen-category" type="text" value="PLC" list="quiz-categories-datalist" required />
                   </div>
                   <div>
                     <label for="quiz-gen-count">출제 문항 수</label>
@@ -518,7 +502,7 @@
                 </div>
 
                 <div class="form-row-3">
-                  <div><label for="admin-quiz-category">과목</label><input id="admin-quiz-category" required /></div>
+                  <div><label for="admin-quiz-category">과목</label><input id="admin-quiz-category" list="quiz-categories-datalist" required /></div>
                   <div><label for="admin-quiz-difficulty">난이도</label><select id="admin-quiz-difficulty">
                       <option value="easy">쉬움</option>
                       <option value="medium">보통</option>
@@ -641,4 +625,5 @@
       </form>
     </div>
   </div>
+  <datalist id="quiz-categories-datalist"></datalist>
 </div>

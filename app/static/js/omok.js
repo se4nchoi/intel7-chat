@@ -5,6 +5,7 @@
 
 import { state } from './state.js';
 import { showToast, escapeHtml } from './utils.js';
+import { getAudioContext } from './audio.js';
 
 const sameUser = (left, right) => left != null && right != null && String(left) === String(right);
 
@@ -20,9 +21,8 @@ const $ = id => document.getElementById(id);
 // Go stone clack sound effect via Web Audio API
 function playStoneClickSound() {
   try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
+    const ctx = getAudioContext();
+    if (!ctx) return;
     const now = ctx.currentTime;
 
     const osc = ctx.createOscillator();

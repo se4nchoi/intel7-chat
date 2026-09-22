@@ -9,7 +9,6 @@
 @import url('/static/css/chat.css');
 @import url('/static/css/modals.css');
 @import url('/static/css/quiz.css');
-@import url('/static/css/screenshare.css');
 
 /* iOS Safari zooms focused form controls whose computed text is below 16px. */
 @media (hover: none) and (pointer: coarse) {

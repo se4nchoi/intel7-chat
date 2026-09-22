@@ -112,12 +112,19 @@ function clearConversationUnreadOptimistic(type, id) {
   }
 }
 
+const acknowledgedMessageIds = new Map();
+
 async function acknowledgeConversation(type, id, lastReadMessageId) {
   const numericId = Number(String(lastReadMessageId || '').replace(/^(public|dm):/, ''));
   if (!Number.isInteger(numericId) || numericId <= 0) return;
 
   // Do not let a slow history request acknowledge a room the user already left.
   if (state.activeRoom.type !== type || String(state.activeRoom.id) !== String(id)) return;
+
+  const convKey = `${type}:${id}`;
+  const currentAcked = acknowledgedMessageIds.get(convKey) || 0;
+  if (numericId <= currentAcked) return;
+  acknowledgedMessageIds.set(convKey, numericId);
 
   clearConversationUnreadOptimistic(type, id);
   renderChannels(switchConversation);
@@ -651,6 +658,7 @@ function initApp() {
 
 
   const onLogout = () => {
+    acknowledgedMessageIds.clear();
     const chatApp = document.getElementById('chat-app');
     if (chatApp) chatApp.classList.add('hidden');
     if (state.socket) {

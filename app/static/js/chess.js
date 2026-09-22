@@ -5,6 +5,7 @@
 
 import { state } from './state.js';
 import { showToast } from './utils.js';
+import { getAudioContext } from './audio.js';
 
 let chessWs = null;
 let currentRoom = null;
@@ -49,9 +50,8 @@ const sameUser = (left, right) => left != null && right != null && String(left) 
 
 function playTurnChime() {
   try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
+    const ctx = getAudioContext();
+    if (!ctx) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();

@@ -1,10 +1,32 @@
 """Unit tests for multi-channel real-time LAN Screen Sharing manager and endpoints."""
 from __future__ import annotations
 
+from pathlib import Path
 import anyio
 import pytest
-from app import database, auth
+from app import database, auth, main, screenshare
+from app.config import GIB
 from app.screenshare import ScreenShareManager
+
+
+@pytest.fixture(autouse=True)
+def isolated_state(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "chat.db")
+    monkeypatch.setattr(database, "DB_MAX_BYTES", 3 * GIB)
+    monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path / "uploads")
+    main.connected_clients.clear()
+    main.user_registry.clear()
+    main.message_timestamps.clear()
+    main.upload_timestamps.clear()
+    main.login_timestamps.clear()
+    screenshare.screenshare_manager.sessions.clear()
+    screenshare.screenshare_manager.viewers.clear()
+    database.init_db()
+    yield
+    main.connected_clients.clear()
+    main.user_registry.clear()
+    screenshare.screenshare_manager.sessions.clear()
+    screenshare.screenshare_manager.viewers.clear()
 
 
 @pytest.mark.anyio
@@ -137,7 +159,7 @@ def test_screenshare_api_and_websocket():
 
     origin = {"origin": "http://testserver"}
     with c1.websocket_connect("/ws", headers=origin) as ws1, c2.websocket_connect("/ws", headers=origin) as ws2:
-        def wait_for_event(ws, event_type, max_messages=25):
+        def wait_for_event(ws, event_type, max_messages=100):
             for _ in range(max_messages):
                 msg = ws.receive_json()
                 if msg.get("type") == event_type:
@@ -212,7 +234,7 @@ def test_screenshare_dm_workflow_and_privacy():
     with c_a.websocket_connect("/ws", headers=origin) as ws_a, \
          c_b.websocket_connect("/ws", headers=origin) as ws_b:
 
-        def wait_for_event(ws, event_type, max_messages=25):
+        def wait_for_event(ws, event_type, max_messages=100):
             for _ in range(max_messages):
                 msg = ws.receive_json()
                 if msg.get("type") == event_type:

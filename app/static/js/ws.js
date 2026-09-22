@@ -139,6 +139,7 @@ export function initWebSocket(callbacks = {}) {
           mentioned_user_ids: Array.isArray(data.mentioned_user_ids) ? data.mentioned_user_ids : [],
           reactions: Array.isArray(data.reactions) ? data.reactions : [],
           is_pinned: Boolean(data.is_pinned),
+          history: Boolean(data.history),
         };
 
         if (state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(chanId)) {
@@ -190,7 +191,7 @@ export function initWebSocket(callbacks = {}) {
         if (!isOwn && !data.history) {
           updateChannelLastNotification(chanId);
         }
-        if (callbacks.onNewMessage) callbacks.onNewMessage(chatMessage);
+        if (!data.history && callbacks.onNewMessage) callbacks.onNewMessage(chatMessage);
         break;
       }
 
@@ -217,6 +218,7 @@ export function initWebSocket(callbacks = {}) {
           is_hidden: Boolean(data.is_hidden),
           reactions: Array.isArray(data.reactions) ? data.reactions : [],
           is_pinned: Boolean(data.is_pinned),
+          history: Boolean(data.history),
         };
 
         if (state.activeRoom.type === 'dm' && (state.activeRoom.id === partner || state.activeRoom.id === data.from_nick)) {
@@ -240,7 +242,7 @@ export function initWebSocket(callbacks = {}) {
           });
         }
         if (callbacks.onDmsUpdated) callbacks.onDmsUpdated();
-        if (callbacks.onNewMessage) callbacks.onNewMessage(dmMessage);
+        if (!data.history && callbacks.onNewMessage) callbacks.onNewMessage(dmMessage);
         break;
       }
 

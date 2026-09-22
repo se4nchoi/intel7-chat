@@ -629,6 +629,79 @@ def test_admin_quiz_creation_with_subject_titles():
     assert semi_titles["icon"] == "🔬"
 
 
+def test_quiz_expertises_and_categories_dynamic():
+    student, _ = session_client("learner_cat", role="student")
+    admin, _ = session_client("admin_cat", role="admin")
+
+    # 1. Base expertises should contain default categories
+    res1 = student.get("/api/quiz/expertises")
+    assert res1.status_code == 200
+    base_expertises = res1.json()["expertises"]
+    assert "PLC" in base_expertises
+    assert "시퀀스 심화" not in base_expertises
+
+    # 2. User creates a quiz set with a new custom topic
+    create_res = student.post(
+        "/api/quiz/my-sets",
+        json={
+            "title": "시퀀스 마스터 모음집",
+            "expertise": "시퀀스 심화",
+            "rank1_title": "시퀀스 달인",
+            "rank2_title": "시퀀스 중수",
+            "rank3_title": "시퀀스 입문",
+            "icon": "⚡",
+            "quizzes": [
+                {
+                    "difficulty": "medium",
+                    "question_type": "multiple_choice",
+                    "question": "자기유지 회로를 해제하는 접점은?",
+                    "options": ["1. b접점", "2. a접점", "3. c접점", "4. 없음"],
+                    "correct_answers": ["1", "1. b접점"],
+                    "hint": "회로 차단",
+                    "explanation": "b접점을 열어 회로를 차단합니다.",
+                }
+            ],
+        },
+        headers=ORIGIN,
+    )
+    assert create_res.status_code == 201
+
+    # 3. GET /api/quiz/expertises must immediately include the user-made topic
+    res2 = student.get("/api/quiz/expertises")
+    assert res2.status_code == 200
+    expertises2 = res2.json()["expertises"]
+    assert "시퀀스 심화" in expertises2
+
+    # 4. Admin creates a quiz with category "양자컴퓨팅"
+    admin_res = admin.post(
+        "/api/admin/quiz",
+        json={
+            "category": "양자컴퓨팅",
+            "difficulty": "hard",
+            "question_type": "short_answer",
+            "question": "큐비트의 기본 성질 중 두 상태의 겹침을 무엇이라 하는가?",
+            "correct_answers": ["중첩"],
+        },
+        headers=ORIGIN,
+    )
+    assert admin_res.status_code == 200
+
+    # 5. GET /api/admin/quiz/list must include both new categories
+    admin_list_res = admin.get("/api/admin/quiz/list")
+    assert admin_list_res.status_code == 200
+    admin_cats = admin_list_res.json()["categories"]
+    assert "시퀀스 심화" in admin_cats
+    assert "양자컴퓨팅" in admin_cats
+
+    # 6. GET /api/quiz/categories all_categories must include both
+    cats_res = student.get("/api/quiz/categories")
+    assert cats_res.status_code == 200
+    all_cats = cats_res.json().get("all_categories", [])
+    assert "시퀀스 심화" in all_cats
+    assert "양자컴퓨팅" in all_cats
+
+
+
 
 
 

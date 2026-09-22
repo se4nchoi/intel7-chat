@@ -17,6 +17,48 @@ _TEST_CONFIG_PATH.write_text(
 os.environ["BAMBOOCHAT_CONFIG"] = str(_TEST_CONFIG_PATH)
 
 from app import database
+import app.db
+import app.db.migrations
+import shutil
+
+# Pre-seed a clean master template database with all migrations and baseline seed data once per pytest run.
+_TEMPLATE_DIR = tempfile.mkdtemp(prefix="bamboochat_template_")
+_TEMPLATE_DB_PATH = Path(_TEMPLATE_DIR) / "template.db"
+_real_init_db = app.db.migrations.init_db
+
+
+def _ensure_template_db() -> Path:
+    if not _TEMPLATE_DB_PATH.exists():
+        orig_path = database.DB_PATH
+        database.DB_PATH = _TEMPLATE_DB_PATH
+        _real_init_db()
+        with database.get_connection() as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        database.DB_PATH = orig_path
+    return _TEMPLATE_DB_PATH
+
+
+def fast_snapshot_init_db() -> None:
+    """Fast snapshot initializer: clones the master template in ~2ms if empty/new,
+    or falls back to real migration logic if migrating an existing legacy database."""
+    target_path = Path(database.DB_PATH)
+    if not target_path.exists():
+        template = _ensure_template_db()
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(template, target_path)
+    else:
+        _real_init_db()
+
+
+# Patch init_db across modules
+database.init_db = fast_snapshot_init_db
+app.db.init_db = fast_snapshot_init_db
+app.db.migrations.init_db = fast_snapshot_init_db
+try:
+    import app.main
+    app.main.init_db = fast_snapshot_init_db
+except Exception:
+    pass
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +68,7 @@ def global_database_isolation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(database, "DB_PATH", db_file)
     monkeypatch.setattr(database, "DB_MAX_BYTES", 100 * 1024 * 1024)
     monkeypatch.setenv("BAMBOOCHAT_CONFIG", str(tmp_path / "bamboochat.json"))
-    database.init_db()
+    fast_snapshot_init_db()
 
     # Clear lingering in-memory socket state to prevent cross-test hangs
     try:
