@@ -174,6 +174,7 @@ def get_all_quiz_categories() -> List[str]:
     """Returns an ordered, deduplicated list of all quiz categories/expertises.
     Preserves default base topics (QUIZ_EXPERTISES) first, then appends custom
     categories from quizzes, user_quiz_sets, and quiz_subject_titles.
+    Only includes categories that have at least one quiz question in the DB.
     """
     base = [c.strip() for c in QUIZ_EXPERTISES if c and c.strip()]
     seen = set(base)
@@ -181,15 +182,18 @@ def get_all_quiz_categories() -> List[str]:
 
     try:
         with get_connection() as conn:
-            # 1. From quizzes
+            # Collect categories that have at least one quiz question
+            has_quizzes: set = set()
             rows = conn.execute(
                 "SELECT DISTINCT category FROM quizzes WHERE category IS NOT NULL AND trim(category) != ''"
             ).fetchall()
             for r in rows:
                 cat = (r["category"] or "").strip()
-                if cat and cat not in seen:
-                    seen.add(cat)
-                    custom.append(cat)
+                if cat:
+                    has_quizzes.add(cat)
+                    if cat not in seen:
+                        seen.add(cat)
+                        custom.append(cat)
 
             # 2. From user_quiz_sets
             try:
@@ -204,18 +208,21 @@ def get_all_quiz_categories() -> List[str]:
             except Exception:
                 pass
 
-            # 3. From quiz_subject_titles
+            # 3. From quiz_subject_titles (only if that category has actual quizzes)
             try:
                 rows = conn.execute(
                     "SELECT DISTINCT category FROM quiz_subject_titles WHERE category IS NOT NULL AND trim(category) != ''"
                 ).fetchall()
                 for r in rows:
                     cat = (r["category"] or "").strip()
-                    if cat and cat not in seen:
+                    if cat and cat in has_quizzes and cat not in seen:
                         seen.add(cat)
                         custom.append(cat)
             except Exception:
                 pass
+
+            # Filter base QUIZ_EXPERTISES to only those with actual quiz content
+            base = [c for c in base if c in has_quizzes]
     except Exception:
         pass
 
