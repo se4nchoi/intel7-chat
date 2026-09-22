@@ -14,6 +14,7 @@
         <button id="play-tab-chess" class="play-tab-btn active" role="tab" aria-selected="true" data-game="chess">♟️ 체스</button>
         <button id="play-tab-janggi" class="play-tab-btn" role="tab" aria-selected="false" data-game="janggi">🀄 장기</button>
         <button id="play-tab-omok" class="play-tab-btn" role="tab" aria-selected="false" data-game="omok">⚫ 오목</button>
+        <button id="play-tab-othello" class="play-tab-btn" role="tab" aria-selected="false" data-game="othello">🟢 오셀로</button>
       </div>
 
       <button id="play-modal-close" class="play-close-btn" type="button" aria-label="놀이 닫기" title="닫기">✕</button>
@@ -95,8 +96,8 @@
           </div>
 
           <!-- 체스 대국 화면 (통일된 3-컬럼 정규 체스 대국실) -->
-          <div id="chess-game-screen" class="ch-game-screen hidden">
-            <div class="chess-game-topbar">
+          <div id="chess-game-screen" class="ch-game-screen play-game-screen hidden">
+            <div class="play-game-topbar chess-game-topbar">
               <div class="chess-game-meta">
                 <span id="chGameRoomTitle" class="chess-room-title-text" style="color:var(--ch-gold-soft);">체스 대국실</span>
                 <span id="chRoomIdBadge" class="chess-room-id-badge" style="background:#27272a;color:var(--ch-gold-soft);">#chess</span>
@@ -107,7 +108,7 @@
               </div>
             </div>
 
-            <div class="ch-game-body">
+            <div class="play-game-body ch-game-body">
               <!-- 컬럼 1: 플레이어 / 시계 / 대국 현황 제어 컬럼 -->
               <div class="chess-players-column">
                 <!-- 흑 (Black) 정보 & 시계 -->
@@ -134,15 +135,15 @@
                 </div>
 
                 <!-- 상태 카드 -->
-                <div class="ch-card" style="padding:12px;display:flex;flex-direction:column;gap:8px;">
+                <div class="ch-card chess-status-card">
                   <div style="font-size:12px;font-weight:700;color:var(--ch-gold-soft);">대국 현황</div>
                   <div id="chStatusLine" style="font-size:12px;color:var(--ch-muted);">플레이어 착석을 기다리는 중입니다.</div>
                   <div id="chTurnBadge" class="chess-turn-indicator hidden">
                     <span class="pulse-dot"></span>
                     <span id="chTurnText">백(White) 차례</span>
                   </div>
-                  <div id="chPlayerActions" style="display:flex;gap:6px;flex-direction:column;">
-                    <div id="chPlayersBox" class="players"></div>
+                  <div id="chPlayersBox" class="players chess-seat-actions"></div>
+                  <div id="chPlayerActions" class="chess-player-actions">
                     <button id="chReadyBtn" class="ch-btn ch-btn-ghost small hidden" type="button">✅ 준비</button>
                     <button id="chStartGameBtn" class="ch-btn ch-btn-primary small" type="button">⚔️ 체스 대국 시작</button>
                     <button id="chDrawOfferBtn" class="ch-btn ch-btn-ghost small" type="button" style="display:none;">🤝 무승부 신청</button>
@@ -222,12 +223,14 @@
                 <!-- 보드 및 랭크 라벨 -->
                 <div class="board-with-ranks">
                   <div id="chRanksCol" class="ranks-col"></div>
-                  <div id="chBoardFrame" class="board-frame">
-                    <div id="chBoardFreezeOverlay" class="board-freeze-overlay hidden"></div>
-                    <div id="chBoard" class="board"></div>
+                  <div class="chess-board-stack">
+                    <div id="chBoardFrame" class="board-frame">
+                      <div id="chBoardFreezeOverlay" class="board-freeze-overlay hidden"></div>
+                      <div id="chBoard" class="board"></div>
+                    </div>
+                    <div id="chCoords" class="coords"></div>
                   </div>
                 </div>
-                <div id="chCoords" class="coords"></div>
 
                 <div id="chInspectBanner" class="chess-inspect-banner hidden">
                   <span id="chInspectText">🔍 과거 수순 복기 중 (<b id="chInspectMoveLabel">1수</b>)</span>
@@ -377,8 +380,8 @@
           </div>
 
           <!-- 장기 대국 화면 -->
-          <div id="jgGameScreen" class="jg-game-screen hidden">
-            <div class="jg-game-topbar">
+          <div id="jgGameScreen" class="jg-game-screen play-game-screen hidden">
+            <div class="play-game-topbar jg-game-topbar">
               <div class="chess-game-meta">
                 <span id="jgRoomTitle" class="chess-room-title-text" style="color:#a7f3d0;">장기 대국실</span>
                 <span id="jgRoomIdBadge" class="chess-room-id-badge" style="background:#1b3629;color:#86efac;">#janggi</span>
@@ -392,7 +395,7 @@
               </div>
             </div>
 
-            <div class="jg-game-body">
+            <div class="play-game-body jg-game-body">
               <!-- 플레이어 / 시계 컬럼 -->
               <div class="chess-players-column">
                 <!-- 한 (Han / Red) -->
@@ -626,8 +629,8 @@
           </div>
 
           <!-- 오목 대국 화면 -->
-          <div id="omGameScreen" class="om-game-screen hidden">
-            <div class="om-game-topbar">
+          <div id="omGameScreen" class="om-game-screen play-game-screen hidden">
+            <div class="play-game-topbar om-game-topbar">
               <div class="chess-game-meta">
                 <span id="omRoomTitle" class="chess-room-title-text" style="color:#fde68a;">오목 대국실</span>
                 <span id="omRoomIdBadge" class="chess-room-id-badge" style="background:#3b2413;color:#fcd34d;">#omok</span>
@@ -638,7 +641,7 @@
               </div>
             </div>
 
-            <div class="om-game-body">
+            <div class="play-game-body om-game-body">
               <!-- 플레이어 / 시계 컬럼 -->
               <div class="chess-players-column">
                 <!-- 백 (White) -->
@@ -779,6 +782,250 @@
               <div class="om-foul-modal-actions">
                 <button id="omBtnCancelFoul" class="om-btn-ghost" type="button">취소 (착수 안 함)</button>
                 <button id="omBtnConfirmFoul" class="om-btn-danger" type="button">착수하기 (금수패)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- =======================================================
+           VIEW 4: 오셀로 (OTHELLO) - Deep Burgundy & Tournament Green Felt Tone
+           ======================================================= -->
+      <div id="play-view-othello" class="play-view hidden">
+        <div class="othello-container">
+          <!-- 오셀로 로비 화면 -->
+          <div id="othLobbyScreen" class="oth-lobby">
+            <div class="oth-lobby-top">
+              <div class="oth-tabs">
+                <button id="othTabRooms" class="oth-tab-btn active" type="button">🟢 대국실 목록</button>
+                <button id="othTabRank" class="oth-tab-btn" type="button">🏆 오셀로 명예의 전당</button>
+              </div>
+              <div class="play-lobby-actions" id="othLobbyActionsRooms">
+                <button id="othBtnRefreshLobby" class="oth-btn-ghost" type="button">🔄 새로고침</button>
+                <button id="othBtnOpenCreate" class="oth-btn-primary" type="button">➕ 새 방 만들기</button>
+              </div>
+              <div class="play-lobby-actions hidden" id="othLobbyActionsRank">
+                <button id="othBtnRefreshRank" class="oth-btn-ghost" type="button">🔄 랭킹 새로고침</button>
+              </div>
+            </div>
+
+            <!-- 오셀로 방 생성 폼 -->
+            <div id="othCreatePanel" class="chess-create-panel hidden" style="border-color:rgba(244,63,94,0.3);">
+              <h3 style="margin-top:0;margin-bottom:12px;color:var(--oth-rose-soft);font-size:15px;">새 오셀로 대국실 개설</h3>
+              <div class="ch-row" style="margin-bottom:12px;">
+                <div style="flex:2;min-width:200px;">
+                  <label style="display:block;font-size:11.5px;color:var(--oth-muted);margin-bottom:4px;">방 제목</label>
+                  <input type="text" id="othCreateTitle" class="ch-input" placeholder="예: 즐거운 오셀로 한 판" maxlength="25" />
+                </div>
+                <div style="flex:1;min-width:120px;">
+                  <label style="display:block;font-size:11.5px;color:var(--oth-muted);margin-bottom:4px;">제한 시간 (분)</label>
+                  <input type="number" id="othCreateTime" class="ch-input" value="10" min="1" max="180" />
+                </div>
+              </div>
+              <div class="ch-row" style="justify-content:flex-end;">
+                <button id="othBtnCancelCreate" class="oth-btn-ghost" type="button">취소</button>
+                <button id="othBtnSubmitCreate" class="oth-btn-primary" type="button">방 생성 및 입장</button>
+              </div>
+            </div>
+
+            <!-- 오셀로 방 목록 -->
+            <div id="othRoomGrid" class="oth-room-grid"></div>
+            <div id="othLobbyEmpty" class="chess-lobby-empty hidden">
+              <div class="chess-empty-icon">🟢</div>
+              <div class="chess-empty-text">개설된 오셀로 대국실이 없습니다.</div>
+              <div class="chess-empty-sub">상단의 "새 방 만들기" 버튼을 눌러 첫 대국실을 개설해보세요!</div>
+            </div>
+
+            <!-- 오셀로 랭킹 패널 -->
+            <div id="othRankingsPanel" class="chess-rankings-panel hidden">
+              <div class="chess-rank-scoring-note" style="color:var(--oth-muted);">💡 오셀로 대국 승리 횟수로 집계됩니다 (돌 수 판정승 또는 전멸승).</div>
+              <div id="othPodiumRow" class="chess-podium-row cbt-podium-row"></div>
+              <div class="chess-table-box">
+                <div class="chess-table-scroll">
+                  <table class="chess-table">
+                    <thead>
+                      <tr>
+                        <th style="width:60px;text-align:center;">순위</th>
+                        <th>플레이어</th>
+                        <th style="width:70px;text-align:center;">승수</th>
+                        <th style="width:90px;text-align:center;">승률</th>
+                        <th style="width:130px;text-align:center;">전적</th>
+                        <th style="width:140px;text-align:center;">최근 승리</th>
+                      </tr>
+                    </thead>
+                    <tbody id="othRankingsTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 오셀로 대국 화면 -->
+          <div id="othGameScreen" class="oth-game-screen play-game-screen hidden">
+            <div class="play-game-topbar oth-game-topbar">
+              <div class="chess-game-meta">
+                <span id="othRoomTitle" class="chess-room-title-text" style="color:var(--oth-rose-light);">오셀로 대국실</span>
+                <span id="othRoomIdBadge" class="chess-room-id-badge" style="background:#3b0d20;color:#fda4af;">#othello</span>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button id="othBtnResign" class="oth-btn-danger" type="button">🏳️ 기권</button>
+                <button id="othBtnLeave" class="oth-btn-ghost" type="button">🚪 방 나가기</button>
+              </div>
+            </div>
+
+            <div class="play-game-body oth-game-body">
+              <!-- 좌측 컬럼: 플레이어 카드 (270px) -->
+              <div class="chess-players-column">
+                <!-- 백 (White) -->
+                <div id="othWhiteCard" class="ch-card chess-player-card" style="background:rgba(45,15,28,0.5);border-color:var(--oth-burgundy-border);">
+                  <div class="chess-card-top">
+                    <div class="chess-avatar-wrap oth-avatar-white">
+                      <span style="font-size:16px;">⚪</span>
+                    </div>
+                    <div class="chess-player-info">
+                      <div class="chess-name-row">
+                        <span id="othWhiteName" class="chess-name-text">백 플레이어 대기 중</span>
+                        <span class="chess-color-pill oth-pill-white">백 (White)</span>
+                      </div>
+                      <div class="chess-sub-row" style="display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:2px;">
+                        <span id="othWhiteBadge" class="record-badge hidden">0승 0패</span>
+                        <span id="othWhiteReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="chess-clock-box">
+                    <span class="chess-clock-icon">⏱️</span>
+                    <span id="othWhiteTimer" class="chess-timer-text">10:00</span>
+                  </div>
+                </div>
+
+                <!-- 상태 카드 & 실시간 돌 수 집계 -->
+                <div class="ch-card" style="padding:12px;display:flex;flex-direction:column;gap:8px;background:rgba(45,15,28,0.5);border-color:var(--oth-burgundy-border);">
+                  <div style="font-size:12px;font-weight:700;color:var(--oth-rose-light);">대국 현황</div>
+                  <div id="othStatusText" style="font-size:12px;color:var(--oth-muted);">플레이어 착석을 기다리는 중입니다.</div>
+
+                  <!-- 실시간 돌 점유율 바 -->
+                  <div class="oth-score-tally">
+                    <div class="oth-score-row">
+                      <div class="oth-score-item">
+                        <span>⚫ 흑</span>
+                        <span id="othBlackCount" style="color:#fff;font-weight:700;">2</span>
+                      </div>
+                      <span style="font-size:11px;color:var(--oth-muted);">점유율</span>
+                      <div class="oth-score-item">
+                        <span id="othWhiteCount" style="color:#fff;font-weight:700;">2</span>
+                        <span>⚪ 백</span>
+                      </div>
+                    </div>
+                    <div class="oth-score-bar-bg">
+                      <div id="othScoreBarBlack" class="oth-score-bar-black" style="width:50%;"></div>
+                      <div id="othScoreBarWhite" class="oth-score-bar-white" style="width:50%;"></div>
+                    </div>
+                  </div>
+
+                  <div id="othTurnBadge" class="chess-turn-indicator hidden">
+                    <span class="pulse-dot"></span>
+                    <span id="othTurnText">흑(Black) 차례</span>
+                  </div>
+                  <div id="othRoleControls" style="display:flex;gap:6px;flex-direction:column;">
+                    <div style="display:flex;gap:6px;">
+                      <button id="othBtnSitBlack" class="oth-btn-ghost" style="flex:1;" type="button">⚫ 흑 착석</button>
+                      <button id="othBtnSitWhite" class="oth-btn-ghost" style="flex:1;" type="button">⚪ 백 착석</button>
+                    </div>
+                    <button id="othBtnReady" class="oth-btn-primary hidden" type="button">✅ 준비</button>
+                    <button id="othBtnStartGame" class="oth-btn-primary hidden" type="button">⚔️ 오셀로 대국 시작</button>
+                    <button id="othBtnReturnToSpec" class="oth-btn-ghost hidden" type="button">관전자로 이동</button>
+                  </div>
+                </div>
+
+                <!-- 흑 (Black) -->
+                <div id="othBlackCard" class="ch-card chess-player-card" style="background:rgba(45,15,28,0.5);border-color:var(--oth-burgundy-border);">
+                  <div class="chess-card-top">
+                    <div class="chess-avatar-wrap oth-avatar-black">
+                      <span style="font-size:16px;">⚫</span>
+                    </div>
+                    <div class="chess-player-info">
+                      <div class="chess-name-row">
+                        <span id="othBlackName" class="chess-name-text">흑 플레이어 대기 중</span>
+                        <span class="chess-color-pill oth-pill-black">흑 (Black)</span>
+                      </div>
+                      <div class="chess-sub-row" style="display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:2px;">
+                        <span id="othBlackBadge" class="record-badge hidden">0승 0패</span>
+                        <span id="othBlackReadyBadge" class="chess-ready-badge not-ready hidden">대기 중</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="chess-clock-box">
+                    <span class="chess-clock-icon">⏱️</span>
+                    <span id="othBlackTimer" class="chess-timer-text">10:00</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 중앙 8x8 그린 펠트 & 원목 프레임 오셀로판 -->
+              <div class="oth-board-wrapper">
+                <div class="oth-board-box" id="othBoardBox">
+                  <div class="oth-coord-top">
+                    <span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span>
+                  </div>
+                  <div class="oth-coord-left">
+                    <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>
+                  </div>
+                  <div class="oth-board-inner" id="othBoardInner"></div>
+                  <div class="oth-coord-right">
+                    <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>
+                  </div>
+                  <div class="oth-coord-bottom">
+                    <span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 우측 컬럼: 착수 기록 (220px) + 채팅/관전자 사이드바 통합 패널 -->
+              <div class="chess-chat-column oth-chat-col">
+                <!-- 착수 기록 / 복기 패널 -->
+                <div class="ch-card chess-history-card oth-history-card">
+                  <div class="chess-history-header" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                    <span style="font-weight:700;color:var(--oth-rose-light);">📜 착수 기록 (<span id="othMoveCount">0</span>수)</span>
+                    <button id="othBtnReturnLive" class="ch-btn oth-btn-primary small hidden" type="button" style="padding:2px 10px;font-size:11px;height:24px;line-height:1;font-weight:700;border:none;border-radius:6px;cursor:pointer;">▶ 복기 종료</button>
+                  </div>
+                  <div id="othMoveList" class="chess-move-list oth-move-list">
+                    <div class="chess-empty-history">대국이 시작되면 기록됩니다.</div>
+                  </div>
+                </div>
+
+                <!-- 대국실 채팅 & 관전자 사이드바 패널 -->
+                <div class="ch-card oth-comm-card" style="flex:1;">
+                  <div class="oth-comm-header">
+                    <div class="chess-chat-title">
+                      <span>대국실 채팅</span>
+                      <span class="chess-live-pill" style="background:rgba(244,63,94,0.2);color:#fda4af;"><span class="pulse-dot"></span>LIVE</span>
+                    </div>
+                    <div>
+                      <span style="color:var(--oth-rose-soft);font-weight:700;font-size:11.5px;">👥 관전자 (<span id="othSpectatorCount">0</span>)</span>
+                    </div>
+                  </div>
+                  <div class="oth-comm-body">
+                    <!-- 채팅 영역 -->
+                    <div class="oth-chat-main">
+                      <div id="othChatMessages" class="chess-chat-messages oth-chat-messages">
+                        <div class="chess-chat-notice">실시간 대화창입니다.</div>
+                      </div>
+                      <form id="othChatForm" class="chess-chat-form">
+                        <input type="text" id="othChatInput" class="ch-input" placeholder="메시지 입력..." maxlength="150" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+                        <button type="submit" class="oth-btn-primary" style="padding:6px 12px;white-space:nowrap;">전송</button>
+                      </form>
+                    </div>
+                    <!-- 관전자 사이드바 -->
+                    <div class="oth-spec-sidebar">
+                      <div class="oth-spec-sidebar-title">참관 목록</div>
+                      <div id="othSpectatorList" class="chess-spectator-list oth-spec-list">
+                        <span style="font-size:11px;color:var(--oth-muted);opacity:0.6;">관전자가 없습니다.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

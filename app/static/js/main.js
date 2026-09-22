@@ -58,6 +58,7 @@ const OPTIONAL_GAME_MODULES = [
   { name: '체스', path: './chess.js', initializer: 'initChessListeners' },
   { name: '장기', path: './janggi.js', initializer: 'initJanggiListeners' },
   { name: '오목', path: './omok.js', initializer: 'initOmokListeners' },
+  { name: '오셀로', path: './othello.js', initializer: 'initOthelloListeners' },
 ];
 
 async function initOptionalGameModules() {

@@ -615,6 +615,18 @@ def _migrate_v27(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "user_quiz_sets", "icon", "TEXT NOT NULL DEFAULT ''")
 
 
+def _migrate_v28(conn: sqlite3.Connection) -> None:
+    """Create othello_player_stats table for Othello game."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS othello_player_stats (
+        user_id INTEGER PRIMARY KEY,
+        wins INTEGER NOT NULL DEFAULT 0,
+        draws INTEGER NOT NULL DEFAULT 0,
+        losses INTEGER NOT NULL DEFAULT 0,
+        last_win_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -643,6 +655,7 @@ _MIGRATIONS = [
     _migrate_v25,
     _migrate_v26,
     _migrate_v27,
+    _migrate_v28,
 ]
 
 

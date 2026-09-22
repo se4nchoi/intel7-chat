@@ -83,11 +83,11 @@
 }
 
 .quiz-user-badge.badge-chess {
-  background: rgba(234, 179, 8, 0.15);
-  border: 1.5px solid #facc15;
-  color: #fef08a;
-  box-shadow: 0 0 8px rgba(250, 204, 21, 0.45), inset 0 0 3px rgba(250, 204, 21, 0.2);
-  text-shadow: 0 0 4px rgba(250, 204, 21, 0.35);
+  background: rgba(100, 116, 139, 0.2);
+  border: 1.5px solid #94a3b8;
+  color: #e2e8f0;
+  box-shadow: 0 0 8px rgba(148, 163, 184, 0.35), inset 0 0 3px rgba(203, 213, 225, 0.18);
+  text-shadow: 0 0 4px rgba(203, 213, 225, 0.3);
   font-weight: 750;
   letter-spacing: 0.02em;
 }
@@ -112,6 +112,18 @@
   color: #fde68a;
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.45), inset 0 0 3px rgba(245, 158, 11, 0.25);
   text-shadow: 0 0 4px rgba(245, 158, 11, 0.4);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+/* Othello Deep Burgundy / Rose Badge */
+.quiz-user-badge.badge-othello,
+.othello-title-badge {
+  background: rgba(244, 63, 94, 0.16);
+  border: 1.5px solid #f43f5e;
+  color: #fecdd3;
+  box-shadow: 0 0 8px rgba(244, 63, 94, 0.4), inset 0 0 3px rgba(253, 164, 175, 0.2);
+  text-shadow: 0 0 4px rgba(253, 164, 175, 0.35);
   font-weight: 800;
   letter-spacing: 0.02em;
 }

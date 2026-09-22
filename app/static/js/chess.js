@@ -696,11 +696,9 @@ function updateRoleUI() {
   const isOwner = currentRoom && state.currentUser && String(currentRoom.owner_id) === String(state.currentUser.id);
   const isMyReady = (myColor === 'w' && currentRoom?.white_ready) || (myColor === 'b' && currentRoom?.black_ready);
 
-  if (isPlayer) {
-    $('chPlayerActions').classList.remove('hidden');
-  } else {
-    $('chPlayerActions').classList.add('hidden');
-  }
+  // Seating controls live outside this player-only container. Spectators must
+  // still be able to claim an open seat while ready/game actions stay hidden.
+  $('chPlayerActions').classList.toggle('hidden', !isPlayer);
 
   const readyBtn = $('chReadyBtn');
   if (readyBtn) {
@@ -1238,8 +1236,8 @@ function renderPlayersAndSpectators() {
     if (canJoinWhite || canJoinBlack) {
       box.innerHTML = `
         <div style="display:flex;gap:6px;margin-bottom:4px;">
-          ${canJoinWhite ? `<button class="ch-btn ch-btn-primary small" style="flex:1;" data-pick-role="w" onclick="window.pickChessRole('w')">백으로 앉기</button>` : ''}
-          ${canJoinBlack ? `<button class="ch-btn ch-btn-primary small" style="flex:1;" data-pick-role="b" onclick="window.pickChessRole('b')">흑으로 앉기</button>` : ''}
+          ${canJoinWhite ? `<button class="ch-btn ch-btn-primary small" style="flex:1;" data-pick-role="w">백으로 앉기</button>` : ''}
+          ${canJoinBlack ? `<button class="ch-btn ch-btn-primary small" style="flex:1;" data-pick-role="b">흑으로 앉기</button>` : ''}
         </div>
       `;
       box.style.display = 'block';

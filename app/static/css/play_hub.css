@@ -196,6 +196,7 @@
   display: none !important;
 }
 
+.play-game-screen,
 #chess-game-screen,
 .play-dialog .jg-game-screen,
 .play-dialog .om-game-screen,
@@ -209,6 +210,7 @@
   box-sizing: border-box !important;
 }
 
+.play-game-topbar,
 .chess-game-topbar,
 .jg-game-topbar,
 .om-game-topbar,
@@ -866,6 +868,7 @@
 }
 
 /* Game Body Layout: Standardized 270px / 1fr / 350px Across All Games */
+.play-dialog .play-game-body,
 .play-dialog .jg-game-body,
 .play-dialog .om-game-body,
 .play-dialog .ch-game-body {

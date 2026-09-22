@@ -3,7 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from app.database import (
-    get_chess_leaderboard, get_janggi_leaderboard, get_omok_leaderboard
+    get_chess_leaderboard,
+    get_janggi_leaderboard,
+    get_omok_leaderboard,
+    get_othello_leaderboard,
 )
 from app import main
 
@@ -38,3 +41,14 @@ async def api_omok_rankings(request: Request, limit: int = 20):
         "leaderboard": leaderboard,
         "rankings": leaderboard,
     }
+
+
+@router.get("/api/othello/rankings")
+async def api_othello_rankings(request: Request, limit: int = 20):
+    main.request_user(request)
+    leaderboard = get_othello_leaderboard(limit=limit)
+    return {
+        "leaderboard": leaderboard,
+        "rankings": leaderboard,
+    }
+

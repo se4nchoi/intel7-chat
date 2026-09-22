@@ -65,8 +65,8 @@ def _omok_badge(rank: int, wins: int) -> Optional[Dict[str, Any]]:
 
 
 OTHELLO_TITLES = {
-    1: ("👑", "오셀로 신"),
-    2: ("🟢", "오셀로 왕"),
+    1: ("👑", "오셀로의 신"),
+    2: ("🟢", "오셀로의 왕"),
     3: ("🟢", "오셀로고인물"),
 }
 

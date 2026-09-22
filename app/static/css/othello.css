@@ -1,0 +1,662 @@
+/* ============================================================
+   BambooChat - Othello (오셀로 / Reversi) Stylesheet
+   Deep Burgundy Theme · Tournament Green Felt · Rich Mahogany Wood Frame
+   ============================================================ */
+
+:root {
+  --oth-burgundy-dark: #18060f;
+  --oth-burgundy: #2d0f1c;
+  --oth-burgundy-light: #44142a;
+  --oth-burgundy-border: rgba(244, 63, 94, 0.28);
+  --oth-rose: #f43f5e;
+  --oth-rose-light: #fecdd3;
+  --oth-rose-soft: #fda4af;
+  --oth-green-felt: #156239;
+  --oth-green-felt-dark: #125531;
+  --oth-green-grid: #0c3d22;
+  --oth-wood-frame: #3b180d;
+  --oth-wood-border: #562514;
+  --oth-wood-inner: #240e07;
+  --oth-text: #ffe4e6;
+  --oth-muted: #fda4af99;
+}
+
+/* Othello Container & Layout */
+.othello-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Lobby Screens & Grid */
+.oth-lobby {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 16px 20px;
+  box-sizing: border-box;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.oth-lobby-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
+  margin: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.oth-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 40px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--oth-burgundy-border);
+  box-sizing: border-box;
+}
+
+.oth-tab-btn {
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--oth-muted);
+  background: transparent;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.oth-tab-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.play-dialog .oth-tab-btn.active {
+  background: rgba(244, 63, 94, 0.18) !important;
+  border-color: rgba(244, 63, 94, 0.45) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Othello Action Buttons */
+.oth-btn-primary {
+  background: linear-gradient(135deg, #e11d48, #be123c) !important;
+  color: #ffffff !important;
+  border: 1px solid #f43f5e !important;
+  box-shadow: 0 2px 6px rgba(190, 18, 60, 0.45) !important;
+}
+
+.oth-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #f43f5e, #e11d48) !important;
+  box-shadow: 0 4px 12px rgba(244, 63, 94, 0.5) !important;
+}
+
+.oth-btn-ghost {
+  background: rgba(244, 63, 94, 0.08) !important;
+  color: var(--oth-rose-light) !important;
+  border: 1px solid rgba(244, 63, 94, 0.25) !important;
+}
+
+.oth-btn-ghost:hover:not(:disabled) {
+  background: rgba(244, 63, 94, 0.18) !important;
+  color: #fff !important;
+  border-color: rgba(244, 63, 94, 0.45) !important;
+}
+
+.oth-btn-danger {
+  background: rgba(239, 68, 68, 0.18) !important;
+  color: #fca5a5 !important;
+  border: 1px solid rgba(239, 68, 68, 0.4) !important;
+}
+
+.oth-btn-danger:hover:not(:disabled) {
+  background: #ef4444 !important;
+  color: #ffffff !important;
+}
+
+/* Room Cards Grid */
+.oth-room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.oth-room-card {
+  background: rgba(45, 15, 28, 0.6);
+  border: 1px solid var(--oth-burgundy-border);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.oth-room-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(244, 63, 94, 0.5);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Othello Game Topbar */
+.oth-game-topbar {
+  height: 50px;
+  min-height: 50px;
+  max-height: 50px;
+  margin: 0;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0, 0, 0, 0.35);
+  border-bottom: 1px solid var(--oth-burgundy-border);
+  box-sizing: border-box;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+/* Game Body Layout: Left 270px, Center 1fr, Right 350px */
+.oth-game-screen {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.oth-game-body {
+  display: grid;
+  grid-template-columns: 270px 1fr 350px;
+  gap: 14px;
+  padding: 14px 18px;
+  flex: 1 1 0;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Player Cards Specifics */
+.oth-avatar-white {
+  background: radial-gradient(circle at 35% 30%, #ffffff, #d1d5db) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.6) !important;
+  color: #111827 !important;
+  font-size: 15px !important;
+}
+
+.oth-pill-white {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(209, 213, 219, 0.08)) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+
+.oth-avatar-black {
+  background: radial-gradient(circle at 35% 30%, #374151, #111827) !important;
+  border: 1.5px solid rgba(156, 163, 175, 0.4) !important;
+  color: #ffffff !important;
+  font-size: 15px !important;
+}
+
+.oth-pill-black {
+  background: linear-gradient(135deg, rgba(31, 41, 55, 0.7), rgba(17, 24, 39, 0.9)) !important;
+  color: #e5e7eb !important;
+  border: 1px solid rgba(156, 163, 175, 0.35) !important;
+}
+
+/* Disc Count Bar */
+.oth-score-tally {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+  border: 1px solid rgba(244, 63, 94, 0.18);
+}
+
+.oth-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.oth-score-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.oth-score-bar-bg {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #222;
+  overflow: hidden;
+  display: flex;
+}
+
+.oth-score-bar-black {
+  height: 100%;
+  background: linear-gradient(90deg, #111, #374151);
+  transition: width 0.3s ease;
+}
+
+.oth-score-bar-white {
+  height: 100%;
+  background: linear-gradient(90deg, #e5e7eb, #ffffff);
+  transition: width 0.3s ease;
+}
+
+/* ============================================================
+   Othello Board (Tournament Green Felt + Rich Mahogany Frame)
+   ============================================================ */
+.oth-board-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  padding: 6px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.oth-board-box {
+  width: 532px;
+  height: 532px;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 1 / 1;
+  position: relative;
+  /* Rich Mahogany Wood Frame Outer Border */
+  background: var(--oth-wood-frame);
+  background-image: 
+    linear-gradient(135deg, rgba(86, 37, 20, 0.45) 0%, transparent 50%, rgba(20, 8, 4, 0.7) 100%),
+    radial-gradient(ellipse at 50% 50%, rgba(95, 41, 23, 0.3) 0%, transparent 80%);
+  border: 4px solid var(--oth-wood-border);
+  box-shadow:
+    inset 0 0 16px rgba(0, 0, 0, 0.8),
+    0 12px 36px rgba(0, 0, 0, 0.75),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+  border-radius: 12px;
+  padding: 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+.oth-board-inner {
+  width: 100%;
+  height: 100%;
+  /* Tournament Green Felt */
+  background: var(--oth-green-felt);
+  background-image:
+    radial-gradient(circle at 50% 50%, #177142 0%, #125531 100%);
+  border: 2px solid var(--oth-wood-inner);
+  box-shadow:
+    inset 0 0 14px rgba(0, 0, 0, 0.6),
+    0 0 4px rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  box-sizing: border-box;
+}
+
+/* Coordinate Markers around borders */
+.oth-coord-top,
+.oth-coord-bottom {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-around;
+  color: #e5d5be;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.oth-coord-top {
+  top: 3px;
+}
+
+.oth-coord-bottom {
+  bottom: 3px;
+}
+
+.oth-coord-left,
+.oth-coord-right {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  align-items: center;
+  color: #e5d5be;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.oth-coord-left {
+  left: 4px;
+}
+
+.oth-coord-right {
+  right: 4px;
+}
+
+/* 8x8 Grid Squares */
+.oth-cell {
+  position: relative;
+  border-right: 1px solid var(--oth-green-grid);
+  border-bottom: 1px solid var(--oth-green-grid);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  cursor: default;
+}
+
+.oth-cell:nth-child(8n) {
+  border-right: none;
+}
+
+.oth-cell:nth-last-child(-n+8) {
+  border-bottom: none;
+}
+
+/* 4 Star Points (Hoshis) on the Felt: between c/d, f/g and 2/3, 6/7 */
+.oth-star-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: #092c18;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Legal Move Guide Indicators */
+.oth-cell.legal-target {
+  cursor: pointer;
+}
+
+.oth-legal-hint {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+  pointer-events: none;
+  transition: all 0.15s ease;
+}
+
+.oth-cell.legal-target:hover .oth-legal-hint {
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 3D Glossy Discs */
+.oth-disc-wrap {
+  width: 86%;
+  height: 86%;
+  position: relative;
+  perspective: 600px;
+}
+
+.oth-disc {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  position: relative;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.oth-disc.flipped-anim {
+  animation: othDiscFlip 0.45s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes othDiscFlip {
+  0% { transform: scale(1) rotateY(0deg); }
+  50% { transform: scale(1.15) rotateY(90deg); }
+  100% { transform: scale(1) rotateY(180deg); }
+}
+
+/* Black Disc: Jet Black with Gloss Specular Highlight */
+.oth-disc.black {
+  background: radial-gradient(circle at 35% 30%, #3a3a3a 0%, #181818 55%, #080808 100%);
+  border: 1px solid rgba(80, 80, 80, 0.4);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.25),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.8),
+    0 4px 8px rgba(0, 0, 0, 0.65),
+    0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* White Disc: Pearlescent Ivory with Soft Gloss */
+.oth-disc.white {
+  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #f1f3f2 60%, #d6d9d7 100%);
+  border: 1px solid rgba(190, 195, 192, 0.6);
+  box-shadow:
+    inset 0 1px 3px rgba(255, 255, 255, 0.9),
+    inset 0 -2px 4px rgba(160, 165, 162, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.5),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Last Placed Disc Beacon / Pulse Indicator */
+.oth-cell.last-move .oth-disc::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f43f5e;
+  box-shadow: 0 0 10px #f43f5e, 0 0 18px #fb7185;
+  pointer-events: none;
+  animation: othLastBeacon 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes othLastBeacon {
+  0% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.7; }
+  100% { transform: translate(-50%, -50%) scale(1.3); opacity: 1; }
+}
+
+/* Right Column: Chat & Spectator Sidebar Unified Layout */
+.oth-chat-col {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.oth-history-card {
+  height: 220px !important;
+  min-height: 200px !important;
+  max-height: 240px !important;
+  padding: 8px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  flex-shrink: 0 !important;
+  background: rgba(45, 15, 28, 0.5) !important;
+  border: 1px solid var(--oth-burgundy-border) !important;
+}
+
+.oth-move-list {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  padding-right: 4px !important;
+}
+
+.oth-move-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--oth-text);
+  transition: all 0.15s ease;
+}
+
+.oth-move-item:hover {
+  background: rgba(244, 63, 94, 0.15);
+  color: #ffffff;
+}
+
+.oth-move-item.selected {
+  background: rgba(244, 63, 94, 0.3) !important;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.oth-move-item.is-pass {
+  color: #fca5a5;
+  font-style: italic;
+}
+
+/* Side-by-Side Chat & Spectator Panel */
+.oth-comm-card {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  flex: 1 1 0 !important;
+  overflow: hidden !important;
+  padding: 8px 12px !important;
+  box-sizing: border-box !important;
+  background: rgba(45, 15, 28, 0.5) !important;
+  border: 1px solid var(--oth-burgundy-border) !important;
+}
+
+.oth-comm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(244, 63, 94, 0.18);
+  flex-shrink: 0;
+}
+
+.oth-comm-body {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.oth-chat-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.oth-chat-messages {
+  flex: 1 1 0 !important;
+  min-height: 60px !important;
+  overflow-y: auto !important;
+  padding: 6px 8px !important;
+  margin-bottom: 6px !important;
+  background: rgba(0, 0, 0, 0.28) !important;
+  border-radius: 6px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+}
+
+.oth-spec-sidebar {
+  width: 95px;
+  min-width: 95px;
+  max-width: 95px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 6px;
+  padding: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(244, 63, 94, 0.14);
+}
+
+.oth-spec-sidebar-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--oth-rose-soft);
+  margin-bottom: 4px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.oth-spec-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

@@ -1,4 +1,4 @@
-"""Game engines for turn-based games (Omok, Janggi)."""
+"""Game engines for turn-based games (Omok, Janggi, Othello)."""
 from app.engines.omok import OmokBoard, BOARD_SIZE as OMOK_BOARD_SIZE
 from app.engines.janggi import (
     JanggiBoard,
@@ -7,6 +7,7 @@ from app.engines.janggi import (
     CHO_PALACE_COORDS,
     HAN_PALACE_COORDS,
 )
+from app.engines.othello import OthelloBoard, BOARD_SIZE as OTHELLO_BOARD_SIZE
 
 __all__ = [
     "OmokBoard",
@@ -16,4 +17,6 @@ __all__ = [
     "PIECE_NAMES_KR",
     "CHO_PALACE_COORDS",
     "HAN_PALACE_COORDS",
+    "OthelloBoard",
+    "OTHELLO_BOARD_SIZE",
 ]

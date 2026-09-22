@@ -29,7 +29,7 @@ export function closePlayModal() {
 }
 
 export function switchGameTab(game) {
-  if (!['chess', 'janggi', 'omok'].includes(game)) {
+  if (!['chess', 'janggi', 'omok', 'othello'].includes(game)) {
     game = 'chess';
   }
   activeGame = game;
@@ -37,7 +37,7 @@ export function switchGameTab(game) {
 
   const dialog = document.getElementById('play-dialog');
   if (dialog) {
-    dialog.classList.remove('theme-chess', 'theme-janggi', 'theme-omok');
+    dialog.classList.remove('theme-chess', 'theme-janggi', 'theme-omok', 'theme-othello');
     dialog.classList.add(`theme-${game}`);
   }
 
@@ -53,10 +53,12 @@ export function switchGameTab(game) {
   const chessView = document.getElementById('play-view-chess');
   const janggiView = document.getElementById('play-view-janggi');
   const omokView = document.getElementById('play-view-omok');
+  const othelloView = document.getElementById('play-view-othello');
 
   if (chessView) chessView.classList.toggle('hidden', game !== 'chess');
   if (janggiView) janggiView.classList.toggle('hidden', game !== 'janggi');
   if (omokView) omokView.classList.toggle('hidden', game !== 'omok');
+  if (othelloView) othelloView.classList.toggle('hidden', game !== 'othello');
 
   // Trigger game-specific hooks
   if (game === 'chess' && window.bambooChessHook?.onTabActive) {
@@ -65,6 +67,8 @@ export function switchGameTab(game) {
     window.bambooJanggiHook.onTabActive();
   } else if (game === 'omok' && window.bambooOmokHook?.onTabActive) {
     window.bambooOmokHook.onTabActive();
+  } else if (game === 'othello' && window.bambooOthelloHook?.onTabActive) {
+    window.bambooOthelloHook.onTabActive();
   }
 }
 
