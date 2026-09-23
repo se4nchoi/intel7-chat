@@ -4,6 +4,9 @@ A classroom LAN chat and learning application with persistent conversations, fil
 
 BambooChat brings classroom communication and practice activities into one browser interface. Students can use channels and direct messages, share course files, and revisit conversation history. Administrators manage accounts, registration, moderation, and quiz content.
 
+The `edu/prototype` branch contains the central-hub rework. For a new machine
+or Codex task, start with the [prototype handoff](docs/prototype-handoff.md).
+
 **Stack:** Python · FastAPI · WebSockets · SQLite · Jinja2 · JavaScript · uv
 
 [Architecture](#architecture) · [한국어 사용 및 운영 안내](#한국어-사용-및-운영-안내) · [Tests](#테스트와-의존성-감사)
