@@ -90,6 +90,9 @@ accounts/cohorts/chat/Q&A/file metadata, and a local LiveKit SFU behind a WSS
 proxy. A two-browser publish/subscribe probe passed. The older `/` UI still
 uses isolated SQLite; this milestone proves the replacement architecture,
 not a complete migration of every older feature. See `prototype-local.md`.
+The new hub browser code is now a separate `frontend/` Vite project; FastAPI
+serves its built assets and remains responsible for APIs, WebSockets, and
+storage. The older UI remains in `app/static` during migration.
 
 1. **HTTPS:** run the prototype through local TLS with a trusted development
    certificate. Verify page loading, secure cookies, WebSockets (`wss://`), and

@@ -435,7 +435,8 @@ app.include_router(quiz_router)
 app.include_router(games_router)
 app.include_router(screenshare_router)
 if os.environ.get("BAMBOOCHAT_HUB_DATABASE_URL"):
-    from app.hub.routes import router as hub_router
+    from app.hub.routes import FRONTEND_BUILD_DIR, router as hub_router
+    app.mount("/hub/assets", StaticFiles(directory=FRONTEND_BUILD_DIR / "assets", check_dir=False), name="hub-assets")
     app.include_router(hub_router)
 
 

@@ -1,22 +1,11 @@
+import { api, channelSocket, fileDownloadUrl, uploadFile } from './api.js';
+
 const $ = (id) => document.getElementById(id);
 const state = { account: null, cohorts: [], cohort: null, channel: null, socket: null, question: null, mediaRoom: null };
 
 function status(message, error = false) {
   $('status').textContent = message;
   $('status').className = `info ${error ? 'error' : 'muted'}`;
-}
-
-async function api(path, options = {}) {
-  const init = { credentials: 'same-origin', ...options };
-  if (options.json !== undefined) {
-    init.headers = { 'Content-Type': 'application/json' };
-    init.body = JSON.stringify(options.json);
-  }
-  delete init.json;
-  const response = await fetch(`/hub/api${path}`, init);
-  const data = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.detail || `Request failed (${response.status})`);
-  return data;
 }
 
 function textNode(tag, value, className = '') {
@@ -97,8 +86,7 @@ async function selectChannel(channel) {
   const messages = await api(`/cohorts/${state.cohort.id}/channels/${channel.id}/messages`);
   $('messages').replaceChildren();
   messages.forEach(appendMessage);
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const socket = new WebSocket(`${protocol}//${location.host}/hub/ws/cohorts/${state.cohort.id}/channels/${channel.id}`);
+  const socket = channelSocket(state.cohort.id, channel.id);
   state.socket = socket;
   socket.onmessage = (event) => {
     if (state.socket !== socket) return;
@@ -152,7 +140,7 @@ async function loadFiles() {
   for (const file of files) {
     const row = document.createElement('li');
     const link = textNode('a', file.original_name);
-    link.href = `/hub/api/cohorts/${state.cohort.id}/files/${file.id}`;
+    link.href = fileDownloadUrl(state.cohort.id, file.id);
     row.append(link, textNode('small', ` · @${file.username} · ${Math.ceil(file.size_bytes / 1024)} KB`, 'muted'));
     list.append(row);
   }
@@ -212,11 +200,7 @@ handleForm('answer-form', async form => {
 });
 
 handleForm('file-form', async form => {
-  const response = await fetch(`/hub/api/cohorts/${state.cohort.id}/files`, { method: 'POST', credentials: 'same-origin', body: new FormData(form) });
-  if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    throw new Error(data?.detail || `Upload failed (${response.status})`);
-  }
+  await uploadFile(state.cohort.id, form);
   await loadFiles();
 });
 
@@ -256,7 +240,7 @@ $('media-connect').addEventListener('click', async () => {
   try {
     if (!state.cohort || !state.channel) throw new Error('Choose a channel');
     await leaveMedia();
-    const { Room, RoomEvent, Track } = await import('./hub-sfu.bundle.js');
+    const { Room, RoomEvent, Track } = await import('livekit-client');
     const config = await api(`/cohorts/${state.cohort.id}/channels/${state.channel.id}/media-token`, { method: 'POST' });
     const room = new Room({ adaptiveStream: true, dynacast: true });
     room.on(RoomEvent.TrackSubscribed, (track) => {

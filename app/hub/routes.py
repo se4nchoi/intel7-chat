@@ -23,6 +23,7 @@ router = APIRouter(prefix="/hub", tags=["prototype-hub"])
 COOKIE = "bamboochat_hub_session"
 DATA_DIR = Path(__file__).resolve().parents[2] / "data_dev"
 FILE_DIR = DATA_DIR / "hub-files"
+FRONTEND_BUILD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 ALLOWED_FILE_SUFFIXES = {".txt", ".md", ".pdf", ".csv", ".png", ".jpg", ".jpeg", ".docx", ".pptx", ".xlsx"}
 connections: dict[tuple[int, int], set[WebSocket]] = defaultdict(set)
 
@@ -93,7 +94,10 @@ class NewChannel(BaseModel):
 
 @router.get("")
 async def hub_page():
-    return FileResponse(Path(__file__).resolve().parents[1] / "static" / "hub.html")
+    page = FRONTEND_BUILD_DIR / "index.html"
+    if not page.is_file():
+        raise HTTPException(503, "Hub frontend is not built; run npm ci and npm run build in frontend/")
+    return FileResponse(page)
 
 
 @router.get("/api/health")

@@ -20,6 +20,10 @@ bamboochat_dev.json
 .vscode/
 .idea/
 
+# Hub frontend build
+frontend/node_modules/
+frontend/dist/
+
 # OS
 .DS_Store
 Thumbs.db

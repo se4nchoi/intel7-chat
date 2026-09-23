@@ -14,6 +14,7 @@ $required = @(
     (Join-Path $data 'caddy\caddy.exe'),
     (Join-Path $data 'Caddyfile'),
     (Join-Path $data 'tls\localhost.crt'),
+    (Join-Path $root 'frontend\dist\index.html'),
     (Join-Path $root '.venv\Scripts\python.exe')
 )
 foreach ($file in $required) {

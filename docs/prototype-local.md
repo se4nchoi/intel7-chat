@@ -5,6 +5,11 @@ The new hub is at `https://127.0.0.1:8443/hub`. PostgreSQL, the SFU, TLS
 proxy, credentials, and uploads are all kept in ignored `data_dev/`. The live
 LAN chat remains in its own checkout on port `8000`.
 
+The hub frontend now lives in `frontend/` (Vite and browser code). FastAPI in
+`app/` serves its built files at `/hub` and `/hub/assets`, and owns `/hub/api`
+and `/hub/ws`. The browser does not connect to PostgreSQL. Both halves use the
+same HTTPS origin, so the existing hub session cookie and origin checks apply.
+
 The older chat page at `/` still uses the prototype's isolated SQLite database.
 The `/hub` page is the PostgreSQL-backed rework: accounts, cohort memberships,
 channels, chat, Q&A, file metadata, and login sessions are in PostgreSQL.
@@ -20,6 +25,21 @@ opens Chrome:
 ```powershell
 & .\scripts\start_prototype_stack.ps1
 ```
+
+Build the frontend once after a fresh checkout or after editing its source:
+
+```powershell
+cd frontend
+npm ci
+npm run build
+cd ..
+```
+
+The build is written to ignored `frontend/dist/`; the startup script requires
+its `index.html`. For ongoing UI work, `npm run watch` rebuilds on source
+changes while FastAPI continues to serve the same HTTPS address. The pinned
+Vite version requires Node.js `^20.19.0 || >=22.12.0`. The older `/` UI still lives
+under `app/static` and has not been moved to this frontend project.
 
 The hub demo instructor and student credentials are in
 `data_dev/hub-demo-users.txt`. The hub administrator uses the credential in
@@ -47,7 +67,8 @@ LiveKit/Caddy Windows binaries in `data_dev/`. Their downloaded archives were
 checked against the release SHA-256 digests. These binaries are ignored by Git;
 a fresh checkout needs its own local setup. The Python dependencies are pinned
 in `uv.lock`. The browser bundle was built from `livekit-client@2.22.3` with
-`esbuild@0.28.2` and is tracked as `app/static/js/hub-sfu.bundle.js`.
+Vite; its dependencies are pinned in `frontend/package-lock.json`. Built files
+are local outputs and are not tracked by Git.
 
 The TLS certificate is self-signed for `localhost` and `127.0.0.1` and is valid
 for 30 days. The generator does not install it in a trust store. On this host,
