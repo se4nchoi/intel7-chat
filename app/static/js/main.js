@@ -172,6 +172,14 @@ document.addEventListener('visibilitychange', () => {
 });
 
 async function switchConversation(type, id) {
+  if (type === 'channel') {
+    const numericId = Number(id);
+    if (!Number.isSafeInteger(numericId) || numericId <= 0) {
+      showToast('유효한 채널을 선택해 주세요.', 'error');
+      return;
+    }
+    id = numericId;
+  }
   saveCurrentDraft();
   setActiveRoom(type, id);
   clearConversationUnreadOptimistic(type, id);

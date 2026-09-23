@@ -2,8 +2,12 @@
   <div class="modal-box auth-modal-box">
     <div class="modal-logo-container"><img src="/static/bamboochat-logo.png" alt="" class="modal-logo" /></div>
     <h2 id="auth-title">{{ service_name }}</h2>
+    {% if transport_encrypted %}
+    <p class="modal-desc">🔒 HTTPS 연결입니다. 저장되는 대화와 파일에는 민감정보를 공유하지 마세요.</p>
+    {% else %}
     <p class="modal-warning">⚠️ 보내는 모든 메세지는 암호화되지 않습니다!</p>
     <p class="modal-desc">비밀번호나 민감정보를 입력·공유하지 마세요.</p>
+    {% endif %}
     <form id="auth-form">
       <label class="sr-only" for="username-input">아이디</label>
       <input id="username-input" type="text" maxlength="30" minlength="2" placeholder="아이디" autocomplete="username" required autofocus />

@@ -82,7 +82,7 @@ DM_HISTORY_PAGE_SIZE = 30
 MAX_UPLOAD_BYTES = int(os.getenv("CLASSROOM_MAX_FILE_MB", "50")) * 1024 * 1024
 MAX_UPLOAD_BYTES_PER_USER = CONFIG.per_user_attachment_limit_bytes
 MAX_TOTAL_UPLOAD_BYTES = CONFIG.attachment_limit_bytes
-SESSION_COOKIE = "bamboochat_session"
+SESSION_COOKIE = os.getenv("BAMBOOCHAT_SESSION_COOKIE", "bamboochat_session")
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = CONFIG.data_path / "uploads"
 QUIZ_SOURCES_DIR = CONFIG.data_path / "quiz_sources"
@@ -376,6 +376,9 @@ async def broadcast_users() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    if os.environ.get("BAMBOOCHAT_HUB_DATABASE_URL"):
+        from app.hub.db import initialize_schema
+        await asyncio.to_thread(initialize_schema)
     UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
     QUIZ_SOURCES_DIR.mkdir(parents=True,exist_ok=True)
     QUIZ_IMAGES_DIR.mkdir(parents=True,exist_ok=True)
@@ -407,7 +410,8 @@ async def index(request: Request):
     return templates.TemplateResponse(request=request,name="index.html",context={
         "service_name":SERVICE_NAME,"max_message_len":MAX_CONTENT_LEN,
         "max_file_mb":MAX_UPLOAD_BYTES//(1024*1024),"max_files":MAX_ATTACHMENTS_PER_MESSAGE,
-        "registration_enabled":CONFIG.registration_enabled})
+        "registration_enabled":CONFIG.registration_enabled,
+        "transport_encrypted":request.url.scheme == "https"})
 
 
 # ==========================================
@@ -430,6 +434,9 @@ app.include_router(admin_router)
 app.include_router(quiz_router)
 app.include_router(games_router)
 app.include_router(screenshare_router)
+if os.environ.get("BAMBOOCHAT_HUB_DATABASE_URL"):
+    from app.hub.routes import router as hub_router
+    app.include_router(hub_router)
 
 
 

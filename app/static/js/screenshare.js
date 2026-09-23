@@ -27,7 +27,8 @@ export function getDmRoomId(userA, userB) {
 export function getCurrentRoomId() {
   if (!state.activeRoom) return null;
   if (state.activeRoom.type === 'channel') {
-    return normalizeRoomKey(state.activeRoom.id);
+    const channelId = Number(state.activeRoom.id);
+    return Number.isSafeInteger(channelId) && channelId > 0 ? String(channelId) : null;
   } else if (state.activeRoom.type === 'dm') {
     return getDmRoomId(state.currentUser?.username, state.activeRoom.id);
   }
@@ -188,6 +189,10 @@ export async function startScreenShare(roomId, customTitle = '') {
   if (!roomId) roomId = getCurrentRoomId();
   if (!roomId) return;
   const normId = normalizeRoomKey(roomId);
+  if (!String(normId).startsWith('dm:') && (!Number.isSafeInteger(Number(normId)) || Number(normId) <= 0)) {
+    showToast('유효한 채널을 선택한 뒤 화면 공유를 시작해 주세요.', 'error');
+    return;
+  }
 
   // Check if browser supports getDisplayMedia
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {

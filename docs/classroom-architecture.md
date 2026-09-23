@@ -1,6 +1,9 @@
 # Classroom edition architecture
 
-Status: proposed design; no runtime changes implemented by this document.
+Status: historical classroom-local proposal. The current central-hub rework is
+recorded in [architecture-rework.md](architecture-rework.md); its deployment and
+data decisions supersede conflicting proposals here. No runtime changes were
+implemented by this document.
 
 ## Scope and capacity contract
 

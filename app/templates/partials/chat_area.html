@@ -40,7 +40,7 @@
       </div>
       <span id="chat-area-desc" class="chat-area-desc"></span>
     </div>
-    <span id="retention-note" class="retention-note">⚠️ HTTP LAN · 암호화되지 않음 · 민감정보 공유 금지</span>
+    <span id="retention-note" class="retention-note">{% if transport_encrypted %}🔒 HTTPS · 대화는 서버에 저장됨 · 민감정보 공유 금지{% else %}⚠️ HTTP LAN · 암호화되지 않음 · 민감정보 공유 금지{% endif %}</span>
   </div>
   <!-- 발표자 채널 이동 시 복귀 플로팅 바 -->
   <div id="screenshare-sticky-bar" class="screenshare-sticky-bar hidden">

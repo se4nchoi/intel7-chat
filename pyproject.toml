@@ -9,6 +9,9 @@ dependencies = [
     "chess==1.11.2",
     "fastapi==0.141.1",
     "jinja2==3.1.6",
+    "psycopg[binary]>=3.2,<4",
+    "pyjwt>=2.10,<3",
+    "python-multipart>=0.0.20,<1",
     "uvicorn[standard]==0.52.3",
 ]
 

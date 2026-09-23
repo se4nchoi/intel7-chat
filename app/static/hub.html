@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BambooChat Hub Prototype</title>
+  <style>
+    :root { font: 15px/1.5 system-ui, sans-serif; color: #162427; background: #edf3f1; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { background: #103b3b; color: white; padding: 16px max(20px, calc((100vw - 1180px)/2)); display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+    header h1 { margin: 0; font-size: 21px; }
+    header small { opacity: .8; }
+    main { max-width: 1180px; margin: 22px auto; padding: 0 16px; }
+    .card { background: white; border: 1px solid #d0dfda; border-radius: 12px; padding: 18px; box-shadow: 0 2px 12px #163b3310; }
+    .hidden { display: none !important; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; border: 1px solid #b9d1c8; border-radius: 7px; padding: 7px 11px; background: #f2f8f5; color: #133e37; }
+    button:hover { background: #e4f3ec; }
+    button.primary { background: #146d57; border-color: #146d57; color: white; }
+    input, select, textarea { width: 100%; border: 1px solid #b9d1c8; border-radius: 7px; padding: 8px; background: white; }
+    textarea { resize: vertical; min-height: 72px; }
+    form { display: grid; gap: 9px; }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    h3 { margin: 12px 0 8px; font-size: 16px; }
+    .muted { color: #5e716e; }
+    .error { color: #ae2c33; }
+    .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .toolbar select { width: auto; min-width: 180px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+    .stack { display: grid; gap: 16px; }
+    .messages { height: 320px; overflow: auto; border: 1px solid #d8e4e0; border-radius: 8px; padding: 10px; background: #f9fcfa; }
+    .message { padding: 7px 0; border-bottom: 1px solid #e5eeea; overflow-wrap: anywhere; }
+    .message strong { color: #145c4d; }
+    .message time { color: #788986; font-size: 12px; margin-left: 7px; }
+    .channel-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .channel-list button.active { background: #146d57; color: white; }
+    .list { list-style: none; margin: 0; padding: 0; }
+    .list li { padding: 9px 0; border-bottom: 1px solid #e5eeea; }
+    .list li:last-child { border-bottom: 0; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row input { flex: 1; }
+    .row button { white-space: nowrap; }
+    .info { min-height: 22px; }
+    video { width: 100%; max-height: 280px; background: #111; border-radius: 8px; }
+    details { margin-top: 14px; }
+    details summary { cursor: pointer; font-weight: 600; }
+    #login-card { max-width: 380px; margin: 70px auto; }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } header { padding: 14px 16px; } }
+  </style>
+</head>
+<body>
+  <header><div><h1>BambooChat Hub</h1><small>HTTPS · PostgreSQL · cohort prototype</small></div><div id="account-label"></div></header>
+  <main>
+    <p id="status" class="info muted" role="status"></p>
+    <section id="login-card" class="card">
+      <h2>Hub login</h2>
+      <form id="login-form">
+        <label>Username <input name="username" autocomplete="username" required></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="primary">Log in</button>
+      </form>
+      <p class="muted">These hub accounts are separate from the older chat page.</p>
+    </section>
+    <section id="hub-app" class="hidden">
+      <div class="toolbar"><label for="cohort-select">Cohort</label><select id="cohort-select"></select><span id="role-label" class="muted"></span><button id="logout-btn">Log out</button></div>
+      <div class="layout">
+        <div class="stack">
+          <section class="card">
+            <h2>Live chat</h2>
+            <div id="channel-list" class="channel-list"></div>
+            <div id="messages" class="messages" aria-live="polite"></div>
+            <form id="message-form" class="row" style="margin-top:10px"><input id="message-input" maxlength="2000" placeholder="Message this channel" required><button class="primary">Send</button></form>
+          </section>
+          <section class="card">
+            <h2>Screen share via local SFU</h2>
+            <p id="media-status" class="muted">Connect to the media room to view a share.</p>
+            <div class="row"><button id="media-connect">Connect</button><button id="media-start" class="hidden">Share screen</button><button id="media-stop" class="hidden">Stop sharing</button></div>
+            <video id="media-video" autoplay playsinline controls></video>
+          </section>
+        </div>
+        <div class="stack">
+          <section class="card">
+            <h2>Persistent Q&amp;A</h2>
+            <ul id="question-list" class="list"></ul>
+            <form id="question-form" style="margin-top:12px"><input name="title" maxlength="200" placeholder="Question title" required><textarea name="body" maxlength="5000" placeholder="Explain the question" required></textarea><button>Post question</button></form>
+            <details id="answer-panel"><summary id="answer-heading">Answers</summary><ul id="answer-list" class="list"></ul><form id="answer-form"><textarea name="body" maxlength="5000" placeholder="Write an answer" required></textarea><button>Post answer</button></form></details>
+          </section>
+          <section class="card"><h2>Files</h2><ul id="file-list" class="list"></ul><form id="file-form"><input type="file" name="upload" required><button>Upload (10 MB max)</button></form></section>
+          <section id="admin-card" class="card hidden"><h2>Setup</h2><p class="muted">Administrator creates accounts and cohorts. Instructors can add members and channels in their cohort.</p>
+            <form id="account-form"><h3>New account</h3><input name="username" placeholder="Username" required><input name="display_name" placeholder="Display name" required><input name="password" placeholder="Temporary password" minlength="5" required><button>Create account</button></form>
+            <form id="cohort-form"><h3>New cohort</h3><input name="slug" placeholder="Cohort slug" required><input name="name" placeholder="Cohort name" required><button>Create cohort</button></form>
+          </section>
+          <section id="manage-card" class="card hidden"><h2>Cohort management</h2>
+            <form id="membership-form"><h3>Add member</h3><input name="username" placeholder="Existing username" required><select name="role"><option value="student">Student</option><option value="instructor">Instructor</option></select><button>Add or update</button></form>
+            <form id="channel-form"><h3>New channel</h3><input name="slug" placeholder="Channel slug" required><input name="name" placeholder="Channel name" required><button>Create channel</button></form>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="/static/js/hub.js"></script>
+</body>
+</html>

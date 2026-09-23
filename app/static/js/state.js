@@ -4,7 +4,7 @@
 
 export const state = {
   currentUser: null,
-  activeRoom: { type: 'channel', id: 'general' }, // { type: 'channel'|'dm', id: string|number }
+  activeRoom: { type: 'channel', id: '1' }, // { type: 'channel'|'dm', id: string|number }
   channels: [],
   dms: [],
   onlineUsers: [],
