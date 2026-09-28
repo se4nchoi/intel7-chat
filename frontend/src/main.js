@@ -125,7 +125,7 @@ function showSpace() {
   $('add-channel-btn').classList.toggle('hidden', !manage || !!cohort?.archived);
   $('media-start').classList.toggle('hidden', !manage);
   const instructorOption = $('membership-form').elements.role.querySelector('[value="instructor"]');
-  instructorOption.disabled = !state.account?.is_admin;
+  instructorOption.disabled = instructorOption.hidden = !state.account?.is_admin;
   if (!state.account?.is_admin) $('membership-form').elements.role.value = 'student';
   for (const space of ['chat', 'board']) {
     const link = $(`${space}-link`);
@@ -212,7 +212,7 @@ async function loadChannels() {
   if (channels.length) await selectChannel(channels.find(c => c.id === state.channels.get(cohort.id)) || channels[0]);
   else {
     list.append(el('p', { class: 'muted', text: '아직 채널이 없습니다.' }));
-    $('messages').append(el('p', { class: 'muted', text: isManager() ? '채널 목록 옆의 + 버튼으로 첫 채널을 만드세요.' : '강사에게 채널 개설을 요청하세요.' }));
+    $('messages').append(el('p', { class: 'muted', text: cohort.archived ? '종료된 수강반이라 채널을 만들 수 없습니다.' : isManager() ? '채널 목록 옆의 + 버튼으로 첫 채널을 만드세요.' : '강사에게 채널 개설을 요청하세요.' }));
     updateControls();
   }
 }
@@ -253,7 +253,12 @@ async function selectChannel(channel) {
   messages.forEach(appendMessage);
   const socket = channelSocket(cohort.id, channel.id); state.socket = socket;
   socket.onmessage = event => { if (state.socket !== socket) return; const payload = JSON.parse(event.data); if (payload.type === 'message') appendMessage(payload.message); };
-  socket.onclose = () => { if (state.socket === socket) status('채팅 연결이 끊겼습니다. 새로고침하여 다시 연결하세요.', true); };
+  socket.onclose = event => {
+    if (state.socket !== socket) return;
+    state.socket = null;
+    // 1008: the server revoked this session or cohort access (logout elsewhere, expiry, removal).
+    status(event.code === 1008 ? '로그인이 만료되었거나 이 수강반에 접근할 수 없어 채팅 연결이 종료되었습니다. 다시 로그인하세요.' : '채팅 연결이 끊겼습니다. 새로고침하여 다시 연결하세요.', true);
+  };
 }
 function appendMessage(message) {
   const box = $('messages');
@@ -347,7 +352,7 @@ function renderFeed() {
         el('span', { text: `· ${q.display_name || q.username}` })));
     nodes.push(el('li', { class: `feed-item${answers === 0 ? ' unanswered' : ''}` }, button));
   }
-  if (!nodes.length) nodes.push(el('li', { class: 'feed-empty', text: state.questions.length ? '조건에 맞는 질문이 없습니다.' : '아직 질문이 없습니다. 첫 질문을 올려 보세요.' }));
+  if (!nodes.length) nodes.push(el('li', { class: 'feed-empty', text: state.questions.length ? '조건에 맞는 질문이 없습니다.' : state.cohort?.archived ? '이 수강반에는 질문이 없습니다.' : '아직 질문이 없습니다. 첫 질문을 올려 보세요.' }));
   list.replaceChildren(...nodes);
 }
 function renderStats() {

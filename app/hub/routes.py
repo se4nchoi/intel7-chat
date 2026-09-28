@@ -25,7 +25,11 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "data_dev"
 FILE_DIR = DATA_DIR / "hub-files"
 FRONTEND_BUILD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 ALLOWED_FILE_SUFFIXES = {".txt", ".md", ".pdf", ".csv", ".png", ".jpg", ".jpeg", ".docx", ".pptx", ".xlsx"}
-connections: dict[tuple[int, int], set[WebSocket]] = defaultdict(set)
+# Open chat sockets per (cohort, channel), mapped to the session cookie that
+# opened them. Access is re-checked before every delivery, so a revoked or
+# expired session, or a removed membership, stops receiving immediately.
+connections: dict[tuple[int, int], dict[WebSocket, str]] = defaultdict(dict)
+REVOKED = 1008
 
 
 def _same_origin(request: Request) -> None:
@@ -134,7 +138,28 @@ async def logout(request: Request, response: Response):
     raw = request.cookies.get(COOKIE, "")
     if raw:
         await asyncio.to_thread(db.delete_session, raw)
+        await _close_session_sockets(raw)
     response.delete_cookie(COOKIE, path="/hub")
+
+
+async def _drop_socket(key: tuple[int, int], ws: WebSocket) -> None:
+    connections[key].pop(ws, None)
+    try:
+        await ws.close(code=REVOKED)
+    except Exception:
+        pass  # already closed by the client
+
+
+async def _close_session_sockets(raw: str) -> None:
+    for key, sockets in list(connections.items()):
+        for ws, session in list(sockets.items()):
+            if session == raw:
+                await _drop_socket(key, ws)
+
+
+def _socket_allowed(raw: str, cohort_id: int) -> bool:
+    account = db.session_account(raw)
+    return bool(account and db.access(account, cohort_id))
 
 
 @router.get("/api/me")
@@ -255,11 +280,19 @@ async def add_message(cohort_id: int, channel_id: int, body: Message, request: R
     if not clean:
         raise HTTPException(400, "Message cannot be empty")
     message = await asyncio.to_thread(db.add_message, channel_id, account["id"], clean)
-    for ws in list(connections[(cohort_id, channel_id)]):
+    key = (cohort_id, channel_id)
+    payload = {"type": "message", "message": jsonable_encoder(message)}
+    allowed: dict[str, bool] = {}  # one access check per session per delivery
+    for ws, raw in list(connections[key].items()):
+        if raw not in allowed:
+            allowed[raw] = await asyncio.to_thread(_socket_allowed, raw, cohort_id)
+        if not allowed[raw]:
+            await _drop_socket(key, ws)
+            continue
         try:
-            await ws.send_json({"type": "message", "message": jsonable_encoder(message)}, mode="text")
+            await ws.send_json(payload, mode="text")
         except Exception:
-            connections[(cohort_id, channel_id)].discard(ws)
+            connections[key].pop(ws, None)
     return message
 
 
@@ -269,20 +302,21 @@ async def chat_socket(ws: WebSocket, cohort_id: int, channel_id: int):
     if origin != f"https://{ws.headers.get('host', '')}":
         await ws.close(code=1008)
         return
-    account = await asyncio.to_thread(db.session_account, ws.cookies.get(COOKIE, ""))
+    raw = ws.cookies.get(COOKIE, "")
+    account = await asyncio.to_thread(db.session_account, raw)
     if not account or not await asyncio.to_thread(db.access, account, cohort_id) or not await asyncio.to_thread(db.channel, cohort_id, channel_id):
         await ws.close(code=1008)
         return
     await ws.accept()
     key = (cohort_id, channel_id)
-    connections[key].add(ws)
+    connections[key][ws] = raw
     try:
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:
         pass
     finally:
-        connections[key].discard(ws)
+        connections[key].pop(ws, None)
 
 
 @router.get("/api/cohorts/{cohort_id}/questions")
