@@ -93,6 +93,8 @@ class NewChannel(BaseModel):
 
 
 @router.get("")
+@router.get("/cohorts/{slug}/chat")
+@router.get("/cohorts/{slug}/board")
 async def hub_page():
     page = FRONTEND_BUILD_DIR / "index.html"
     if not page.is_file():

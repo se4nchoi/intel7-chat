@@ -1,3 +1,5 @@
+import { errorMessage } from './korean.js';
+
 const API_BASE = '/hub/api';
 
 export async function api(path, options = {}) {
@@ -9,7 +11,7 @@ export async function api(path, options = {}) {
   delete init.json;
   const response = await fetch(`${API_BASE}${path}`, init);
   const data = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.detail || `Request failed (${response.status})`);
+  if (!response.ok) throw new Error(errorMessage(data?.detail, response.status));
   return data;
 }
 
@@ -28,6 +30,6 @@ export async function uploadFile(cohortId, form) {
   });
   if (!response.ok) {
     const data = await response.json().catch(() => null);
-    throw new Error(data?.detail || `Upload failed (${response.status})`);
+    throw new Error(errorMessage(data?.detail, response.status));
   }
 }

@@ -1,6 +1,10 @@
 # Prototype handoff (2026-09-23)
 
 Start here when continuing BambooChat on another PC or in another Codex task.
+
+For the 2026-09-28 setup on the current PC, verified workflows, and open bugs,
+see [Edu prototype audit](edu-audit-2026-09-28.md). The host-specific paths and
+certificate below describe the earlier PC.
 The working branch is `edu/prototype`. The earlier conversation on the user's
 home PC is not available here; confirm any requirements that are missing from
 these documents with the user.
