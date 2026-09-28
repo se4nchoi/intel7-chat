@@ -209,11 +209,18 @@ def channels(cohort_id: int):
         return conn.execute("SELECT id, name, slug FROM hub_channels WHERE cohort_id=%s ORDER BY id", (cohort_id,)).fetchall()
 
 
+# Cohort role of an author, as shown next to their name. Admins without a
+# membership show as "admin"; former (inactive) members show as "member".
+AUTHOR_ROLE = "COALESCE(mb.role, CASE WHEN a.is_admin THEN 'admin' END, 'member')"
+
+
 def messages(channel_id: int):
     with connect() as conn:
         return conn.execute(
-            """SELECT m.id, m.body, m.created_at, a.username, a.display_name
+            f"""SELECT m.id, m.body, m.created_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
                FROM hub_messages m JOIN hub_accounts a ON a.id=m.author_id
+               JOIN hub_channels c ON c.id=m.channel_id
+               LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active
                WHERE m.channel_id=%s ORDER BY m.id DESC LIMIT 100""",
             (channel_id,),
         ).fetchall()[::-1]
@@ -222,22 +229,44 @@ def messages(channel_id: int):
 def add_message(channel_id: int, account_id: int, body: str):
     with connect() as conn:
         return conn.execute(
-            """WITH new_message AS (
+            f"""WITH new_message AS (
                  INSERT INTO hub_messages (channel_id, author_id, body) VALUES (%s,%s,%s)
-                 RETURNING id, author_id, body, created_at)
-               SELECT m.id, m.body, m.created_at, a.username, a.display_name
-               FROM new_message m JOIN hub_accounts a ON a.id=m.author_id""",
+                 RETURNING id, channel_id, author_id, body, created_at)
+               SELECT m.id, m.body, m.created_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
+               FROM new_message m JOIN hub_accounts a ON a.id=m.author_id
+               JOIN hub_channels c ON c.id=m.channel_id
+               LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active""",
             (channel_id, account_id, body),
         ).fetchone()
+
+
+def members(cohort_id: int):
+    with connect() as conn:
+        return conn.execute(
+            """SELECT a.id, a.username, a.display_name, m.role FROM hub_memberships m
+               JOIN hub_accounts a ON a.id=m.account_id
+               WHERE m.cohort_id=%s AND m.active AND a.active
+               ORDER BY m.role, a.display_name""",
+            (cohort_id,),
+        ).fetchall()
 
 
 def questions(cohort_id: int):
     with connect() as conn:
         return conn.execute(
-            """SELECT q.id,q.title,q.body,q.created_at,a.username,
-                      (SELECT count(*) FROM hub_answers x WHERE x.question_id=q.id) AS answer_count
+            f"""SELECT q.id,q.title,q.body,q.created_at,a.username,a.display_name,{AUTHOR_ROLE} AS role,
+                      count(x.id) AS answer_count,
+                      coalesce(bool_or(xm.role='instructor' OR xa.is_admin), FALSE) AS instructor_answered,
+                      coalesce(bool_or(x.endorsed), FALSE) AS endorsed,
+                      greatest(q.created_at, max(x.created_at)) AS last_activity
                FROM hub_questions q JOIN hub_accounts a ON a.id=q.author_id
-               WHERE q.cohort_id=%s ORDER BY q.id DESC LIMIT 100""", (cohort_id,),
+               LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=q.cohort_id AND mb.active
+               LEFT JOIN hub_answers x ON x.question_id=q.id
+               LEFT JOIN hub_accounts xa ON xa.id=x.author_id
+               LEFT JOIN hub_memberships xm ON xm.account_id=x.author_id AND xm.cohort_id=q.cohort_id AND xm.active
+               WHERE q.cohort_id=%s
+               GROUP BY q.id, a.id, mb.role
+               ORDER BY q.id DESC LIMIT 100""", (cohort_id,),
         ).fetchall()
 
 
@@ -257,10 +286,21 @@ def question(cohort_id: int, question_id: int):
 def answers(question_id: int):
     with connect() as conn:
         return conn.execute(
-            """SELECT x.id,x.body,x.endorsed,x.created_at,a.username FROM hub_answers x
-               JOIN hub_accounts a ON a.id=x.author_id WHERE x.question_id=%s ORDER BY x.id""",
+            f"""SELECT x.id,x.body,x.endorsed,x.created_at,a.username,a.display_name,{AUTHOR_ROLE} AS role
+               FROM hub_answers x JOIN hub_accounts a ON a.id=x.author_id
+               JOIN hub_questions q ON q.id=x.question_id
+               LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=q.cohort_id AND mb.active
+               WHERE x.question_id=%s ORDER BY x.id""",
             (question_id,),
         ).fetchall()
+
+
+def set_endorsed(question_id: int, answer_id: int, endorsed: bool):
+    with connect() as conn:
+        return conn.execute(
+            "UPDATE hub_answers SET endorsed=%s WHERE id=%s AND question_id=%s RETURNING id, endorsed",
+            (endorsed, answer_id, question_id),
+        ).fetchone()
 
 
 def add_answer(question_id: int, account_id: int, body: str):

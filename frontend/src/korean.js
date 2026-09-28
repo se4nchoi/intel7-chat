@@ -21,6 +21,7 @@ const messages = {
   'Unsupported file type': '지원하지 않는 파일 형식입니다. 문서, 이미지 또는 텍스트 파일을 선택하세요.',
   'Files must be between 1 byte and 10 MB': '빈 파일은 올릴 수 없으며 파일 크기는 최대 10MB입니다.',
   'File not found': '파일을 찾을 수 없습니다.',
+  'Answer not found': '답변을 찾을 수 없습니다.',
 };
 const fields = {username:'아이디', password:'비밀번호', display_name:'표시 이름', slug:'주소 ID', name:'이름', role:'역할', title:'질문 제목', body:'내용', upload:'파일'};
 export function errorMessage(detail, status) {

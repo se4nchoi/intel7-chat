@@ -55,3 +55,46 @@ The earlier audit's server-side WebSocket revocation defect remains a
 separate backend task. This change closes this page's socket on navigation
 and logout; it does not claim to revoke other clients' open subscriptions.
 Native screen capture and multi-device media delivery still need verification.
+
+## Discord/Piazza layout (2026-09-28)
+
+The shell is now three columns: a cohort rail (one icon per cohort, replaces
+the cohort `<select>`), a sidebar that switches between chat channels and the
+Q&A feed, and the content pane. Below 800px the rail and sidebar become a
+drawer; below 1100px the member list is an overlay toggled from the top bar.
+Light/dark follows the OS; the user panel toggle stores a per-browser choice.
+
+Chat: grouped messages (same author within 5 minutes), day dividers, avatars,
+role-coloured names and tags, Enter to send / Shift+Enter for a newline, and a
+member list grouped by instructor/student. Screen share moved into a
+collapsible stage above the messages ("화면 공유" in the top bar); the LiveKit
+flow is unchanged, and "연결하기" now toggles to "연결 끊기".
+
+Board: Piazza-style feed with search, filters (전체 / 미답변 / 강사 답변 대기 /
+내 질문), date groups, and badges (i = instructor answered, s = any answer,
+✓ = endorsed, red edge = unanswered). A post shows separate instructor and
+student answer sections; instructors/admins can endorse student answers.
+Files live under "자료실" at the bottom of the feed. `#post-{id}` in the board
+URL opens that post, so posts can be linked.
+
+Management moved into a dialog opened from the gear in the user panel (or the
+`+` next to channels). Form IDs and API calls are unchanged.
+
+### API additions
+
+- `messages`, `questions`, `answers` rows include `role`
+  (`admin`/`instructor`/`student`/`member`) and `display_name`.
+- `questions` rows include `instructor_answered`, `endorsed`, `last_activity`.
+- `GET /hub/api/cohorts/{id}/members` — active members with role.
+- `POST /hub/api/cohorts/{id}/questions/{qid}/answers/{aid}/endorse`
+  `{ "endorsed": bool }` — instructor/admin only; uses the existing
+  `hub_answers.endorsed` column, so no schema change.
+
+`tests/test_hub_board_api.py` covers these against a disposable PostgreSQL
+database and skips unless `BAMBOOCHAT_HUB_TEST_DATABASE_URL` is set.
+
+### Not in this pass
+
+DMs/group DMs, threads, reactions, message edit/delete, unread counts,
+presence, attachments inside Q&A posts, follow-up discussions, and
+question edit/resolve. Each needs schema work.

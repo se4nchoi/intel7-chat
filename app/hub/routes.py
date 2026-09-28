@@ -71,6 +71,10 @@ class Answer(BaseModel):
     body: str = Field(min_length=1, max_length=5000)
 
 
+class Endorsement(BaseModel):
+    endorsed: bool
+
+
 class NewCohort(BaseModel):
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,39}$")
     name: str = Field(min_length=2, max_length=100)
@@ -180,6 +184,12 @@ async def add_membership(cohort_id: int, body: Membership, request: Request):
     if not record:
         raise HTTPException(404, "Account not found")
     return record
+
+
+@router.get("/api/cohorts/{cohort_id}/members")
+async def members(cohort_id: int, request: Request):
+    await _cohort(request, cohort_id)
+    return await asyncio.to_thread(db.members, cohort_id)
 
 
 @router.get("/api/cohorts/{cohort_id}/channels")
@@ -309,6 +319,18 @@ async def add_answer(cohort_id: int, question_id: int, body: Answer, request: Re
         raise HTTPException(400, "Answer cannot be empty")
     answer_id = await asyncio.to_thread(db.add_answer, question_id, account["id"], body.body.strip())
     return {"id": answer_id}
+
+
+@router.post("/api/cohorts/{cohort_id}/questions/{question_id}/answers/{answer_id}/endorse")
+async def endorse_answer(cohort_id: int, question_id: int, answer_id: int, body: Endorsement, request: Request):
+    _same_origin(request)
+    await _cohort(request, cohort_id, manage=True)
+    if not await asyncio.to_thread(db.question, cohort_id, question_id):
+        raise HTTPException(404, "Question not found")
+    record = await asyncio.to_thread(db.set_endorsed, question_id, answer_id, body.endorsed)
+    if not record:
+        raise HTTPException(404, "Answer not found")
+    return record
 
 
 @router.get("/api/cohorts/{cohort_id}/files")
