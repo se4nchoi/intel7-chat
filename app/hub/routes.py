@@ -349,8 +349,12 @@ async def add_message(cohort_id: int, channel_id: int, body: Message, request: R
     if not clean:
         raise HTTPException(400, "Message cannot be empty")
     message = await asyncio.to_thread(db.add_message, channel_id, account["id"], clean)
+    await _broadcast(cohort_id, channel_id, {"type": "message", "message": jsonable_encoder(message)})
+    return message
+
+
+async def _broadcast(cohort_id: int, channel_id: int, payload: dict) -> None:
     key = (cohort_id, channel_id)
-    payload = {"type": "message", "message": jsonable_encoder(message)}
     allowed: dict[str, bool] = {}  # one access check per session per delivery
     for ws, raw in list(connections[key].items()):
         if raw not in allowed:
@@ -363,7 +367,6 @@ async def add_message(cohort_id: int, channel_id: int, body: Message, request: R
             await ws.send_json(payload, mode="text")
         except Exception:
             connections[key].pop(ws, None)
-    return message
 
 
 @router.websocket("/ws/cohorts/{cohort_id}/channels/{channel_id}")
@@ -591,3 +594,56 @@ async def remove_member(cohort_id: int, account_id: int, request: Request):
     closed = await _prune_sockets(cohort_id)
     log.info("member removed by=%r cohort=%s account=%s role=%s sockets_closed=%s",
              actor["username"], cohort_id, account_id, current["role"], closed)
+
+
+# --- Moderation: authors delete their own posts; instructors and admins any in their cohort ---
+
+def _may_delete(account: dict, cohort: dict, author_id: int) -> bool:
+    return author_id == account["id"] or cohort["role"] in {"admin", "instructor"}
+
+
+@router.delete("/api/cohorts/{cohort_id}/channels/{channel_id}/messages/{message_id}", status_code=204)
+async def delete_message(cohort_id: int, channel_id: int, message_id: int, request: Request):
+    _same_origin(request)
+    account, cohort = await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+        raise HTTPException(404, "Channel not found")
+    found = await asyncio.to_thread(db.message_author, channel_id, message_id)
+    if not found:
+        raise HTTPException(404, "Message not found")
+    if not _may_delete(account, cohort, found["author_id"]):
+        raise HTTPException(403, "You can only delete your own posts")
+    await asyncio.to_thread(db.soft_delete, "message", message_id, account["id"])
+    await _broadcast(cohort_id, channel_id, {"type": "message_deleted", "id": message_id})
+    log.info("message deleted by=%r cohort=%s channel=%s message=%s own=%s", account["username"], cohort_id,
+             channel_id, message_id, found["author_id"] == account["id"])
+
+
+@router.delete("/api/cohorts/{cohort_id}/questions/{question_id}", status_code=204)
+async def delete_question(cohort_id: int, question_id: int, request: Request):
+    _same_origin(request)
+    account, cohort = await _cohort(request, cohort_id)
+    found = await asyncio.to_thread(db.question, cohort_id, question_id)
+    if not found:
+        raise HTTPException(404, "Question not found")
+    if not _may_delete(account, cohort, found["author_id"]):
+        raise HTTPException(403, "You can only delete your own posts")
+    await asyncio.to_thread(db.soft_delete, "question", question_id, account["id"])
+    log.info("question deleted by=%r cohort=%s question=%s own=%s", account["username"], cohort_id,
+             question_id, found["author_id"] == account["id"])
+
+
+@router.delete("/api/cohorts/{cohort_id}/questions/{question_id}/answers/{answer_id}", status_code=204)
+async def delete_answer(cohort_id: int, question_id: int, answer_id: int, request: Request):
+    _same_origin(request)
+    account, cohort = await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.question, cohort_id, question_id):
+        raise HTTPException(404, "Question not found")
+    found = await asyncio.to_thread(db.answer_author, question_id, answer_id)
+    if not found:
+        raise HTTPException(404, "Answer not found")
+    if not _may_delete(account, cohort, found["author_id"]):
+        raise HTTPException(403, "You can only delete your own posts")
+    await asyncio.to_thread(db.soft_delete, "answer", answer_id, account["id"])
+    log.info("answer deleted by=%r cohort=%s question=%s answer=%s own=%s", account["username"], cohort_id,
+             question_id, answer_id, found["author_id"] == account["id"])

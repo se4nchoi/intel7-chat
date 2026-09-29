@@ -237,9 +237,9 @@ def messages(channel_id: int, after: int | None = None):
     """The latest 100 messages, or (after=id) up to 500 newer ones for a reconnecting client."""
     with connect() as conn:
         if after is not None:
-            return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.id>%s ORDER BY m.id LIMIT %s",
+            return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.id>%s AND m.deleted_at IS NULL ORDER BY m.id LIMIT %s",
                                 (channel_id, after, CATCH_UP_LIMIT)).fetchall()
-        return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s ORDER BY m.id DESC LIMIT 100",
+        return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 100",
                             (channel_id,)).fetchall()[::-1]
 
 
@@ -278,10 +278,10 @@ def questions(cohort_id: int):
                       greatest(q.created_at, max(x.created_at)) AS last_activity
                FROM hub_questions q JOIN hub_accounts a ON a.id=q.author_id
                LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=q.cohort_id AND mb.active
-               LEFT JOIN hub_answers x ON x.question_id=q.id
+               LEFT JOIN hub_answers x ON x.question_id=q.id AND x.deleted_at IS NULL
                LEFT JOIN hub_accounts xa ON xa.id=x.author_id
                LEFT JOIN hub_memberships xm ON xm.account_id=x.author_id AND xm.cohort_id=q.cohort_id AND xm.active
-               WHERE q.cohort_id=%s
+               WHERE q.cohort_id=%s AND q.deleted_at IS NULL
                GROUP BY q.id, a.id, mb.role
                ORDER BY q.id DESC LIMIT 100""", (cohort_id,),
         ).fetchall()
@@ -296,7 +296,7 @@ def add_question(cohort_id: int, account_id: int, title: str, body: str):
 
 def question(cohort_id: int, question_id: int):
     with connect() as conn:
-        return conn.execute("SELECT id FROM hub_questions WHERE id=%s AND cohort_id=%s",
+        return conn.execute("SELECT id, author_id FROM hub_questions WHERE id=%s AND cohort_id=%s AND deleted_at IS NULL",
                             (question_id, cohort_id)).fetchone()
 
 
@@ -307,7 +307,7 @@ def answers(question_id: int):
                FROM hub_answers x JOIN hub_accounts a ON a.id=x.author_id
                JOIN hub_questions q ON q.id=x.question_id
                LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=q.cohort_id AND mb.active
-               WHERE x.question_id=%s ORDER BY x.id""",
+               WHERE x.question_id=%s AND x.deleted_at IS NULL ORDER BY x.id""",
             (question_id,),
         ).fetchall()
 
@@ -315,7 +315,7 @@ def answers(question_id: int):
 def set_endorsed(question_id: int, answer_id: int, endorsed: bool):
     with connect() as conn:
         return conn.execute(
-            "UPDATE hub_answers SET endorsed=%s WHERE id=%s AND question_id=%s RETURNING id, endorsed",
+            "UPDATE hub_answers SET endorsed=%s WHERE id=%s AND question_id=%s AND deleted_at IS NULL RETURNING id, endorsed",
             (endorsed, answer_id, question_id),
         ).fetchone()
 
@@ -444,3 +444,27 @@ def remove_membership(cohort_id: int, account_id: int):
         return conn.execute(
             """UPDATE hub_memberships SET active=FALSE WHERE cohort_id=%s AND account_id=%s AND active
                RETURNING cohort_id, account_id, role""", (cohort_id, account_id)).fetchone()
+
+
+# --- Moderation ---
+
+def message_author(channel_id: int, message_id: int):
+    with connect() as conn:
+        return conn.execute("SELECT author_id FROM hub_messages WHERE id=%s AND channel_id=%s AND deleted_at IS NULL",
+                            (message_id, channel_id)).fetchone()
+
+
+def answer_author(question_id: int, answer_id: int):
+    with connect() as conn:
+        return conn.execute("SELECT author_id FROM hub_answers WHERE id=%s AND question_id=%s AND deleted_at IS NULL",
+                            (answer_id, question_id)).fetchone()
+
+
+_DELETABLE = {"message": "hub_messages", "question": "hub_questions", "answer": "hub_answers"}
+
+
+def soft_delete(kind: str, item_id: int, by_account_id: int) -> bool:
+    with connect() as conn:
+        return bool(conn.execute(
+            f"UPDATE {_DELETABLE[kind]} SET deleted_at=now(), deleted_by=%s WHERE id=%s AND deleted_at IS NULL RETURNING id",
+            (by_account_id, item_id)).fetchone())
