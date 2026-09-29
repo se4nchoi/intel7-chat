@@ -11,7 +11,7 @@ let cohortRequest = 0;
 const state = {
   account: null, cohorts: [], cohort: null, channel: null, socket: null, mediaRoom: null,
   space: readRoute(location.pathname).space, epoch: 0, channelEpoch: 0, questionEpoch: 0, mediaEpoch: 0,
-  channels: new Map(), lastMessage: null,
+  channels: new Map(), lastMessage: null, lastSeenId: 0, reconnectTimer: null, reconnectNow: null,
   questions: [], question: null, filter: 'all', search: '', boardView: 'home', fileCount: null,
 };
 
@@ -58,7 +58,10 @@ function stamp(value) {
 }
 function feedTime(value) { const days = daysAgo(value); return days === 0 ? timeFmt.format(new Date(value)) : shortFmt.format(new Date(value)); }
 function formValues(form) { return Object.fromEntries(new FormData(form)); }
-function closeChat() { const socket = state.socket; state.socket = null; socket?.close(); }
+function closeChat() {
+  clearTimeout(state.reconnectTimer); state.reconnectTimer = null; state.reconnectNow = null;
+  const socket = state.socket; state.socket = null; socket?.close();
+}
 function closeNav() { $('hub-app').classList.remove('nav-open'); }
 
 /* ---------- theme ---------- */
@@ -102,7 +105,7 @@ function updateControls() {
 function resetContent() {
   state.epoch++; state.channelEpoch++; state.questionEpoch++;
   closeChat(); void leaveMedia().catch(error => status(error.message, true));
-  state.channel = null; state.question = null; state.questions = []; state.lastMessage = null; state.fileCount = null;
+  state.channel = null; state.question = null; state.questions = []; state.lastMessage = null; state.lastSeenId = 0; state.fileCount = null;
   for (const id of ['channel-list', 'messages', 'question-list', 'instructor-answers', 'student-answers', 'file-list', 'member-list', 'board-stats']) $(id).replaceChildren();
   $('channel-heading').textContent = '채널을 선택하세요';
   $('message-input').placeholder = '메시지 보내기';
@@ -236,7 +239,7 @@ async function selectChannel(channel) {
   const epoch = state.epoch, channelEpoch = ++state.channelEpoch, cohort = state.cohort;
   closeChat(); await leaveMedia();
   if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
-  state.channel = channel; state.channels.set(cohort.id, channel.id); state.lastMessage = null;
+  state.channel = channel; state.channels.set(cohort.id, channel.id); state.lastMessage = null; state.lastSeenId = 0;
   $('channel-heading').textContent = `# ${channel.name}`;
   $('message-input').placeholder = `#${channel.name}에 메시지 보내기`;
   $('messages').replaceChildren(el('div', { class: 'channel-intro' },
@@ -248,18 +251,61 @@ async function selectChannel(channel) {
     const active = button.dataset.id === String(channel.id);
     button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
   }
-  const messages = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages`);
-  if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
-  messages.forEach(appendMessage);
+  connectChat(cohort, channel);
+}
+const REVOKED_MESSAGE = '로그인이 만료되었거나 이 수강반에 접근할 수 없어 채팅 연결이 종료되었습니다. 다시 로그인하세요.';
+// Open the socket first and hold live messages while fetching history (or,
+// after a drop, everything since the last message seen), so nothing posted in
+// between is lost or shown out of order. Drops reconnect with backoff.
+function connectChat(cohort, channel, retry = 0) {
+  const epoch = state.epoch, channelEpoch = state.channelEpoch;
+  const current = () => epoch === state.epoch && channelEpoch === state.channelEpoch;
   const socket = channelSocket(cohort.id, channel.id); state.socket = socket;
-  socket.onmessage = event => { if (state.socket !== socket) return; const payload = JSON.parse(event.data); if (payload.type === 'message') appendMessage(payload.message); };
-  socket.onclose = event => {
+  let held = [], opened = false;
+  const receive = message => { state.lastSeenId = Math.max(state.lastSeenId, message.id); appendMessage(message); };
+  socket.onmessage = event => {
+    if (state.socket !== socket) return;
+    const payload = JSON.parse(event.data);
+    if (payload.type === 'message') { if (held) held.push(payload.message); else receive(payload.message); }
+  };
+  socket.onopen = async () => {
+    opened = true;
+    const after = state.lastSeenId ? `?after=${state.lastSeenId}` : '';
+    try {
+      const missed = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages${after}`);
+      if (state.socket !== socket) return;
+      missed.forEach(receive); held.forEach(receive); held = null;
+      if (retry) status('채팅에 다시 연결되었습니다.');
+    } catch (error) {
+      if (state.socket === socket) { status(error.message, true); socket.close(); }
+    }
+  };
+  socket.onclose = async event => {
     if (state.socket !== socket) return;
     state.socket = null;
     // 1008: the server revoked this session or cohort access (logout elsewhere, expiry, removal).
-    status(event.code === 1008 ? '로그인이 만료되었거나 이 수강반에 접근할 수 없어 채팅 연결이 종료되었습니다. 다시 로그인하세요.' : '채팅 연결이 끊겼습니다. 새로고침하여 다시 연결하세요.', true);
+    if (event.code === 1008) { status(REVOKED_MESSAGE, true); return; }
+    // A handshake refused before opening looks like a network error; check the session.
+    if (!opened) {
+      try { await api('/me'); } catch (error) {
+        // 401: the session is gone. Anything else (server down, no network) is worth retrying.
+        if (error.status === 401) { if (current()) status(REVOKED_MESSAGE, true); return; }
+      }
+    }
+    if (!current()) return;
+    const next = opened ? 1 : retry + 1;
+    const delay = Math.min(30000, 500 * 2 ** next) * (0.75 + Math.random() / 2);
+    status('채팅 연결이 끊겼습니다. 다시 연결하는 중…', true);
+    const reconnect = () => {
+      clearTimeout(state.reconnectTimer); state.reconnectTimer = null; state.reconnectNow = null;
+      if (current()) connectChat(cohort, channel, next);
+    };
+    state.reconnectTimer = setTimeout(reconnect, delay); state.reconnectNow = reconnect;
   };
 }
+// Skip the wait when the network or the tab comes back.
+addEventListener('online', () => state.reconnectNow?.());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') state.reconnectNow?.(); });
 function appendMessage(message) {
   const box = $('messages');
   if (box.querySelector(`[data-message-id="${message.id}"]`)) return;

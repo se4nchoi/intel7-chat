@@ -193,3 +193,15 @@ def test_login_is_throttled_per_username(hub):
     # Case variants of the same username share the limit; other accounts don't.
     assert client.post("/hub/api/login", json={"username": "STUDENT", "password": PASSWORD}, headers=ORIGIN).status_code == 429
     login(app, "teacher")
+
+
+def test_messages_after_returns_only_newer_in_order(hub):
+    app, cohort_id, channel_id = hub
+    teacher = login(app, "teacher")
+    url = f"/hub/api/cohorts/{cohort_id}/channels/{channel_id}/messages"
+    ids = [teacher.post(url, json={"body": f"m{i}"}, headers=ORIGIN).json()["id"] for i in range(4)]
+    newer = teacher.get(url, params={"after": ids[1]}).json()
+    assert [m["body"] for m in newer] == ["m2", "m3"]
+    assert newer[0]["role"] == "instructor"
+    assert teacher.get(url, params={"after": ids[-1]}).json() == []
+    assert teacher.get(url, params={"after": -1}).status_code == 422

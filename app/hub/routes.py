@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import jwt
-from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
@@ -258,11 +258,11 @@ async def create_channel(cohort_id: int, body: NewChannel, request: Request):
 
 
 @router.get("/api/cohorts/{cohort_id}/channels/{channel_id}/messages")
-async def messages(cohort_id: int, channel_id: int, request: Request):
+async def messages(cohort_id: int, channel_id: int, request: Request, after: int | None = Query(None, ge=0)):
     await _cohort(request, cohort_id)
     if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
         raise HTTPException(404, "Channel not found")
-    return await asyncio.to_thread(db.messages, channel_id)
+    return await asyncio.to_thread(db.messages, channel_id, after)
 
 
 @router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/media-token")

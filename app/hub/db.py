@@ -254,16 +254,21 @@ def channels(cohort_id: int):
 AUTHOR_ROLE = "COALESCE(mb.role, CASE WHEN a.is_admin THEN 'admin' END, 'member')"
 
 
-def messages(channel_id: int):
-    with connect() as conn:
-        return conn.execute(
-            f"""SELECT m.id, m.body, m.created_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
+MESSAGE_SELECT = f"""SELECT m.id, m.body, m.created_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
                FROM hub_messages m JOIN hub_accounts a ON a.id=m.author_id
                JOIN hub_channels c ON c.id=m.channel_id
-               LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active
-               WHERE m.channel_id=%s ORDER BY m.id DESC LIMIT 100""",
-            (channel_id,),
-        ).fetchall()[::-1]
+               LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active"""
+CATCH_UP_LIMIT = 500
+
+
+def messages(channel_id: int, after: int | None = None):
+    """The latest 100 messages, or (after=id) up to 500 newer ones for a reconnecting client."""
+    with connect() as conn:
+        if after is not None:
+            return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.id>%s ORDER BY m.id LIMIT %s",
+                                (channel_id, after, CATCH_UP_LIMIT)).fetchall()
+        return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s ORDER BY m.id DESC LIMIT 100",
+                            (channel_id,)).fetchall()[::-1]
 
 
 def add_message(channel_id: int, account_id: int, body: str):
