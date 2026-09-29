@@ -64,9 +64,9 @@
       <footer class="user-panel">
         <span id="user-avatar" class="avatar sm" aria-hidden="true"></span>
         <div class="user-meta"><strong id="account-name"></strong><small id="account-label" class="muted"></small></div>
-        <button id="theme-btn" class="icon-btn" title="테마 전환" aria-label="테마 전환">◐</button>
-        <button id="manage-btn" class="icon-btn" title="계정 및 관리" aria-label="계정 및 관리">⚙</button>
-        <button id="logout-btn" class="icon-btn" title="로그아웃" aria-label="로그아웃">⎋</button>
+        <button id="theme-btn" class="icon-btn" title="밝게/어둡게" aria-label="밝은 화면과 어두운 화면 전환"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
+        <button id="manage-btn" class="icon-btn" title="계정 및 관리 (비밀번호 변경 등)" aria-label="계정 및 관리"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button id="logout-btn" class="icon-btn" title="로그아웃" aria-label="로그아웃"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5M15 8l4 4-4 4M9 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </footer>
     </aside>
     <div id="scrim" class="scrim" aria-hidden="true"></div>
@@ -106,12 +106,16 @@
               <h3>📌 고정된 메시지</h3>
               <ul id="pins-list"></ul>
             </section>
-            <div id="messages" class="messages" role="log" aria-label="채널 메시지" aria-live="polite"></div>
+            <div class="messages-wrap">
+              <div id="messages" class="messages" role="log" aria-label="채널 메시지" aria-live="polite"></div>
+              <button id="jump-new" class="jump-new hidden" type="button">↓ 새 메시지</button>
+            </div>
             <form id="message-form" class="composer">
               <label class="sr-only" for="message-input">이 채널에 메시지 보내기</label>
               <textarea id="message-input" rows="1" maxlength="2000" placeholder="메시지 보내기" required></textarea>
               <button class="primary" aria-label="보내기">보내기</button>
             </form>
+            <p class="composer-hint" aria-hidden="true"><kbd>Enter</kbd> 보내기 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 · <code>**굵게**</code> · <code>`코드`</code> · <code>```</code>로 감싸면 코드 블록 · <code>@아이디</code> 멘션</p>
           </div>
           <aside id="member-list" class="members" aria-label="구성원"></aside>
         </div>
@@ -149,11 +153,11 @@
               <div class="form-actions"><button type="button" id="post-edit-cancel" class="ghost">취소</button><button class="primary">저장</button></div>
             </form>
             <section class="answer-block instructor">
-              <h3>강사 답변</h3>
+              <h3><span aria-hidden="true">🎓</span> 강사 답변</h3>
               <ul id="instructor-answers" class="answers"></ul>
             </section>
             <section class="answer-block student">
-              <h3>수강생 답변</h3>
+              <h3><span aria-hidden="true">🙋</span> 수강생 답변</h3>
               <ul id="student-answers" class="answers"></ul>
             </section>
             <form id="answer-form" class="answer-form">

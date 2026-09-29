@@ -211,8 +211,6 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .post-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.65; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
 .answer-block { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
 .answer-block h3 { font-size: 13px; padding: 10px 16px; background: var(--elev); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
-.answer-block.instructor h3::before { content: "i"; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: var(--instructor); color: #fff; font-weight: 800; font-size: 11px; font-style: italic; }
-.answer-block.student h3::before { content: "s"; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: var(--accent); color: var(--accent-text); font-weight: 800; font-size: 11px; }
 .answers { list-style: none; margin: 0; padding: 0; }
 .answers > li { padding: 14px 16px; border-bottom: 1px solid var(--border); display: grid; gap: 6px; }
 .answers > li:last-child { border-bottom: 0; }
@@ -350,3 +348,26 @@ button.member:hover .dm-hint, button.member:focus-visible .dm-hint { visibility:
 .dm-candidate:hover, .dm-candidate:focus-visible { background: var(--active); }
 .online-tag { background: color-mix(in srgb, #2fb36f 18%, transparent); color: #1f8a53; }
 .small { font-size: 12px; }
+
+/* Message formatting */
+.msg-text code, .post-body code, .answer-body code { padding: 1px 5px; border-radius: 4px; background: var(--hover); font-family: ui-monospace, "Cascadia Code", Consolas, "D2Coding", monospace; font-size: .9em; }
+.code-block { position: relative; margin: 6px 0; padding: 10px 12px; border-radius: 8px; background: #1d2321; color: #e6ede9; overflow-x: auto; white-space: pre; font-size: 13px; line-height: 1.5; }
+.code-block code { padding: 0; background: none; color: inherit; font-size: inherit; }
+.code-lang { position: absolute; left: 12px; top: 4px; font-size: 10px; color: #8fa39a; text-transform: lowercase; }
+.code-block:has(.code-lang) { padding-top: 22px; }
+.copy-code { position: absolute; right: 6px; top: 6px; padding: 2px 8px; font-size: 11px; border-radius: 6px; border: 1px solid #3a4541; background: #29312e; color: #cfdad5; opacity: .75; }
+.copy-code:hover, .copy-code:focus-visible { opacity: 1; }
+.msg-text a, .post-body a, .answer-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.mention { padding: 0 3px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-weight: 600; }
+.mention.me { background: color-mix(in srgb, #e0a100 25%, transparent); color: inherit; }
+
+/* Orientation aids */
+.user-panel .icon-btn svg { width: 18px; height: 18px; }
+.composer-hint { margin: -10px 18px 10px; font-size: 11px; color: var(--faint); }
+.composer-hint code, .composer-hint kbd { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; padding: 0 4px; border-radius: 4px; background: var(--hover); border: 0; }
+.messages-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.messages-wrap .messages { flex: 1; }
+.jump-new { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); padding: 6px 14px; border-radius: 16px; border: 0; background: var(--accent); color: var(--accent-text); font-weight: 600; box-shadow: var(--shadow); }
+.new-divider { display: flex; align-items: center; gap: 8px; margin: 10px 16px 2px; color: var(--danger); font-size: 11px; font-weight: 700; }
+.new-divider::before, .new-divider::after { content: ""; flex: 1; height: 1px; background: var(--danger); opacity: .6; }
+@media (max-width: 700px) { .composer-hint { display: none; } }

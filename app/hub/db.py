@@ -491,7 +491,7 @@ def unread_counts(cohort_id: int, account: dict):
     mention = f"%@{_like_literal(account['username'])}%"
     with connect() as conn:
         return conn.execute(
-            """SELECT c.id AS channel_id,
+            """SELECT c.id AS channel_id, coalesce(r.last_read_id, 0) AS last_read_id,
                       count(m.id) AS unread,
                       count(m.id) FILTER (WHERE m.body ILIKE %(mention)s ESCAPE '\\') AS mentions
                FROM hub_channels c
@@ -500,7 +500,7 @@ def unread_counts(cohort_id: int, account: dict):
                     AND m.deleted_at IS NULL AND m.author_id <> %(me)s
                WHERE c.cohort_id=%(cohort)s AND (c.kind='channel' OR EXISTS
                      (SELECT 1 FROM hub_dm_members d WHERE d.channel_id=c.id AND d.account_id=%(me)s))
-               GROUP BY c.id ORDER BY c.id""",
+               GROUP BY c.id, r.last_read_id ORDER BY c.id""",
             {"mention": mention, "me": account["id"], "cohort": cohort_id}).fetchall()
 
 

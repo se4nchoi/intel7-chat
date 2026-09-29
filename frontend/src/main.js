@@ -1,6 +1,7 @@
 import { errorMessage, installKoreanValidation } from './korean.js';
 import { api, cohortSocket, fileDownloadUrl, uploadFile } from './api.js';
 import { readRoute, spaceUrl } from './navigation.js';
+import { renderRich } from './format.js';
 
 const $ = id => document.getElementById(id);
 const ROLE_LABEL = { admin: '관리자', instructor: '강사', student: '수강생', member: '구성원' };
@@ -13,7 +14,7 @@ const state = {
   space: readRoute(location.pathname).space, epoch: 0, channelEpoch: 0, questionEpoch: 0, mediaEpoch: 0,
   channels: new Map(), lastMessage: null, lastSeenId: 0, reconnectTimer: null, reconnectNow: null,
   channelList: [], unread: new Map(), online: new Set(), members: [], holding: null, historyLoaded: false, ackTimer: null,
-  messageMap: new Map(), pins: [], dms: [],
+  messageMap: new Map(), pins: [], dms: [], newBelow: 0,
   questions: [], question: null, filter: 'all', search: '', boardView: 'home', fileCount: null,
 };
 
@@ -47,8 +48,8 @@ const canEdit = item => !!state.cohort && !state.cohort.archived && item.usernam
 function editedMark(item) {
   return item.edited_at ? el('span', { class: 'edited', text: '(수정됨)', title: `${new Date(item.edited_at).toLocaleString('ko-KR')}에 수정` }) : null;
 }
-// One place that turns stored text into what is shown, so formatting can be added here later.
-function renderBody(node, text) { node.textContent = text; return node; }
+// Stored text becomes formatted DOM (code, bold, links, @mentions) without ever using innerHTML.
+function renderBody(node, text) { return renderRich(node, text, { me: state.account?.username }); }
 const roleClass = role => (role === 'instructor' || role === 'admin') ? role : '';
 function hue(text) { let h = 0; for (const ch of String(text)) h = (h * 31 + ch.codePointAt(0)) % 360; return h; }
 function initials(name) { const trimmed = String(name || '?').trim(); return /[가-힣]/.test(trimmed[0]) ? trimmed.slice(0, 1) : trimmed.slice(0, 2).toUpperCase(); }
@@ -120,7 +121,7 @@ function resetContent() {
   closeChat(); void leaveMedia().catch(error => status(error.message, true));
   state.channel = null; state.question = null; state.questions = []; state.lastMessage = null; state.lastSeenId = 0; state.fileCount = null;
   state.channelList = []; state.unread = new Map(); state.online = new Set(); state.members = []; state.holding = null; state.historyLoaded = false;
-  state.messageMap = new Map(); state.pins = []; state.dms = []; renderPins();
+  state.messageMap = new Map(); state.pins = []; state.dms = []; state.newBelow = 0; renderPins();
   clearTimeout(state.ackTimer); updateTitle();
   for (const id of ['channel-list', 'messages', 'question-list', 'instructor-answers', 'student-answers', 'file-list', 'member-list', 'board-stats']) $(id).replaceChildren();
   $('channel-heading').textContent = '채널을 선택하세요';
@@ -219,9 +220,10 @@ document.addEventListener('keydown', event => { if (event.key === 'Escape') { cl
 /* ---------- chat ---------- */
 async function loadChannels() {
   const epoch = state.epoch, cohort = state.cohort;
-  const channels = await api(`/cohorts/${cohort.id}/channels`);
+  const [channels, counts] = await Promise.all([api(`/cohorts/${cohort.id}/channels`), api(`/cohorts/${cohort.id}/unread`).catch(() => [])]);
   if (epoch !== state.epoch) return;
   state.channelList = channels;
+  state.unread = new Map(counts.map(c => [c.channel_id, c]));
   renderChannelList();
   if (channels.length) await selectChannel(channels.find(c => c.id === state.channels.get(cohort.id)) || channels[0]);
   else {
@@ -350,7 +352,15 @@ async function selectChannel(channel) {
   // Live messages for this channel are held while its history loads, then applied in order.
   const history = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages`);
   if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
-  history.forEach(receive);
+  const lastRead = Number(state.unread.get(channel.id)?.last_read_id ?? Infinity);
+  const firstNew = history.find(m => m.id > lastRead && m.username !== state.account?.username);
+  for (const message of history) {
+    // The divider goes in first so the first new message starts its own group, author shown.
+    if (message === firstNew) $('messages').append(el('div', { class: 'new-divider', role: 'separator', 'aria-label': '여기부터 새 메시지' }, el('span', { text: '새 메시지' })));
+    receive(message);
+  }
+  state.newBelow = 0; showJump();
+  if (firstNew) $('messages').querySelector('.new-divider').scrollIntoView({ block: 'center' });
   state.historyLoaded = true;
   state.pins = history.filter(m => m.pinned_at); renderPins(); loadPins().catch(() => {});
   flushHolding();
@@ -488,7 +498,18 @@ function appendMessage(message) {
   box.append(row);
   state.lastMessage = message;
   if (nearBottom || message.username === state.account?.username) box.scrollTop = box.scrollHeight;
+  else if (state.historyLoaded) { state.newBelow += 1; showJump(); }
 }
+function showJump() {
+  const n = state.newBelow;
+  $('jump-new').textContent = `↓ 새 메시지 ${n}개`;
+  $('jump-new').classList.toggle('hidden', !n);
+}
+$('jump-new').addEventListener('click', () => { const box = $('messages'); box.scrollTop = box.scrollHeight; });
+$('messages').addEventListener('scroll', () => {
+  const box = $('messages');
+  if (box.scrollHeight - box.scrollTop - box.clientHeight < 60 && state.newBelow) { state.newBelow = 0; showJump(); }
+});
 function messageActions(message, row) {
   const name = message.display_name || message.username;
   const writable = !!state.cohort && !state.cohort.archived;
@@ -566,7 +587,7 @@ function renderPins() {
   $('pins-list').replaceChildren(...(count ? state.pins.map(pin => el('li', {},
     el('button', { type: 'button', class: 'pin-item', onclick: () => jumpTo(pin.id) },
       el('strong', { text: pin.display_name || pin.username }), el('small', { class: 'muted', text: ` · ${stamp(pin.created_at)}` }),
-      renderBody(el('span', { class: 'pin-text' }), pin.body)))) : [el('li', { class: 'muted', text: isManager() ? '고정된 메시지가 없습니다. 메시지에 마우스를 올려 📌 고정을 누르세요.' : '고정된 메시지가 없습니다.' })]));
+      el('span', { class: 'pin-text', text: pin.body })))) : [el('li', { class: 'muted', text: isManager() ? '고정된 메시지가 없습니다. 메시지에 마우스를 올려 📌 고정을 누르세요.' : '고정된 메시지가 없습니다.' })]));
 }
 function jumpTo(messageId) {
   const row = $('messages').querySelector(`[data-message-id="${messageId}"]`);
@@ -688,8 +709,7 @@ function renderFeed() {
       el('span', { class: 'feed-title' }, el('span', { text: q.title }), el('time', { datetime: q.created_at, text: feedTime(q.created_at) })),
       el('span', { class: 'feed-snippet', text: q.body }),
       el('span', { class: 'feed-badges' },
-        q.instructor_answered ? el('span', { class: 'badge-i', title: '강사 답변 있음', text: 'i' }) : null,
-        answers > 0 ? el('span', { class: 'badge-s', title: '답변 있음', text: 's' }) : null,
+        q.instructor_answered ? el('span', { class: 'tag instructor', text: '🎓 강사 답변' }) : null,
         q.endorsed ? el('span', { class: 'endorsed-mark', text: '✓ 인정됨' }) : null,
         answers === 0 ? el('span', { class: 'tag danger', text: '미답변' }) : el('span', { text: `답변 ${answers}` }),
         el('span', { text: `· ${q.display_name || q.username}` })));

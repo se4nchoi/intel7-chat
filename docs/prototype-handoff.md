@@ -91,6 +91,22 @@ The old UI is still under `app/static` while its features are migrated.
 - No cross-floor, second-device certificate, capacity, backup/restore, home
   access, or production uptime test has been done.
 
+## 마디 features (branch `edu/discord-piazza-ui`, 2026-09-29)
+
+- Chat: one live connection per cohort with automatic reconnect and catch-up,
+  unread counts and @mention badges, a "새 메시지" divider and jump button,
+  presence dots, edit (author only) and delete (author, or instructors in
+  channels), emoji reactions, instructor pins, and code/bold/link/@mention
+  formatting rendered without innerHTML.
+- Direct messages between members of the same cohort, private to the two
+  people (admins cannot read them in the UI).
+- Q&A: edit and delete for questions and answers, instructor endorsement.
+- Administration: accounts (disable, temporary password), own password
+  change, cohort archive/reopen, member removal; all actions logged.
+- Deleted and edited posts keep their original text in the database
+  (`deleted_at`/`deleted_by`, `hub_edit_history`) for the record.
+- Not migrated from the legacy app: quizzes and games.
+
 ## Continuing on another PC
 
 1. Fetch and check out `edu/prototype`. Keep the original LAN service checkout

@@ -56,8 +56,9 @@ def test_unread_counts_mentions_and_marking_read(hub):
     assert student.post(f"/hub/api/cohorts/{cohort_id}/channels/{homework}/read", json={"message_id": last}, headers=ORIGIN).status_code == 204
     # Marking an older message later never moves the marker backwards.
     student.post(f"/hub/api/cohorts/{cohort_id}/channels/{homework}/read", json={"message_id": 0}, headers=ORIGIN)
-    counts = {c["channel_id"]: c["unread"] for c in student.get(url).json()}
-    assert counts == {general: 2, homework: 0}
+    rows = {c["channel_id"]: c for c in student.get(url).json()}
+    assert {k: v["unread"] for k, v in rows.items()} == {general: 2, homework: 0}
+    assert (rows[homework]["last_read_id"], rows[general]["last_read_id"]) == (last, 0)
 
 
 def test_mention_match_is_literal(hub):
