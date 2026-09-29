@@ -378,3 +378,69 @@ def create_channel(cohort_id: int, slug: str, name: str):
     with connect() as conn:
         return conn.execute("INSERT INTO hub_channels (cohort_id,slug,name) VALUES (%s,%s,%s) RETURNING id,slug,name",
                             (cohort_id, slug, name)).fetchone()
+
+
+# --- Administration ---
+
+def list_accounts():
+    with connect() as conn:
+        return conn.execute(
+            """SELECT a.id, a.username, a.display_name, a.is_admin, a.active, a.created_at,
+                      coalesce(json_agg(json_build_object('cohort_id', m.cohort_id, 'role', m.role))
+                               FILTER (WHERE m.cohort_id IS NOT NULL), '[]') AS memberships
+               FROM hub_accounts a LEFT JOIN hub_memberships m ON m.account_id=a.id AND m.active
+               GROUP BY a.id ORDER BY a.is_admin DESC, a.username""").fetchall()
+
+
+def account(account_id: int):
+    with connect() as conn:
+        return conn.execute("SELECT id, username, display_name, is_admin, active FROM hub_accounts WHERE id=%s",
+                            (account_id,)).fetchone()
+
+
+def set_account_active(account_id: int, active: bool):
+    """Enable or disable an account; disabling also ends all its sessions."""
+    with connect() as conn:
+        row = conn.execute("UPDATE hub_accounts SET active=%s WHERE id=%s RETURNING id, username, active",
+                           (active, account_id)).fetchone()
+        if row and not active:
+            conn.execute("DELETE FROM hub_sessions WHERE account_id=%s", (account_id,))
+        return row
+
+
+def set_password(account_id: int, password: str, keep_session: str | None = None) -> bool:
+    """Replace a password and end every session except keep_session (the caller's own)."""
+    password_hash = hash_secret(password)
+    with connect() as conn:
+        if not conn.execute("UPDATE hub_accounts SET password_hash=%s WHERE id=%s RETURNING id",
+                            (password_hash, account_id)).fetchone():
+            return False
+        conn.execute("DELETE FROM hub_sessions WHERE account_id=%s AND token_hash<>%s",
+                     (account_id, token_hash(keep_session) if keep_session else ""))
+        return True
+
+
+def password_matches(account_id: int, password: str) -> bool:
+    with connect() as conn:
+        row = conn.execute("SELECT password_hash FROM hub_accounts WHERE id=%s", (account_id,)).fetchone()
+    return bool(row and verify_secret(row["password_hash"], password))
+
+
+def set_cohort_archived(cohort_id: int, archived: bool):
+    with connect() as conn:
+        return conn.execute("UPDATE hub_cohorts SET archived=%s WHERE id=%s RETURNING id, slug, name, archived",
+                            (archived, cohort_id)).fetchone()
+
+
+def membership(cohort_id: int, account_id: int):
+    with connect() as conn:
+        return conn.execute("SELECT role FROM hub_memberships WHERE cohort_id=%s AND account_id=%s AND active",
+                            (cohort_id, account_id)).fetchone()
+
+
+def remove_membership(cohort_id: int, account_id: int):
+    """Deactivate rather than delete, so past posts keep their author and history."""
+    with connect() as conn:
+        return conn.execute(
+            """UPDATE hub_memberships SET active=FALSE WHERE cohort_id=%s AND account_id=%s AND active
+               RETURNING cohort_id, account_id, role""", (cohort_id, account_id)).fetchone()

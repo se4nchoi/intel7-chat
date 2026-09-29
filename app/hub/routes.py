@@ -123,6 +123,19 @@ class Membership(BaseModel):
     role: str = Field(pattern=r"^(instructor|student)$")
 
 
+class AccountUpdate(BaseModel):
+    active: bool
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class CohortUpdate(BaseModel):
+    archived: bool
+
+
 class NewChannel(BaseModel):
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,39}$")
     name: str = Field(min_length=2, max_length=100)
@@ -466,3 +479,115 @@ async def download_file(cohort_id: int, file_id: str, request: Request):
     if not record or not path.is_file():
         raise HTTPException(404, "File not found")
     return FileResponse(path, filename=record["original_name"], media_type="application/octet-stream")
+
+
+# --- Administration ---
+
+async def _prune_sockets(cohort_id: int | None = None) -> int:
+    """Close open chat sockets whose session or membership no longer grants access."""
+    checked: dict[tuple[str, int], bool] = {}
+    dropped = 0
+    for key, sockets in list(connections.items()):
+        if cohort_id is not None and key[0] != cohort_id:
+            continue
+        for ws, raw in list(sockets.items()):
+            if (raw, key[0]) not in checked:
+                checked[(raw, key[0])] = await asyncio.to_thread(_socket_allowed, raw, key[0])
+            if not checked[(raw, key[0])]:
+                await _drop_socket(key, ws)
+                dropped += 1
+    return dropped
+
+
+def _temporary_password() -> str:
+    alphabet = "abcdefghjkmnpqrstuvwxyz23456789"  # no look-alike characters
+    return "".join(secrets.choice(alphabet) for _ in range(12))
+
+
+@router.get("/api/accounts")
+async def list_accounts(request: Request):
+    await _require_admin(request)
+    return await asyncio.to_thread(db.list_accounts)
+
+
+@router.patch("/api/accounts/{account_id}")
+async def update_account(account_id: int, body: AccountUpdate, request: Request):
+    _same_origin(request)
+    admin = await _require_admin(request)
+    if account_id == admin["id"] and not body.active:
+        raise HTTPException(400, "You cannot deactivate your own account")
+    record = await asyncio.to_thread(db.set_account_active, account_id, body.active)
+    if not record:
+        raise HTTPException(404, "Account not found")
+    closed = 0 if body.active else await _prune_sockets()
+    log.info("account %s by=%r account=%s user=%r sockets_closed=%s", "enabled" if body.active else "disabled",
+             admin["username"], account_id, record["username"], closed)
+    return record
+
+
+@router.post("/api/accounts/{account_id}/password")
+async def reset_password(account_id: int, request: Request):
+    """Set a new temporary password, shown once to the administrator, and sign the account out everywhere."""
+    _same_origin(request)
+    admin = await _require_admin(request)
+    if account_id == admin["id"]:
+        raise HTTPException(400, "Change your own password from your account menu")
+    target = await asyncio.to_thread(db.account, account_id)
+    if not target:
+        raise HTTPException(404, "Account not found")
+    password = _temporary_password()
+    await asyncio.to_thread(db.set_password, account_id, password)
+    closed = await _prune_sockets()
+    log.info("password reset by=%r account=%s user=%r sockets_closed=%s", admin["username"], account_id, target["username"], closed)
+    return {"id": account_id, "username": target["username"], "temporary_password": password}
+
+
+@router.post("/api/me/password", status_code=204)
+async def change_own_password(body: PasswordChange, request: Request):
+    _same_origin(request)
+    account = await _account(request)
+    ip = _ip(request)
+    if not _login_allowed(f"password:{account['id']}"):
+        log.warning("password change throttled user=%r id=%s ip=%s", account["username"], account["id"], ip)
+        raise HTTPException(429, "Too many login attempts; try again later")
+    if not await asyncio.to_thread(db.password_matches, account["id"], body.current_password):
+        log.warning("password change failed user=%r id=%s ip=%s", account["username"], account["id"], ip)
+        raise HTTPException(400, "Current password is incorrect")
+    try:
+        validate_password(body.new_password)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    await asyncio.to_thread(db.set_password, account["id"], body.new_password, request.cookies.get(COOKIE, ""))
+    closed = await _prune_sockets()
+    log.info("password changed user=%r id=%s other_sockets_closed=%s ip=%s", account["username"], account["id"], closed, ip)
+
+
+@router.patch("/api/cohorts/{cohort_id}")
+async def update_cohort(cohort_id: int, body: CohortUpdate, request: Request):
+    # Not via _cohort(): that refuses every write to an archived cohort, including reopening it.
+    _same_origin(request)
+    admin = await _require_admin(request)
+    record = await asyncio.to_thread(db.set_cohort_archived, cohort_id, body.archived)
+    if not record:
+        raise HTTPException(404, "Cohort not found")
+    log.info("cohort %s by=%r cohort=%s slug=%r", "archived" if body.archived else "reopened",
+             admin["username"], cohort_id, record["slug"])
+    return record
+
+
+@router.delete("/api/cohorts/{cohort_id}/memberships/{account_id}", status_code=204)
+async def remove_member(cohort_id: int, account_id: int, request: Request):
+    _same_origin(request)
+    actor, cohort = await _cohort(request, cohort_id, manage=True)
+    if account_id == actor["id"]:
+        raise HTTPException(400, "You cannot remove yourself from a cohort")
+    current = await asyncio.to_thread(db.membership, cohort_id, account_id)
+    if not current:
+        raise HTTPException(404, "Member not found")
+    if current["role"] == "instructor" and cohort["role"] != "admin":
+        log.warning("instructor removal denied by=%r cohort=%s account=%s ip=%s", actor["username"], cohort_id, account_id, _ip(request))
+        raise HTTPException(403, "Only an administrator can remove instructors")
+    await asyncio.to_thread(db.remove_membership, cohort_id, account_id)
+    closed = await _prune_sockets(cohort_id)
+    log.info("member removed by=%r cohort=%s account=%s role=%s sockets_closed=%s",
+             actor["username"], cohort_id, account_id, current["role"], closed)

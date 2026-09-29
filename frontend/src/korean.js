@@ -23,8 +23,15 @@ const messages = {
   'Files must be between 1 byte and 10 MB': '빈 파일은 올릴 수 없으며 파일 크기는 최대 10MB입니다.',
   'File not found': '파일을 찾을 수 없습니다.',
   'Answer not found': '답변을 찾을 수 없습니다.',
+  'You cannot deactivate your own account': '본인 계정은 비활성화할 수 없습니다.',
+  'Change your own password from your account menu': '본인 비밀번호는 계정 메뉴에서 변경하세요.',
+  'Current password is incorrect': '현재 비밀번호가 올바르지 않습니다.',
+  'Cohort not found': '수강반을 찾을 수 없습니다.',
+  'You cannot remove yourself from a cohort': '본인을 수강반에서 내보낼 수 없습니다.',
+  'Member not found': '구성원을 찾을 수 없습니다.',
+  'Only an administrator can remove instructors': '강사를 내보내는 것은 관리자만 할 수 있습니다.',
 };
-const fields = {username:'아이디', password:'비밀번호', display_name:'표시 이름', slug:'주소 ID', name:'이름', role:'역할', title:'질문 제목', body:'내용', upload:'파일'};
+const fields = {username:'아이디', password:'비밀번호', display_name:'표시 이름', slug:'주소 ID', name:'이름', role:'역할', title:'질문 제목', body:'내용', upload:'파일', current_password:'현재 비밀번호', new_password:'새 비밀번호'};
 export function errorMessage(detail, status) {
   if (Array.isArray(detail)) {
     return detail.map(issue => {
