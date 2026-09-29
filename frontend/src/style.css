@@ -313,3 +313,25 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .member:not(.online) > span:nth-child(2) { opacity: .7; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 #post-content h2 { margin-bottom: 14px; }
+
+/* Reactions and pins */
+.reactions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px; }
+.reactions:empty { display: none; }
+.reaction { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 12px; font-size: 13px; background: var(--hover); border: 1px solid transparent; }
+.reaction .n { font-size: 12px; font-weight: 600; color: var(--muted); }
+.reaction.mine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.reaction.mine .n { color: var(--accent); }
+.reaction-picker { position: absolute; right: 12px; top: 18px; z-index: 5; display: flex; gap: 2px; padding: 4px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.reaction-picker button { font-size: 18px; padding: 4px 6px; border: 0; background: transparent; border-radius: 6px; }
+.reaction-picker button:hover, .reaction-picker button:focus-visible { background: var(--hover); }
+.pin-flag { display: inline-block; margin-right: 6px; font-size: 11px; font-weight: 600; color: var(--accent); }
+.count-chip { margin-left: 4px; padding: 0 6px; border-radius: 9px; font-size: 11px; background: var(--hover); }
+.pins-panel { border-bottom: 1px solid var(--border); padding: 10px 16px; max-height: 40%; overflow-y: auto; background: var(--panel, var(--bg)); }
+.pins-panel h3 { font-size: 13px; margin-bottom: 6px; }
+.pins-panel ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pin-item { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 6px 8px; border-radius: 8px; }
+.pin-item:hover { background: var(--hover); }
+.pin-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg.flash { animation: flash 1.6s ease; }
+@keyframes flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .msg.flash { animation: none; outline: 2px solid var(--accent); } }

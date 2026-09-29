@@ -226,7 +226,12 @@ def channels(cohort_id: int):
 AUTHOR_ROLE = "COALESCE(mb.role, CASE WHEN a.is_admin THEN 'admin' END, 'member')"
 
 
-MESSAGE_SELECT = f"""SELECT m.id, m.channel_id, m.body, m.created_at, m.edited_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
+# Reactions as [{emoji, accounts: [ids in reaction order]}], in the order each emoji was first used.
+REACTIONS = """(SELECT coalesce(json_agg(json_build_object('emoji', r.emoji, 'accounts', r.accounts) ORDER BY r.first_at), '[]')
+                FROM (SELECT emoji, array_agg(account_id ORDER BY created_at) AS accounts, min(created_at) AS first_at
+                      FROM hub_reactions WHERE message_id=m.id GROUP BY emoji) r)"""
+MESSAGE_SELECT = f"""SELECT m.id, m.channel_id, m.body, m.created_at, m.edited_at, m.pinned_at, {REACTIONS} AS reactions,
+                      a.username, a.display_name, {AUTHOR_ROLE} AS role
                FROM hub_messages m JOIN hub_accounts a ON a.id=m.author_id
                JOIN hub_channels c ON c.id=m.channel_id
                LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active"""
@@ -249,7 +254,7 @@ def add_message(channel_id: int, account_id: int, body: str):
             f"""WITH new_message AS (
                  INSERT INTO hub_messages (channel_id, author_id, body) VALUES (%s,%s,%s)
                  RETURNING id, channel_id, author_id, body, created_at, edited_at)
-               SELECT m.id, m.channel_id, m.body, m.created_at, m.edited_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
+               SELECT m.id, m.channel_id, m.body, m.created_at, m.edited_at, NULL::timestamptz AS pinned_at, '[]'::json AS reactions, a.username, a.display_name, {AUTHOR_ROLE} AS role
                FROM new_message m JOIN hub_accounts a ON a.id=m.author_id
                JOIN hub_channels c ON c.id=m.channel_id
                LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active""",
@@ -526,3 +531,29 @@ def edit_post(kind: str, item_id: int, editor_id: int, body: str, title: str | N
         else:
             conn.execute(f"UPDATE {table} SET body=%s, edited_at=now() WHERE id=%s", (body, item_id))
         return True
+
+
+# --- Reactions and pins ---
+
+REACTION_EMOJI = ("👍", "❤️", "😂", "🎉", "🙏", "👀", "✅", "❓")
+
+
+def toggle_reaction(message_id: int, account_id: int, emoji: str) -> None:
+    with connect() as conn:
+        removed = conn.execute("DELETE FROM hub_reactions WHERE message_id=%s AND account_id=%s AND emoji=%s RETURNING 1",
+                               (message_id, account_id, emoji)).fetchone()
+        if not removed:
+            conn.execute("INSERT INTO hub_reactions (message_id, account_id, emoji) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                         (message_id, account_id, emoji))
+
+
+def set_pinned(message_id: int, pinned: bool, by_account_id: int) -> None:
+    with connect() as conn:
+        conn.execute("UPDATE hub_messages SET pinned_at=CASE WHEN %s THEN now() END, pinned_by=CASE WHEN %s THEN %s END WHERE id=%s",
+                     (pinned, pinned, by_account_id, message_id))
+
+
+def pinned_messages(channel_id: int):
+    with connect() as conn:
+        return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.pinned_at IS NOT NULL AND m.deleted_at IS NULL "
+                            "ORDER BY m.pinned_at DESC LIMIT 50", (channel_id,)).fetchall()

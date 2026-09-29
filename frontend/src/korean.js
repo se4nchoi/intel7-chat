@@ -33,6 +33,7 @@ const messages = {
   'You can only delete your own posts': '본인이 작성한 글만 삭제할 수 있습니다.',
   'You can only edit your own posts': '본인이 작성한 글만 수정할 수 있습니다.',
   'Text cannot be empty': '내용을 입력해 주세요.',
+  'Unsupported reaction': '사용할 수 없는 반응입니다.',
   'Only an administrator can remove instructors': '강사를 내보내는 것은 관리자만 할 수 있습니다.',
 };
 const fields = {username:'아이디', password:'비밀번호', display_name:'표시 이름', slug:'주소 ID', name:'이름', role:'역할', title:'질문 제목', body:'내용', upload:'파일', current_password:'현재 비밀번호', new_password:'새 비밀번호'};

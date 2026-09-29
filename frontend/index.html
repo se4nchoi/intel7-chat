@@ -82,6 +82,7 @@
           <h2 id="channel-heading" tabindex="-1">채널을 선택하세요</h2>
           <span id="chat-cohort" class="topic muted"></span>
           <div class="topbar-actions">
+            <button id="pins-toggle" class="ghost" aria-pressed="false" aria-controls="pins-panel">📌<span class="label"> 고정</span><span id="pins-count" class="count-chip hidden"></span></button>
             <button id="stage-toggle" class="ghost" aria-pressed="false" aria-controls="stage">🖥<span class="label"> 화면 공유</span></button>
             <button id="members-toggle" class="ghost" aria-pressed="true" aria-controls="member-list">👥<span class="label"> 멤버</span></button>
           </div>
@@ -98,6 +99,10 @@
                   <button id="media-stop" class="danger hidden">공유 중지</button>
                 </div>
               </div>
+            </section>
+            <section id="pins-panel" class="pins-panel hidden" aria-label="고정된 메시지">
+              <h3>📌 고정된 메시지</h3>
+              <ul id="pins-list"></ul>
             </section>
             <div id="messages" class="messages" role="log" aria-label="채널 메시지" aria-live="polite"></div>
             <form id="message-form" class="composer">

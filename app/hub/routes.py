@@ -758,3 +758,57 @@ async def edit_answer(cohort_id: int, question_id: int, answer_id: int, body: An
         raise HTTPException(403, "You can only edit your own posts")
     await asyncio.to_thread(db.edit_post, "answer", answer_id, account["id"], _clean(body.body))
     log.info("answer edited user=%r cohort=%s question=%s answer=%s", account["username"], cohort_id, question_id, answer_id)
+
+
+# --- Reactions (any member) and pins (instructors and admins) ---
+
+class ReactionToggle(BaseModel):
+    emoji: str
+
+
+class PinUpdate(BaseModel):
+    pinned: bool
+
+
+async def _live_message(request: Request, cohort_id: int, channel_id: int, message_id: int):
+    account, cohort = await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+        raise HTTPException(404, "Channel not found")
+    if not await asyncio.to_thread(db.message_author, channel_id, message_id):
+        raise HTTPException(404, "Message not found")
+    return account, cohort
+
+
+@router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/messages/{message_id}/reactions")
+async def toggle_reaction(cohort_id: int, channel_id: int, message_id: int, body: ReactionToggle, request: Request):
+    _same_origin(request)
+    if body.emoji not in db.REACTION_EMOJI:
+        raise HTTPException(400, "Unsupported reaction")
+    account, _ = await _live_message(request, cohort_id, channel_id, message_id)
+    await asyncio.to_thread(db.toggle_reaction, message_id, account["id"], body.emoji)
+    message = jsonable_encoder(await asyncio.to_thread(db.message, channel_id, message_id))
+    await _broadcast(cohort_id, {"type": "reactions", "channel_id": channel_id, "message_id": message_id,
+                                 "reactions": message["reactions"]})
+    return message["reactions"]
+
+
+@router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/messages/{message_id}/pin")
+async def pin_message(cohort_id: int, channel_id: int, message_id: int, body: PinUpdate, request: Request):
+    _same_origin(request)
+    account, cohort = await _live_message(request, cohort_id, channel_id, message_id)
+    if cohort["role"] not in {"admin", "instructor"}:
+        raise HTTPException(403, "Instructor access required")
+    await asyncio.to_thread(db.set_pinned, message_id, body.pinned, account["id"])
+    message = jsonable_encoder(await asyncio.to_thread(db.message, channel_id, message_id))
+    await _broadcast(cohort_id, {"type": "message_pinned", "channel_id": channel_id, "message": message})
+    log.info("message %s by=%r cohort=%s channel=%s message=%s", "pinned" if body.pinned else "unpinned",
+             account["username"], cohort_id, channel_id, message_id)
+    return message
+
+
+@router.get("/api/cohorts/{cohort_id}/channels/{channel_id}/pins")
+async def pins(cohort_id: int, channel_id: int, request: Request):
+    await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+        raise HTTPException(404, "Channel not found")
+    return await asyncio.to_thread(db.pinned_messages, channel_id)

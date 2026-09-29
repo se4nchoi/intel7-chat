@@ -13,6 +13,7 @@ const state = {
   space: readRoute(location.pathname).space, epoch: 0, channelEpoch: 0, questionEpoch: 0, mediaEpoch: 0,
   channels: new Map(), lastMessage: null, lastSeenId: 0, reconnectTimer: null, reconnectNow: null,
   channelList: [], unread: new Map(), online: new Set(), members: [], holding: null, historyLoaded: false, ackTimer: null,
+  messageMap: new Map(), pins: [],
   questions: [], question: null, filter: 'all', search: '', boardView: 'home', fileCount: null,
 };
 
@@ -118,6 +119,7 @@ function resetContent() {
   closeChat(); void leaveMedia().catch(error => status(error.message, true));
   state.channel = null; state.question = null; state.questions = []; state.lastMessage = null; state.lastSeenId = 0; state.fileCount = null;
   state.channelList = []; state.unread = new Map(); state.online = new Set(); state.members = []; state.holding = null; state.historyLoaded = false;
+  state.messageMap = new Map(); state.pins = []; renderPins();
   clearTimeout(state.ackTimer); updateTitle();
   for (const id of ['channel-list', 'messages', 'question-list', 'instructor-answers', 'student-answers', 'file-list', 'member-list', 'board-stats']) $(id).replaceChildren();
   $('channel-heading').textContent = '채널을 선택하세요';
@@ -279,7 +281,7 @@ async function selectChannel(channel) {
   await leaveMedia();
   if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
   state.channel = channel; state.channels.set(cohort.id, channel.id); state.lastMessage = null; state.lastSeenId = 0;
-  state.historyLoaded = false; state.holding = [];
+  state.historyLoaded = false; state.holding = []; state.messageMap = new Map(); state.pins = []; renderPins();
   $('channel-heading').textContent = `# ${channel.name}`;
   $('message-input').placeholder = `#${channel.name}에 메시지 보내기`;
   $('messages').replaceChildren(el('div', { class: 'channel-intro' },
@@ -292,6 +294,7 @@ async function selectChannel(channel) {
   if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
   history.forEach(receive);
   state.historyLoaded = true;
+  state.pins = history.filter(m => m.pinned_at); renderPins(); loadPins().catch(() => {});
   flushHolding();
   ackRead(true);
 }
@@ -305,6 +308,8 @@ function applyChannelEvent(event) {
   if (event.type === 'message') receive(event.message);
   else if (event.type === 'message_deleted') removeMessage(event.id);
   else if (event.type === 'message_edited') updateMessage(event.message);
+  else if (event.type === 'reactions') { const message = state.messageMap.get(event.message_id); if (message) updateMessage({ ...message, reactions: event.reactions }); }
+  else if (event.type === 'message_pinned') { updateMessage(event.message); loadPins().catch(() => {}); }
 }
 function handleEvent(event) {
   if (event.type === 'presence') { state.online = new Set(event.online); renderMembers(); return; }
@@ -407,7 +412,8 @@ function appendMessage(message) {
   const name = message.display_name || message.username;
   const time = el('time', { datetime: message.created_at, text: stamp(message.created_at), title: when.toLocaleString('ko-KR') });
   const data = { messageId: message.id, username: message.username, createdAt: message.created_at };
-  const body = el('div', { class: 'msg-body' }, renderBody(el('span', { class: 'msg-text' }), message.body), editedMark(message));
+  state.messageMap.set(message.id, message);
+  const body = el('div', { class: 'msg-body' }, ...bodyParts(message));
   const row = grouped
     ? el('div', { class: 'msg', dataset: data },
         el('span', { class: 'hover-time', 'aria-hidden': 'true', text: timeFmt.format(when) }), body)
@@ -415,23 +421,103 @@ function appendMessage(message) {
         avatar(name, message.username),
         el('div', { class: 'msg-head' }, el('strong', { class: roleClass(message.role), text: name, title: `@${message.username}` }), roleTag(message.role), time),
         body);
-  row.append(messageActions(message, row));
+  row.append(reactionsNode(message));
+  const actions = messageActions(message, row);
+  if (actions) row.append(actions);
   box.append(row);
   state.lastMessage = message;
   if (nearBottom || message.username === state.account?.username) box.scrollTop = box.scrollHeight;
 }
 function messageActions(message, row) {
   const name = message.display_name || message.username;
+  const writable = !!state.cohort && !state.cohort.archived;
   const bar = el('div', { class: 'msg-actions', role: 'toolbar', 'aria-label': '메시지 작업' },
+    writable ? el('button', { type: 'button', text: '😀', title: '반응 추가', 'aria-label': '반응 추가', onclick: event => openReactionPicker(message, event.currentTarget) }) : null,
+    writable && isManager() ? el('button', { type: 'button', text: message.pinned_at ? '고정 해제' : '📌 고정', 'aria-label': message.pinned_at ? '고정 해제' : '메시지 고정',
+      onclick: () => setPinned(message, !message.pinned_at) }) : null,
     canEdit(message) ? el('button', { type: 'button', text: '수정', 'aria-label': '내 메시지 수정', onclick: () => startEditMessage(message, row) }) : null,
     canDelete(message) ? el('button', { type: 'button', class: 'danger-text', text: '삭제', 'aria-label': `${name}의 메시지 삭제`, onclick: () => deleteMessage(message) }) : null);
   return bar.childElementCount ? bar : null;
 }
-function updateMessage(message) {
-  const row = $('messages').querySelector(`[data-message-id="${message.id}"]`);
-  if (!row || row.classList.contains('editing')) return;
-  row.querySelector('.msg-body').replaceChildren(renderBody(el('span', { class: 'msg-text' }), message.body), editedMark(message));
+function bodyParts(message) {
+  return [message.pinned_at ? el('span', { class: 'pin-flag', text: '📌 고정됨' }) : null,
+    renderBody(el('span', { class: 'msg-text' }), message.body), editedMark(message)].filter(Boolean);
 }
+function updateMessage(message) {
+  state.messageMap.set(message.id, message);
+  const row = $('messages').querySelector(`[data-message-id="${message.id}"]`);
+  if (!row) return;
+  if (!row.classList.contains('editing')) row.querySelector('.msg-body').replaceChildren(...bodyParts(message));
+  row.querySelector('.reactions').replaceWith(reactionsNode(message));
+  const actions = messageActions(message, row);
+  row.querySelector('.msg-actions')?.remove();
+  if (actions) row.append(actions);
+}
+const REACTIONS = ['👍', '❤️', '😂', '🎉', '🙏', '👀', '✅', '❓'];
+function nameOf(id) {
+  if (id === state.account?.id) return '나';
+  return state.members.find(m => m.id === id)?.display_name || '관리자';
+}
+function reactionsNode(message) {
+  const readOnly = !state.cohort || state.cohort.archived;
+  return el('div', { class: 'reactions' }, ...(message.reactions || []).map(reaction => {
+    const mine = reaction.accounts.includes(state.account?.id), names = reaction.accounts.map(nameOf).join(', ');
+    return el('button', { type: 'button', class: `reaction${mine ? ' mine' : ''}`, 'aria-pressed': String(mine), disabled: readOnly,
+      title: names, 'aria-label': `${reaction.emoji} ${reaction.accounts.length}명 (${names})${mine ? ', 누르면 취소' : ''}`,
+      onclick: () => react(message, reaction.emoji) }, el('span', { text: reaction.emoji }), el('span', { class: 'n', text: String(reaction.accounts.length) }));
+  }));
+}
+async function react(message, emoji) {
+  try {
+    const reactions = await api(`/cohorts/${state.cohort.id}/channels/${state.channel.id}/messages/${message.id}/reactions`, { method: 'POST', json: { emoji } });
+    updateMessage({ ...state.messageMap.get(message.id), reactions });
+  } catch (error) { status(error.message, true); }
+}
+function openReactionPicker(message, anchor) {
+  document.querySelector('.reaction-picker')?.remove();
+  const picker = el('div', { class: 'reaction-picker', role: 'menu', 'aria-label': '반응 선택' },
+    ...REACTIONS.map(emoji => el('button', { type: 'button', role: 'menuitem', text: emoji, 'aria-label': `${emoji} 반응`,
+      onclick: () => { picker.remove(); react(message, emoji); } })));
+  picker.addEventListener('keydown', event => { if (event.key === 'Escape') { event.stopPropagation(); picker.remove(); anchor.focus(); } });
+  anchor.closest('.msg').append(picker);
+  picker.querySelector('button').focus();
+  setTimeout(() => document.addEventListener('click', function away(event) {
+    if (!picker.contains(event.target)) { picker.remove(); document.removeEventListener('click', away); }
+  }), 0);
+}
+async function setPinned(message, pinned) {
+  try {
+    const updated = await api(`/cohorts/${state.cohort.id}/channels/${state.channel.id}/messages/${message.id}/pin`, { method: 'POST', json: { pinned } });
+    updateMessage(updated); await loadPins();
+    status(pinned ? '메시지를 고정했습니다.' : '고정을 해제했습니다.');
+  } catch (error) { status(error.message, true); }
+}
+async function loadPins() {
+  const cohort = state.cohort, channel = state.channel;
+  if (!cohort || !channel) return;
+  const pins = await api(`/cohorts/${cohort.id}/channels/${channel.id}/pins`);
+  if (state.channel !== channel) return;
+  state.pins = pins; renderPins();
+}
+function renderPins() {
+  const count = state.pins.length;
+  $('pins-count').textContent = String(count); $('pins-count').classList.toggle('hidden', !count);
+  $('pins-list').replaceChildren(...(count ? state.pins.map(pin => el('li', {},
+    el('button', { type: 'button', class: 'pin-item', onclick: () => jumpTo(pin.id) },
+      el('strong', { text: pin.display_name || pin.username }), el('small', { class: 'muted', text: ` · ${stamp(pin.created_at)}` }),
+      renderBody(el('span', { class: 'pin-text' }), pin.body)))) : [el('li', { class: 'muted', text: isManager() ? '고정된 메시지가 없습니다. 메시지에 마우스를 올려 📌 고정을 누르세요.' : '고정된 메시지가 없습니다.' })]));
+}
+function jumpTo(messageId) {
+  const row = $('messages').querySelector(`[data-message-id="${messageId}"]`);
+  if (!row) { status('오래된 메시지라 화면에 없습니다. 최근 100개만 표시됩니다.'); return; }
+  row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 1600);
+}
+$('pins-toggle').addEventListener('click', event => {
+  const hidden = $('pins-panel').classList.toggle('hidden');
+  event.currentTarget.setAttribute('aria-pressed', String(!hidden));
+  if (!hidden) loadPins().catch(error => status(error.message, true));
+});
 function startEditMessage(message, row) {
   if (row.classList.contains('editing')) return;
   const body = row.querySelector('.msg-body'), original = [...body.childNodes];
@@ -589,7 +675,7 @@ async function selectQuestion(question, updateUrl = true) {
   $('post-meta').replaceChildren(...[avatar(question.display_name || question.username, question.username, true),
     el('strong', { text: question.display_name || question.username }), roleTag(question.role),
     el('span', { text: `· ${stamp(question.created_at)}` }), el('span', { text: `· 질문 #${question.id}` })].filter(Boolean));
-  $('post-body').replaceChildren(renderBody(el('span'), question.body), editedMark(question));
+  $('post-body').replaceChildren(...[renderBody(el('span'), question.body), editedMark(question)].filter(Boolean));
   $('post-delete').classList.toggle('hidden', !canDelete(question));
   $('post-edit').classList.toggle('hidden', !canEdit(question));
   $('post-edit-form').classList.add('hidden'); $('post-content').classList.remove('hidden');
