@@ -37,6 +37,8 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 const isManager = () => ['admin', 'instructor'].includes(state.cohort?.role);
+// Authors delete their own posts; instructors and admins any post in their cohort. Archived cohorts are read-only.
+const canDelete = item => !!state.cohort && !state.cohort.archived && (item.username === state.account?.username || isManager());
 const roleClass = role => (role === 'instructor' || role === 'admin') ? role : '';
 function hue(text) { let h = 0; for (const ch of String(text)) h = (h * 31 + ch.codePointAt(0)) % 360; return h; }
 function initials(name) { const trimmed = String(name || '?').trim(); return /[가-힣]/.test(trimmed[0]) ? trimmed.slice(0, 1) : trimmed.slice(0, 2).toUpperCase(); }
@@ -84,6 +86,7 @@ function showAccount() {
   $('user-avatar').textContent = initials(name);
   $('user-avatar').style.setProperty('--hue', hue(state.account?.username || ''));
   $('admin-card').classList.toggle('hidden', !state.account?.is_admin);
+  $('accounts-card').classList.toggle('hidden', !state.account?.is_admin);
 }
 function renderRail() {
   $('cohort-rail').replaceChildren(...state.cohorts.map(cohort => el('button', {
@@ -124,7 +127,7 @@ function showSpace() {
   $('role-label').className = `role-chip ${roleClass(cohort?.role)}`;
   const manage = !!cohort && isManager();
   $('manage-card').classList.toggle('hidden', !manage);
-  $('manage-btn').classList.toggle('hidden', !manage && !state.account?.is_admin);
+  $('cohort-status').classList.toggle('hidden', !cohort || !state.account?.is_admin);
   $('add-channel-btn').classList.toggle('hidden', !manage || !!cohort?.archived);
   $('media-start').classList.toggle('hidden', !manage);
   const instructorOption = $('membership-form').elements.role.querySelector('[value="instructor"]');
@@ -263,10 +266,14 @@ function connectChat(cohort, channel, retry = 0) {
   const socket = channelSocket(cohort.id, channel.id); state.socket = socket;
   let held = [], opened = false;
   const receive = message => { state.lastSeenId = Math.max(state.lastSeenId, message.id); appendMessage(message); };
+  const handle = payload => {
+    if (payload.type === 'message') receive(payload.message);
+    else if (payload.type === 'message_deleted') removeMessage(payload.id);
+  };
   socket.onmessage = event => {
     if (state.socket !== socket) return;
     const payload = JSON.parse(event.data);
-    if (payload.type === 'message') { if (held) held.push(payload.message); else receive(payload.message); }
+    if (held) held.push(payload); else handle(payload);
   };
   socket.onopen = async () => {
     opened = true;
@@ -274,7 +281,7 @@ function connectChat(cohort, channel, retry = 0) {
     try {
       const missed = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages${after}`);
       if (state.socket !== socket) return;
-      missed.forEach(receive); held.forEach(receive); held = null;
+      missed.forEach(receive); held.forEach(handle); held = null;
       if (retry) status('채팅에 다시 연결되었습니다.');
     } catch (error) {
       if (state.socket === socket) { status(error.message, true); socket.close(); }
@@ -318,17 +325,46 @@ function appendMessage(message) {
     && box.lastElementChild?.classList.contains('msg');
   const name = message.display_name || message.username;
   const time = el('time', { datetime: message.created_at, text: stamp(message.created_at), title: when.toLocaleString('ko-KR') });
+  const data = { messageId: message.id, username: message.username, createdAt: message.created_at };
+  const remove = canDelete(message)
+    ? el('button', { class: 'msg-delete', type: 'button', text: '삭제', 'aria-label': `${name}의 메시지 삭제`, onclick: () => deleteMessage(message) })
+    : null;
   const row = grouped
-    ? el('div', { class: 'msg', dataset: { messageId: message.id } },
+    ? el('div', { class: 'msg', dataset: data },
         el('span', { class: 'hover-time', 'aria-hidden': 'true', text: timeFmt.format(when) }),
-        el('div', { class: 'msg-body', text: message.body }))
-    : el('div', { class: 'msg head', dataset: { messageId: message.id } },
+        el('div', { class: 'msg-body', text: message.body }), remove)
+    : el('div', { class: 'msg head', dataset: data },
         avatar(name, message.username),
         el('div', { class: 'msg-head' }, el('strong', { class: roleClass(message.role), text: name, title: `@${message.username}` }), roleTag(message.role), time),
-        el('div', { class: 'msg-body', text: message.body }));
+        el('div', { class: 'msg-body', text: message.body }), remove);
   box.append(row);
   state.lastMessage = message;
   if (nearBottom || message.username === state.account?.username) box.scrollTop = box.scrollHeight;
+}
+function removeMessage(id) {
+  const box = $('messages'), row = box.querySelector(`[data-message-id="${id}"]`);
+  if (!row) return;
+  const next = row.nextElementSibling, prev = row.previousElementSibling;
+  // If the author header goes, the next message in the same group takes it over.
+  if (row.classList.contains('head') && next?.classList.contains('msg') && !next.classList.contains('head')) {
+    const time = row.querySelector('.msg-head time'), when = new Date(next.dataset.createdAt);
+    time.dateTime = next.dataset.createdAt; time.textContent = stamp(next.dataset.createdAt); time.title = when.toLocaleString('ko-KR');
+    next.querySelector('.hover-time')?.remove();
+    next.classList.add('head');
+    next.prepend(row.querySelector('.avatar'), row.querySelector('.msg-head'));
+  }
+  row.remove();
+  if (prev?.classList.contains('day-divider') && (!next || next.classList.contains('day-divider'))) prev.remove();
+  // New messages group against the last one still shown.
+  const last = [...box.querySelectorAll('.msg')].at(-1);
+  state.lastMessage = last ? { username: last.dataset.username, created_at: last.dataset.createdAt } : null;
+}
+async function deleteMessage(message) {
+  if (!confirm('이 메시지를 삭제할까요? 모든 사람의 화면에서 사라집니다.')) return;
+  try {
+    await api(`/cohorts/${state.cohort.id}/channels/${state.channel.id}/messages/${message.id}`, { method: 'DELETE' });
+    removeMessage(message.id);
+  } catch (error) { status(error.message, true); }
 }
 $('message-input').addEventListener('keydown', event => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('message-form').requestSubmit(); }
@@ -440,6 +476,7 @@ async function selectQuestion(question, updateUrl = true) {
     el('strong', { text: question.display_name || question.username }), roleTag(question.role),
     el('span', { text: `· ${stamp(question.created_at)}` }), el('span', { text: `· 질문 #${question.id}` })].filter(Boolean));
   $('post-body').textContent = question.body;
+  $('post-delete').classList.toggle('hidden', !canDelete(question));
   $('instructor-answers').replaceChildren(); $('student-answers').replaceChildren();
   renderFeed(); updateControls();
   const answers = await api(`/cohorts/${cohort.id}/questions/${question.id}/answers`);
@@ -455,12 +492,38 @@ function renderAnswers(answers) {
       el('strong', { text: answer.display_name || answer.username }), roleTag(answer.role),
       el('span', { text: stamp(answer.created_at) }),
       answer.endorsed ? el('span', { class: 'endorsed-mark', text: '✓ 강사 인정' }) : null,
-      canEndorse && !byInstructor(answer) ? el('button', { class: 'endorse-btn', text: answer.endorsed ? '인정 취소' : '👍 좋은 답변', onclick: event => endorse(answer, event.currentTarget) }) : null),
+      canEndorse && !byInstructor(answer) ? el('button', { class: 'endorse-btn', text: answer.endorsed ? '인정 취소' : '👍 좋은 답변', onclick: event => endorse(answer, event.currentTarget) }) : null,
+      canDelete(answer) ? el('button', { class: 'ghost danger-text answer-delete', type: 'button', text: '삭제', 'aria-label': '답변 삭제', onclick: () => deleteAnswer(answer) }) : null),
     el('div', { class: 'answer-body', text: answer.body }));
   const fill = (id, list, empty) => $(id).replaceChildren(...(list.length ? list.map(item) : [el('li', { class: 'empty-answer', text: empty })]));
   fill('instructor-answers', answers.filter(byInstructor), '아직 강사 답변이 없습니다.');
   fill('student-answers', answers.filter(a => !byInstructor(a)), '아직 수강생 답변이 없습니다. 아는 내용이 있다면 먼저 답해 보세요.');
 }
+async function deleteAnswer(answer) {
+  if (!confirm('이 답변을 삭제할까요?')) return;
+  const epoch = state.epoch, question = state.question;
+  try {
+    await api(`/cohorts/${state.cohort.id}/questions/${question.id}/answers/${answer.id}`, { method: 'DELETE' });
+    if (epoch !== state.epoch) return;
+    await loadQuestions();
+    if (epoch === state.epoch && state.question?.id === question.id) await selectQuestion(state.question, false);
+    status('답변을 삭제했습니다.');
+  } catch (error) { status(error.message, true); }
+}
+$('post-delete').addEventListener('click', async () => {
+  const question = state.question;
+  if (!question || !confirm('이 질문과 달린 답변을 모두 삭제할까요?')) return;
+  const epoch = state.epoch;
+  try {
+    await api(`/cohorts/${state.cohort.id}/questions/${question.id}`, { method: 'DELETE' });
+    if (epoch !== state.epoch) return;
+    state.question = null;
+    history.replaceState(null, '', location.pathname);
+    await loadQuestions();
+    showBoardView('home');
+    status('질문을 삭제했습니다.');
+  } catch (error) { status(error.message, true); }
+});
 async function endorse(answer, button) {
   const epoch = state.epoch, question = state.question;
   button.disabled = true;
@@ -580,9 +643,98 @@ handleForm('channel-form', async form => {
   status('채널을 만들었습니다.');
 });
 
-$('manage-btn').addEventListener('click', () => $('management').showModal());
-$('add-channel-btn').addEventListener('click', () => { $('management').showModal(); $('channel-form').elements.slug.focus(); });
+async function refreshManagement() {
+  const cohort = state.cohort, admin = !!state.account?.is_admin;
+  if (cohort && admin) {
+    $('cohort-status-text').textContent = `${cohort.name} — ${cohort.archived ? '종료됨 (읽기 전용)' : '진행 중'}`;
+    $('archive-btn').textContent = cohort.archived ? '수강반 다시 열기' : '수강반 종료';
+    $('archive-btn').className = cohort.archived ? '' : 'danger';
+  }
+  const jobs = [];
+  if (admin) jobs.push(loadAccounts());
+  if (cohort && isManager()) jobs.push(loadManageMembers());
+  await Promise.all(jobs);
+}
+async function loadManageMembers() {
+  const cohort = state.cohort, admin = !!state.account?.is_admin;
+  const members = await api(`/cohorts/${cohort.id}/members`);
+  if (state.cohort !== cohort) return;
+  const rows = members.map(member => {
+    const removable = member.username !== state.account.username && (admin || member.role === 'student') && !cohort.archived;
+    return el('li', {},
+      el('span', { class: 'who', text: `${member.display_name} (@${member.username})` }), roleTag(member.role),
+      removable ? el('button', { class: 'ghost danger-text', type: 'button', text: '내보내기', 'aria-label': `${member.display_name} 내보내기`,
+        onclick: () => removeMember(member) }) : null);
+  });
+  $('manage-members').replaceChildren(...(rows.length ? rows : [el('li', { class: 'muted', text: '구성원이 없습니다.' })]));
+}
+async function removeMember(member) {
+  if (!confirm(`${member.display_name}(@${member.username})님을 이 수강반에서 내보낼까요? 작성한 글은 남고, 채팅 연결은 바로 끊깁니다.`)) return;
+  try {
+    await api(`/cohorts/${state.cohort.id}/memberships/${member.id}`, { method: 'DELETE' });
+    await loadManageMembers();
+    if (state.space === 'chat') await loadMembers();
+    status('구성원을 내보냈습니다.');
+  } catch (error) { status(error.message, true); }
+}
+async function loadAccounts() {
+  const accounts = await api('/accounts');
+  const cohortName = new Map(state.cohorts.map(c => [c.id, c.name]));
+  $('account-list').replaceChildren(...accounts.map(account => {
+    const self = account.id === state.account.id;
+    const where = account.is_admin ? '관리자' : account.memberships.map(m => `${cohortName.get(m.cohort_id) || `#${m.cohort_id}`} ${ROLE_LABEL[m.role] || m.role}`).join(', ') || '소속 없음';
+    return el('li', { class: account.active ? '' : 'inactive' },
+      el('span', { class: 'who', text: `${account.display_name} (@${account.username}) · ${where}`, title: where }),
+      account.active ? null : el('span', { class: 'tag danger', text: '비활성' }),
+      self ? null : el('button', { class: 'ghost', type: 'button', text: '비밀번호 재설정', onclick: () => resetPassword(account) }),
+      self ? null : el('button', { class: account.active ? 'ghost danger-text' : 'ghost', type: 'button', text: account.active ? '비활성화' : '활성화',
+        onclick: () => setAccountActive(account, !account.active) }));
+  }));
+}
+async function resetPassword(account) {
+  if (!confirm(`@${account.username}의 비밀번호를 임시 비밀번호로 바꿀까요? 이 계정의 모든 로그인이 끊깁니다.`)) return;
+  try {
+    const result = await api(`/accounts/${account.id}/password`, { method: 'POST' });
+    const notice = $('temp-password');
+    notice.textContent = `@${result.username}의 임시 비밀번호: ${result.temporary_password} — 지금만 표시됩니다. 전달 후 본인이 변경하도록 안내하세요.`;
+    notice.classList.remove('hidden');
+  } catch (error) { status(error.message, true); }
+}
+async function setAccountActive(account, active) {
+  const question = active ? `@${account.username} 계정을 다시 활성화할까요?`
+    : `@${account.username} 계정을 비활성화할까요? 로그인이 바로 끊기고 다시 로그인할 수 없습니다.`;
+  if (!confirm(question)) return;
+  try {
+    await api(`/accounts/${account.id}`, { method: 'PATCH', json: { active } });
+    await loadAccounts();
+    status(active ? '계정을 활성화했습니다.' : '계정을 비활성화했습니다.');
+  } catch (error) { status(error.message, true); }
+}
+$('archive-btn').addEventListener('click', async () => {
+  const cohort = state.cohort;
+  if (!cohort) return;
+  const archive = !cohort.archived;
+  if (!confirm(archive ? `${cohort.name}을(를) 종료할까요? 기존 내용은 읽을 수 있지만 새 글과 채팅은 막힙니다.` : `${cohort.name}을(를) 다시 열까요?`)) return;
+  try {
+    await api(`/cohorts/${cohort.id}`, { method: 'PATCH', json: { archived: archive } });
+    await loadCohorts(cohort.id);
+    await refreshManagement();
+    status(archive ? '수강반을 종료했습니다.' : '수강반을 다시 열었습니다.');
+  } catch (error) { status(error.message, true); }
+});
+handleForm('password-form', async () => {
+  const form = $('password-form');
+  await api('/me/password', { method: 'POST', json: formValues(form) });
+  status('비밀번호를 변경했습니다. 다른 기기의 로그인은 끊겼습니다.');
+});
+$('manage-btn').addEventListener('click', () => {
+  $('temp-password').classList.add('hidden'); $('temp-password').textContent = '';
+  $('management').showModal();
+  refreshManagement().catch(error => status(error.message, true));
+});
+$('add-channel-btn').addEventListener('click', () => { $('management').showModal(); $('channel-form').elements.slug.focus(); refreshManagement().catch(error => status(error.message, true)); });
 $('management-close').addEventListener('click', () => $('management').close());
+$('management').addEventListener('close', () => { $('temp-password').classList.add('hidden'); $('temp-password').textContent = ''; });
 
 /* ---------- screen share (LiveKit SFU) ---------- */
 async function leaveMedia() {

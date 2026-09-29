@@ -63,7 +63,7 @@
         <span id="user-avatar" class="avatar sm" aria-hidden="true"></span>
         <div class="user-meta"><strong id="account-name"></strong><small id="account-label" class="muted"></small></div>
         <button id="theme-btn" class="icon-btn" title="테마 전환" aria-label="테마 전환">◐</button>
-        <button id="manage-btn" class="icon-btn hidden" title="수강반 및 계정 관리" aria-label="수강반 및 계정 관리">⚙</button>
+        <button id="manage-btn" class="icon-btn" title="계정 및 관리" aria-label="계정 및 관리">⚙</button>
         <button id="logout-btn" class="icon-btn" title="로그아웃" aria-label="로그아웃">⎋</button>
       </footer>
     </aside>
@@ -127,6 +127,7 @@
           <article id="post-view" class="board-pane hidden">
             <header class="post-head">
               <p id="post-meta" class="post-meta"></p>
+              <button id="post-delete" class="ghost danger-text hidden" type="button">질문 삭제</button>
               <h2 id="post-title"></h2>
             </header>
             <div id="post-body" class="post-body"></div>
@@ -168,18 +169,28 @@
     </main>
 
     <dialog id="management" class="dialog" aria-labelledby="management-title">
-      <header class="dialog-head"><h2 id="management-title">수강반 및 계정 관리</h2><button id="management-close" class="icon-btn" aria-label="닫기">✕</button></header>
+      <header class="dialog-head"><h2 id="management-title">계정 및 관리</h2><button id="management-close" class="icon-btn" aria-label="닫기">✕</button></header>
       <div class="management-grid">
+        <section id="self-card">
+          <form id="password-form"><h3>내 비밀번호 변경</h3><input name="current_password" type="password" aria-label="현재 비밀번호" placeholder="현재 비밀번호" autocomplete="current-password" required><input name="new_password" type="password" aria-label="새 비밀번호 (5자 이상)" placeholder="새 비밀번호 (5자 이상)" autocomplete="new-password" minlength="5" required><button>비밀번호 변경</button><small class="muted">변경하면 다른 기기의 로그인은 모두 끊깁니다.</small></form>
+        </section>
         <section id="admin-card" class="hidden">
           <p class="muted">관리자는 계정과 수강반을 만들고, 강사는 담당 수강반의 구성원과 채널을 관리합니다.</p>
           <form id="account-form"><h3>새 계정</h3><input name="username" aria-label="아이디" placeholder="아이디" required><input name="display_name" aria-label="표시 이름" placeholder="표시 이름" required><input name="password" type="password" aria-label="임시 비밀번호" autocomplete="new-password" placeholder="임시 비밀번호" minlength="5" required><button>계정 만들기</button></form>
           <form id="cohort-form"><h3>새 수강반</h3><input name="slug" aria-label="수강반 주소 ID (영문 소문자·숫자·하이픈)" placeholder="수강반 주소 ID (영문 소문자·숫자·하이픈)" required><input name="name" aria-label="수강반 이름" placeholder="수강반 이름" required><button>수강반 만들기</button></form>
+          <div id="cohort-status" class="hidden"><h3>현재 수강반</h3><p id="cohort-status-text" class="muted"></p><button id="archive-btn" type="button"></button></div>
         </section>
         <section id="manage-card" class="hidden">
           <form id="membership-form"><h3>구성원 추가</h3><input name="username" aria-label="기존 계정 아이디" placeholder="기존 계정 아이디" required><select name="role" aria-label="구성원 역할"><option value="student">수강생</option><option value="instructor">강사</option></select><button>추가 또는 변경</button></form>
           <form id="channel-form"><h3>새 채널</h3><input name="slug" aria-label="채널 주소 ID (영문 소문자·숫자·하이픈)" placeholder="채널 주소 ID (영문 소문자·숫자·하이픈)" required><input name="name" aria-label="채널 이름" placeholder="채널 이름" required><button>채널 만들기</button></form>
+          <div><h3>구성원 관리</h3><ul id="manage-members" class="manage-list" aria-label="구성원 관리"></ul></div>
         </section>
       </div>
+      <section id="accounts-card" class="accounts-card hidden" aria-labelledby="accounts-title">
+        <h3 id="accounts-title">전체 계정</h3>
+        <p id="temp-password" class="notice hidden" role="alert"></p>
+        <ul id="account-list" class="manage-list"></ul>
+      </section>
     </dialog>
   </div>
   <script type="module" src="/src/main.js"></script>
