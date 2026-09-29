@@ -1,7 +1,6 @@
 """PostgreSQL persistence for 마디 (Madi), the cohort-scoped hub."""
 from __future__ import annotations
 
-import os
 import secrets
 import threading
 from datetime import datetime, timedelta, timezone
@@ -11,6 +10,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from app.auth import hash_secret, normalize_username, token_hash, verify_secret
+from app.hub.settings import settings
 
 # One pool per database URL, reused across requests. Opening a fresh
 # connection per query costs a TCP and auth round trip, which chat delivery
@@ -21,14 +21,15 @@ _pools_lock = threading.Lock()
 
 
 def _pool() -> ConnectionPool:
-    url = os.environ.get("MADI_DATABASE_URL")
+    config = settings()
+    url = config.database_url
     if not url:
-        raise RuntimeError("Prototype PostgreSQL URL is not configured")
+        raise RuntimeError("MADI_DATABASE_URL is not configured")
     with _pools_lock:
         pool = _pools.get(url)
         if pool is None:
             pool = ConnectionPool(
-                url, min_size=1, max_size=int(os.environ.get("MADI_DB_POOL_SIZE", "10")),
+                url, min_size=1, max_size=config.db_pool_size,
                 kwargs={"row_factory": dict_row}, check=ConnectionPool.check_connection,
                 timeout=10, open=True, name="hub",
             )
@@ -161,7 +162,7 @@ def create_session(account_id: int) -> str:
     with connect() as conn:
         conn.execute("DELETE FROM hub_sessions WHERE expires_at < now()")
         conn.execute("INSERT INTO hub_sessions (token_hash, account_id, expires_at) VALUES (%s, %s, %s)",
-                     (token_hash(raw), account_id, datetime.now(timezone.utc) + timedelta(hours=12)))
+                     (token_hash(raw), account_id, datetime.now(timezone.utc) + timedelta(hours=settings().session_hours)))
     return raw
 
 

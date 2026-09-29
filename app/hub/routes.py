@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import secrets
 import time
@@ -19,11 +18,10 @@ from psycopg.errors import UniqueViolation
 
 from app.auth import normalize_username, validate_password, validate_username
 from app.hub import db
+from app.hub.settings import settings
 
 router = APIRouter(prefix="/hub", tags=["madi"])
 COOKIE = "madi_session"
-DATA_DIR = Path(__file__).resolve().parents[2] / "data_dev"
-FILE_DIR = DATA_DIR / "hub-files"
 FRONTEND_BUILD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 ALLOWED_FILE_SUFFIXES = {".txt", ".md", ".pdf", ".csv", ".png", ".jpg", ".jpeg", ".docx", ".pptx", ".xlsx"}
 # Open chat sockets per (cohort, channel), mapped to the session cookie that
@@ -137,7 +135,7 @@ async def health():
         with db.connect() as conn:
             return conn.execute("SELECT 1 AS ready").fetchone()["ready"] == 1
     try:
-        return {"postgresql": await asyncio.to_thread(check), "sfu_configured": bool(os.environ.get("MADI_SFU_URL"))}
+        return {"postgresql": await asyncio.to_thread(check), "sfu_configured": settings().sfu_configured}
     except Exception:
         raise HTTPException(503, "PostgreSQL unavailable")
 
@@ -152,7 +150,7 @@ async def login(body: Login, request: Request, response: Response):
     if not account:
         raise HTTPException(401, "Incorrect username or password")
     raw = await asyncio.to_thread(db.create_session, account["id"])
-    response.set_cookie(COOKIE, raw, max_age=43200, httponly=True, secure=True, samesite="strict", path="/hub")
+    response.set_cookie(COOKIE, raw, max_age=settings().session_hours * 3600, httponly=True, secure=True, samesite="strict", path="/hub")
     return {"id": account["id"], "username": account["username"], "is_admin": account["is_admin"]}
 
 
@@ -271,10 +269,9 @@ async def media_token(cohort_id: int, channel_id: int, request: Request):
     account, cohort = await _cohort(request, cohort_id)
     if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
         raise HTTPException(404, "Channel not found")
-    url = os.environ.get("MADI_SFU_URL")
-    api_key = os.environ.get("LIVEKIT_API_KEY")
-    api_secret = os.environ.get("LIVEKIT_API_SECRET")
-    if not url or not api_key or not api_secret:
+    config = settings()
+    url, api_key, api_secret = config.sfu_url, config.livekit_api_key, config.livekit_api_secret
+    if not config.sfu_configured:
         raise HTTPException(503, "Local SFU is not configured")
     now = datetime.now(timezone.utc)
     room = f"hub-{cohort_id}-{channel_id}"
@@ -407,9 +404,10 @@ async def upload_file(cohort_id: int, request: Request, upload: UploadFile = Fil
     content = await upload.read(10485761)
     if not 0 < len(content) <= 10485760:
         raise HTTPException(413, "Files must be between 1 byte and 10 MB")
-    FILE_DIR.mkdir(parents=True, exist_ok=True)
+    file_dir = settings().file_dir
+    file_dir.mkdir(parents=True, exist_ok=True)
     file_id = secrets.token_hex(16)
-    target = FILE_DIR / file_id
+    target = file_dir / file_id
     await asyncio.to_thread(target.write_bytes, content)  # keep the event loop (and chat) responsive
     try:
         await asyncio.to_thread(db.add_file, file_id, cohort_id, account["id"], name,
@@ -426,6 +424,7 @@ async def download_file(cohort_id: int, file_id: str, request: Request):
     if not re.fullmatch(r"[a-f0-9]{32}", file_id):
         raise HTTPException(404, "File not found")
     record = await asyncio.to_thread(db.file, cohort_id, file_id)
-    if not record or not (FILE_DIR / file_id).is_file():
+    path = settings().file_dir / file_id
+    if not record or not path.is_file():
         raise HTTPException(404, "File not found")
-    return FileResponse(FILE_DIR / file_id, filename=record["original_name"], media_type="application/octet-stream")
+    return FileResponse(path, filename=record["original_name"], media_type="application/octet-stream")

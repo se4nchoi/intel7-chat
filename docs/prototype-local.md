@@ -83,6 +83,28 @@ For a longer development setup or a classroom-device test, use a managed test
 certificate or a local CA tool such as mkcert and distribute trust deliberately.
 Avoid bypassing browser certificate warnings as a substitute for trust.
 
+## Settings
+
+Every 마디 setting has a default that reproduces this loopback prototype, so
+the commands above need no configuration. To run elsewhere, set only what
+differs as environment variables before starting `prototype_run.py`:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MADI_HOST` / `MADI_PORT` | `127.0.0.1` / `8443` | Address the app listens on |
+| `MADI_TLS_CERT` / `MADI_TLS_KEY` | `data_dev/tls/localhost.*` | HTTPS certificate and key |
+| `MADI_DATABASE_URL` | from `data_dev/pg-app.env` (loopback only) | PostgreSQL URL; setting it lifts the loopback check |
+| `MADI_DB_POOL_SIZE` | `10` | Pooled database connections |
+| `MADI_FILE_DIR` | `data_dev/hub-files` | Uploaded file bytes (a NAS path later) |
+| `MADI_SESSION_HOURS` | `12` | Login lifetime |
+| `MADI_SFU_URL` | `wss://127.0.0.1:7882` | LiveKit address browsers connect to |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | from `data_dev/livekit.env` | Media token signing |
+| `MADI_ALLOWED_HOSTS` | none | Extra host names, e.g. an internal DNS name |
+
+Private IPs, `localhost` and single-label or `.local` names are always
+accepted. Invalid numbers stop startup with the variable's name. The full
+list is in `app/hub/settings.py`.
+
 ## Verified locally
 
 - PostgreSQL accepts app credentials on loopback; the hub reads and writes

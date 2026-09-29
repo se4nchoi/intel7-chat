@@ -27,6 +27,7 @@ from app.auth import (hash_secret, new_session_token, normalize_username, secret
                         token_hash, validate_channel_description, validate_channel_display_name,
                         validate_channel_name, validate_display_name, validate_password,
                         validate_username, verify_secret)
+from app.hub.settings import allowed_hosts as madi_allowed_hosts
 from app.config import load_config, save_config
 from app.database import (attachment_is_visible_to_user, channel_exists, claim_attachments, configure_storage, count_active_admins,
     create_channel, create_session, create_user, delete_owned_attachment, delete_session,
@@ -88,7 +89,7 @@ UPLOAD_DIR = CONFIG.data_path / "uploads"
 QUIZ_SOURCES_DIR = CONFIG.data_path / "quiz_sources"
 QUIZ_IMAGES_DIR = CONFIG.data_path / "quiz_images"
 EXPLICIT_ALLOWED_HOSTS = {h.strip().casefold() for h in
-    os.getenv("CLASSROOM_ALLOWED_HOSTS", "").split(",") if h.strip()}
+    os.getenv("CLASSROOM_ALLOWED_HOSTS", "").split(",") if h.strip()} | madi_allowed_hosts()
 BLOCKED_UPLOAD_SUFFIXES = {".app",".bat",".cmd",".com",".cpl",".dll",".dmg",".exe",".hta",
     ".htm",".html",".jar",".js",".jse",".lnk",".mjs",".msi",".msp",".pif",".ps1",".reg",
     ".scr",".svg",".vbe",".vbs",".wsf",".wsh"}
@@ -378,6 +379,8 @@ async def lifespan(app: FastAPI):
     init_db()
     if os.environ.get("MADI_DATABASE_URL"):
         from app.hub.db import initialize_schema
+        from app.hub.settings import settings as madi_settings
+        madi_settings().file_dir.mkdir(parents=True, exist_ok=True)  # also rejects invalid MADI_* numbers
         await asyncio.to_thread(initialize_schema)
     UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
     QUIZ_SOURCES_DIR.mkdir(parents=True,exist_ok=True)

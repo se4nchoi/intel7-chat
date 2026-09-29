@@ -205,3 +205,29 @@ def test_messages_after_returns_only_newer_in_order(hub):
     assert newer[0]["role"] == "instructor"
     assert teacher.get(url, params={"after": ids[-1]}).json() == []
     assert teacher.get(url, params={"after": -1}).status_code == 422
+
+
+def test_upload_and_download_use_configured_file_dir(hub, monkeypatch, tmp_path):
+    app, cohort_id, _ = hub
+    monkeypatch.setenv("MADI_FILE_DIR", str(tmp_path / "madi-files"))
+    student = login(app, "student")
+    url = f"/hub/api/cohorts/{cohort_id}/files"
+    uploaded = student.post(url, files={"upload": ("notes.txt", b"hello madi", "text/plain")}, headers=ORIGIN)
+    assert uploaded.status_code == 201
+    file_id = uploaded.json()["id"]
+    assert (tmp_path / "madi-files" / file_id).read_bytes() == b"hello madi"
+    download = student.get(f"{url}/{file_id}")
+    assert download.content == b"hello madi"
+    assert "notes.txt" in download.headers["content-disposition"]
+
+
+def test_session_lifetime_follows_setting(hub, monkeypatch):
+    from app.hub import db
+    app, _, _ = hub
+    monkeypatch.setenv("MADI_SESSION_HOURS", "2")
+    client = login(app, "student")
+    assert "Max-Age=7200" in client.post("/hub/api/login", json={"username": "student", "password": PASSWORD},
+                                         headers=ORIGIN).headers["set-cookie"]
+    with db.connect() as conn:
+        hours = conn.execute("SELECT extract(epoch FROM max(expires_at) - now()) / 3600 AS h FROM hub_sessions").fetchone()["h"]
+    assert 1.9 < float(hours) <= 2.0

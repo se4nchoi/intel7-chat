@@ -1,4 +1,9 @@
-"""Run an isolated, loopback-only HTTPS prototype beside the live LAN service."""
+"""Run 마디 (Madi) over HTTPS, isolated from the live LAN service.
+
+Defaults are the loopback-only prototype on this PC. MADI_HOST, MADI_PORT,
+MADI_TLS_CERT, MADI_TLS_KEY, MADI_DATABASE_URL, MADI_SFU_URL and
+LIVEKIT_API_KEY/SECRET override them; see app/hub/settings.py.
+"""
 
 from __future__ import annotations
 
@@ -13,10 +18,10 @@ DATA_DIR = ROOT / "data_dev"
 TLS_DIR = DATA_DIR / "tls"
 PG_ENV_PATH = DATA_DIR / "pg-app.env"
 LIVEKIT_ENV_PATH = DATA_DIR / "livekit.env"
-CERT_PATH = TLS_DIR / "localhost.crt"
-KEY_PATH = TLS_DIR / "localhost.key"
-HOST = "127.0.0.1"
-PORT = 8443
+CERT_PATH = Path(os.environ.get("MADI_TLS_CERT") or TLS_DIR / "localhost.crt")
+KEY_PATH = Path(os.environ.get("MADI_TLS_KEY") or TLS_DIR / "localhost.key")
+HOST = os.environ.get("MADI_HOST", "127.0.0.1")
+PORT = int(os.environ.get("MADI_PORT", "8443"))
 
 
 def initialize() -> None:
@@ -56,9 +61,8 @@ def checked_config():
     if not CONFIG_PATH.exists():
         raise SystemExit("Run `uv run --locked python prototype_run.py --init` first.")
     config = load_config(CONFIG_PATH)
-    if (config.data_path != DATA_DIR.resolve() or
-            config.bind_host != HOST or config.port != PORT):
-        raise SystemExit("Prototype configuration must use its own data_dev directory and 127.0.0.1:8443.")
+    if config.data_path != DATA_DIR.resolve():
+        raise SystemExit("Prototype configuration must use its own data_dev directory.")
     return config
 
 
@@ -75,19 +79,22 @@ def main() -> None:
         return
 
     checked_config()
-    if not PG_ENV_PATH.is_file():
-        raise SystemExit(f"Missing prototype PostgreSQL credentials: {PG_ENV_PATH}")
-    line = PG_ENV_PATH.read_text(encoding="utf-8").strip()
-    if not line.startswith("DATABASE_URL=postgresql://") or "@127.0.0.1:55432/" not in line:
-        raise SystemExit("Prototype PostgreSQL must use 127.0.0.1:55432")
-    os.environ["MADI_DATABASE_URL"] = line.partition("=")[2]
-    os.environ["MADI_SFU_URL"] = "wss://127.0.0.1:7882"
-    if not LIVEKIT_ENV_PATH.is_file():
-        raise SystemExit(f"Missing prototype LiveKit credentials: {LIVEKIT_ENV_PATH}")
-    for line in LIVEKIT_ENV_PATH.read_text(encoding="utf-8").splitlines():
-        key, separator, value = line.partition("=")
-        if separator and key in {"LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"}:
-            os.environ[key] = value
+    if not os.environ.get("MADI_DATABASE_URL"):
+        # No explicit database: use this PC's loopback prototype instance.
+        if not PG_ENV_PATH.is_file():
+            raise SystemExit(f"Missing prototype PostgreSQL credentials: {PG_ENV_PATH}")
+        line = PG_ENV_PATH.read_text(encoding="utf-8").strip()
+        if not line.startswith("DATABASE_URL=postgresql://") or "@127.0.0.1:55432/" not in line:
+            raise SystemExit("Prototype PostgreSQL must use 127.0.0.1:55432 (or set MADI_DATABASE_URL)")
+        os.environ["MADI_DATABASE_URL"] = line.partition("=")[2]
+    os.environ.setdefault("MADI_SFU_URL", "wss://127.0.0.1:7882")
+    if not (os.environ.get("LIVEKIT_API_KEY") and os.environ.get("LIVEKIT_API_SECRET")):
+        if not LIVEKIT_ENV_PATH.is_file():
+            raise SystemExit(f"Missing prototype LiveKit credentials: {LIVEKIT_ENV_PATH}")
+        for line in LIVEKIT_ENV_PATH.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition("=")
+            if separator and key in {"LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"}:
+                os.environ[key] = value
     if not os.environ.get("LIVEKIT_API_KEY") or not os.environ.get("LIVEKIT_API_SECRET"):
         raise SystemExit("LiveKit API key and secret are required")
     if args.init_pg:
@@ -96,7 +103,8 @@ def main() -> None:
         print("Prototype hub seeded" if seed_demo(DATA_DIR) else "Prototype hub already initialized")
         return
     if not CERT_PATH.is_file() or not KEY_PATH.is_file():
-        raise SystemExit(f"Missing TLS certificate/key in {TLS_DIR}; run scripts/create_prototype_cert.ps1.")
+        raise SystemExit(f"Missing TLS certificate/key ({CERT_PATH}, {KEY_PATH}); run scripts/create_prototype_cert.ps1 "
+                         "or set MADI_TLS_CERT and MADI_TLS_KEY.")
     if args.check:
         print(f"Prototype ready: https://{HOST}:{PORT}; data: {DATA_DIR}; TLS: {CERT_PATH}")
         return
