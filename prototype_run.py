@@ -116,7 +116,9 @@ def main() -> None:
         ws_max_size=65536,
         ws_max_queue=16,
         ws_per_message_deflate=False,
-        limit_concurrency=60,
+        # Every open chat WebSocket counts toward this cap, and past it uvicorn
+        # answers 503 to everything. 60 would be reached by about two classrooms.
+        limit_concurrency=1000,
         server_header=False,
     )
 

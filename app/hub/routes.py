@@ -5,7 +5,8 @@ import asyncio
 import os
 import re
 import secrets
-from collections import defaultdict
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 from psycopg.errors import UniqueViolation
 
-from app.auth import validate_password, validate_username
+from app.auth import normalize_username, validate_password, validate_username
 from app.hub import db
 
 router = APIRouter(prefix="/hub", tags=["prototype-hub"])
@@ -30,6 +31,26 @@ ALLOWED_FILE_SUFFIXES = {".txt", ".md", ".pdf", ".csv", ".png", ".jpg", ".jpeg",
 # expired session, or a removed membership, stops receiving immediately.
 connections: dict[tuple[int, int], dict[WebSocket, str]] = defaultdict(dict)
 REVOKED = 1008
+# Failed and successful login attempts per (client IP, username), same limit
+# as the legacy app. Behind a reverse proxy the IP is the proxy's until
+# forwarded headers are trusted.
+LOGIN_LIMIT = 12
+LOGIN_WINDOW_SECONDS = 300
+login_attempts: dict[str, deque[float]] = {}
+
+
+def _login_allowed(key: str, now: float | None = None) -> bool:
+    now = time.monotonic() if now is None else now
+    attempts = login_attempts.setdefault(key, deque())
+    while attempts and attempts[0] <= now - LOGIN_WINDOW_SECONDS:
+        attempts.popleft()
+    if len(attempts) >= LOGIN_LIMIT:
+        return False
+    attempts.append(now)
+    # Forget stale keys so the table doesn't grow with every username tried.
+    for stale in [k for k, v in login_attempts.items() if v and v[-1] <= now - LOGIN_WINDOW_SECONDS]:
+        del login_attempts[stale]
+    return True
 
 
 def _same_origin(request: Request) -> None:
@@ -124,6 +145,9 @@ async def health():
 @router.post("/api/login")
 async def login(body: Login, request: Request, response: Response):
     _same_origin(request)
+    ip = request.client.host if request.client else ""
+    if not _login_allowed(f"{ip}:{normalize_username(body.username)[:50]}"):
+        raise HTTPException(429, "Too many login attempts; try again later")
     account = await asyncio.to_thread(db.authenticate, body.username, body.password)
     if not account:
         raise HTTPException(401, "Incorrect username or password")
@@ -386,7 +410,7 @@ async def upload_file(cohort_id: int, request: Request, upload: UploadFile = Fil
     FILE_DIR.mkdir(parents=True, exist_ok=True)
     file_id = secrets.token_hex(16)
     target = FILE_DIR / file_id
-    target.write_bytes(content)
+    await asyncio.to_thread(target.write_bytes, content)  # keep the event loop (and chat) responsive
     try:
         await asyncio.to_thread(db.add_file, file_id, cohort_id, account["id"], name,
                                 upload.content_type or "application/octet-stream", len(content))

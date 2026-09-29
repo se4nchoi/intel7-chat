@@ -6,6 +6,7 @@ const messages = {
   'This cohort is archived': '종료된 수강반은 내용을 변경할 수 없습니다.',
   'PostgreSQL unavailable': '서비스에 연결할 수 없습니다. 잠시 후 다시 시도하세요.',
   'Incorrect username or password': '아이디 또는 비밀번호가 올바르지 않습니다.',
+  'Too many login attempts; try again later': '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.',
   'Administrator access required': '관리자 권한이 필요합니다.',
   'Cohort slug already exists': '이미 사용 중인 수강반 주소 ID입니다.',
   'Username already exists': '이미 사용 중인 아이디입니다.',

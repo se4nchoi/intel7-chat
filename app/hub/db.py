@@ -3,20 +3,49 @@ from __future__ import annotations
 
 import os
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from app.auth import hash_secret, normalize_username, token_hash, verify_secret
 
+# One pool per database URL, reused across requests. Opening a fresh
+# connection per query costs a TCP and auth round trip, which chat delivery
+# pays once per listening session. Keep max_size at or below the default
+# asyncio.to_thread worker count so waiting threads don't pile up.
+_pools: dict[str, ConnectionPool] = {}
+_pools_lock = threading.Lock()
 
-def connect():
+
+def _pool() -> ConnectionPool:
     url = os.environ.get("BAMBOOCHAT_HUB_DATABASE_URL")
     if not url:
         raise RuntimeError("Prototype PostgreSQL URL is not configured")
-    return psycopg.connect(url, row_factory=dict_row)
+    with _pools_lock:
+        pool = _pools.get(url)
+        if pool is None:
+            pool = ConnectionPool(
+                url, min_size=1, max_size=int(os.environ.get("BAMBOOCHAT_HUB_DB_POOL_SIZE", "10")),
+                kwargs={"row_factory": dict_row}, check=ConnectionPool.check_connection,
+                timeout=10, open=True, name="hub",
+            )
+            _pools[url] = pool
+    return pool
+
+
+def connect():
+    """Borrow a pooled connection; commits on success, rolls back on error."""
+    return _pool().connection()
+
+
+def close_pools() -> None:
+    with _pools_lock:
+        for pool in _pools.values():
+            pool.close()
+        _pools.clear()
 
 
 SCHEMA = """
@@ -140,11 +169,22 @@ def seed_demo(data_dir: Path) -> bool:
     return True
 
 
+_dummy_hash: str | None = None
+
+
 def authenticate(username: str, password: str):
+    global _dummy_hash
     with connect() as conn:
         row = conn.execute("SELECT * FROM hub_accounts WHERE normalized_username=%s AND active",
                            (normalize_username(username),)).fetchone()
-    return row if row and verify_secret(row["password_hash"], password) else None
+    if not row:
+        # Verify against a throwaway hash so unknown usernames take as long
+        # as wrong passwords and can't be discovered by timing.
+        if _dummy_hash is None:
+            _dummy_hash = hash_secret(secrets.token_urlsafe(16))
+        verify_secret(_dummy_hash, password)
+        return None
+    return row if verify_secret(row["password_hash"], password) else None
 
 
 def create_session(account_id: int) -> str:

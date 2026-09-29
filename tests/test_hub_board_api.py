@@ -21,6 +21,7 @@ ORIGIN = {"origin": "https://testserver"}
 def hub(monkeypatch):
     from app.hub import db, routes
     monkeypatch.setenv("BAMBOOCHAT_HUB_DATABASE_URL", TEST_URL)
+    routes.login_attempts.clear()
     with db.connect() as conn:
         conn.execute("""DROP TABLE IF EXISTS hub_files, hub_answers, hub_questions, hub_messages,
                         hub_channels, hub_memberships, hub_cohorts, hub_sessions, hub_accounts CASCADE""")
@@ -157,3 +158,38 @@ def test_other_sessions_keep_receiving_after_one_logout(hub):
         post(teacher, cohort_id, channel_id, "still here")
         assert_revoked(phone_ws)
         assert laptop_ws.receive_json()["message"]["body"] == "still here"
+
+
+# --- Pre-deployment hardening: pooled connections, login throttling ---
+
+def test_connections_are_reused_from_pool(hub):
+    from app.hub import db
+    pids = set()
+    for _ in range(20):
+        with db.connect() as conn:
+            pids.add(conn.execute("SELECT pg_backend_pid() AS pid").fetchone()["pid"])
+    assert len(pids) <= db._pool().max_size < 20
+
+
+def test_failed_query_does_not_poison_pooled_connection(hub):
+    from app.hub import db
+    with pytest.raises(Exception):
+        with db.connect() as conn:
+            conn.execute("SELECT * FROM no_such_table")
+    with db.connect() as conn:
+        assert conn.execute("SELECT 1 AS ok").fetchone()["ok"] == 1
+
+
+def test_login_is_throttled_per_username(hub):
+    from app.hub.routes import LOGIN_LIMIT
+    app, _, _ = hub
+    client = TestClient(app, base_url="https://testserver")
+    for _ in range(LOGIN_LIMIT):
+        wrong = client.post("/hub/api/login", json={"username": "student", "password": "wrong-pass-1234"}, headers=ORIGIN)
+        assert wrong.status_code == 401
+    blocked = client.post("/hub/api/login", json={"username": "student", "password": PASSWORD}, headers=ORIGIN)
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == "Too many login attempts; try again later"
+    # Case variants of the same username share the limit; other accounts don't.
+    assert client.post("/hub/api/login", json={"username": "STUDENT", "password": PASSWORD}, headers=ORIGIN).status_code == 429
+    login(app, "teacher")

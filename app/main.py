@@ -385,6 +385,9 @@ async def lifespan(app: FastAPI):
     prune_expired_sessions()
     logger.info("Persistent storage initialized at %s", CONFIG.data_path)
     yield
+    if os.environ.get("BAMBOOCHAT_HUB_DATABASE_URL"):
+        from app.hub.db import close_pools
+        await asyncio.to_thread(close_pools)
 
 app=FastAPI(title=SERVICE_NAME,lifespan=lifespan,docs_url=None,redoc_url=None,openapi_url=None)
 
