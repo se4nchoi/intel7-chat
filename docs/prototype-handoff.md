@@ -62,6 +62,7 @@ uses an isolated SQLite database and has separate accounts and cookies.
 | Vite build and pinned browser dependencies | `frontend/package.json`, `frontend/package-lock.json`, `frontend/vite.config.js` |
 | Hub HTTP/WebSocket API, auth checks, media tokens | `app/hub/routes.py` |
 | Hub PostgreSQL schema and queries | `app/hub/db.py` |
+| Hub schema changes | `app/hub/migrations/NNNN_name.sql`, applied in order at startup and recorded in `hub_schema_migrations`. Add a new numbered file; never edit one that has shipped. |
 | FastAPI application and built-asset mount | `app/main.py` |
 | Isolated HTTPS launcher and stack restart | `prototype_run.py`, `scripts/start_prototype_stack.ps1` |
 | Host-specific setup and verification details | [prototype-local.md](prototype-local.md) |

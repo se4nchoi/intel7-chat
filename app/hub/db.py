@@ -48,87 +48,56 @@ def close_pools() -> None:
         _pools.clear()
 
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS hub_accounts (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    username TEXT NOT NULL,
-    normalized_username TEXT NOT NULL UNIQUE,
-    display_name TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
-    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE TABLE IF NOT EXISTS hub_sessions (
-    token_hash TEXT PRIMARY KEY,
-    account_id BIGINT NOT NULL REFERENCES hub_accounts(id) ON DELETE CASCADE,
-    expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS hub_sessions_expires ON hub_sessions(expires_at);
-CREATE TABLE IF NOT EXISTS hub_cohorts (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    slug TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    archived BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE TABLE IF NOT EXISTS hub_memberships (
-    cohort_id BIGINT NOT NULL REFERENCES hub_cohorts(id) ON DELETE CASCADE,
-    account_id BIGINT NOT NULL REFERENCES hub_accounts(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK (role IN ('instructor', 'student')),
-    active BOOLEAN NOT NULL DEFAULT TRUE,
-    PRIMARY KEY (cohort_id, account_id)
-);
-CREATE TABLE IF NOT EXISTS hub_channels (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    cohort_id BIGINT NOT NULL REFERENCES hub_cohorts(id) ON DELETE CASCADE,
-    slug TEXT NOT NULL,
-    name TEXT NOT NULL,
-    UNIQUE (cohort_id, slug),
-    UNIQUE (id, cohort_id)
-);
-CREATE TABLE IF NOT EXISTS hub_messages (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    channel_id BIGINT NOT NULL REFERENCES hub_channels(id) ON DELETE CASCADE,
-    author_id BIGINT NOT NULL REFERENCES hub_accounts(id),
-    body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 2000),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS hub_messages_channel ON hub_messages(channel_id, id);
-CREATE TABLE IF NOT EXISTS hub_questions (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    cohort_id BIGINT NOT NULL REFERENCES hub_cohorts(id) ON DELETE CASCADE,
-    author_id BIGINT NOT NULL REFERENCES hub_accounts(id),
-    title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
-    body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 5000),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS hub_questions_cohort ON hub_questions(cohort_id, id);
-CREATE TABLE IF NOT EXISTS hub_answers (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    question_id BIGINT NOT NULL REFERENCES hub_questions(id) ON DELETE CASCADE,
-    author_id BIGINT NOT NULL REFERENCES hub_accounts(id),
-    body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 5000),
-    endorsed BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE TABLE IF NOT EXISTS hub_files (
-    id TEXT PRIMARY KEY,
-    cohort_id BIGINT NOT NULL REFERENCES hub_cohorts(id) ON DELETE CASCADE,
-    uploader_id BIGINT NOT NULL REFERENCES hub_accounts(id),
-    original_name TEXT NOT NULL,
-    content_type TEXT NOT NULL,
-    size_bytes BIGINT NOT NULL CHECK (size_bytes BETWEEN 1 AND 10485760),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS hub_files_cohort ON hub_files(cohort_id, created_at DESC);
-"""
+MIGRATIONS_DIR = Path(__file__).with_name("migrations")
+MIGRATION_LOCK = 7_265_341  # arbitrary pg_advisory_xact_lock key for this app
+
+
+def available_migrations() -> list[tuple[int, str, str]]:
+    """(version, name, sql) for each NNNN_name.sql file, in order."""
+    found = []
+    for path in sorted(MIGRATIONS_DIR.glob("[0-9][0-9][0-9][0-9]_*.sql")):
+        version, _, name = path.stem.partition("_")
+        found.append((int(version), name, path.read_text(encoding="utf-8")))
+    versions = [v for v, _, _ in found]
+    if versions != list(range(1, len(versions) + 1)):
+        raise RuntimeError(f"Hub migrations must be numbered 1..n without gaps, found {versions}")
+    return found
+
+
+def migrate(migrations: list[tuple[int, str, str]] | None = None) -> list[int]:
+    """Apply pending migrations, each in its own transaction; returns the versions applied."""
+    migrations = available_migrations() if migrations is None else migrations
+    applied_now = []
+    with connect() as conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS hub_schema_migrations (
+                            version INTEGER PRIMARY KEY,
+                            name TEXT NOT NULL,
+                            applied_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+    for version, name, sql in migrations:
+        with connect() as conn:
+            # Serialize concurrent starts; the lock is released when this transaction ends.
+            conn.execute("SELECT pg_advisory_xact_lock(%s)", (MIGRATION_LOCK,))
+            if conn.execute("SELECT 1 FROM hub_schema_migrations WHERE version=%s", (version,)).fetchone():
+                continue
+            conn.execute(sql)
+            conn.execute("INSERT INTO hub_schema_migrations (version, name) VALUES (%s, %s)", (version, name))
+            applied_now.append(version)
+    with connect() as conn:
+        newest = conn.execute("SELECT max(version) AS v FROM hub_schema_migrations").fetchone()["v"] or 0
+    known = migrations[-1][0] if migrations else 0
+    if newest > known:
+        raise RuntimeError(f"Hub database is at schema version {newest}, newer than this code ({known}); "
+                           "update the code before starting it against this database")
+    return applied_now
+
+
+def schema_version() -> int:
+    with connect() as conn:
+        return conn.execute("SELECT coalesce(max(version), 0) AS v FROM hub_schema_migrations").fetchone()["v"]
 
 
 def initialize_schema() -> None:
-    with connect() as conn:
-        conn.execute(SCHEMA)
+    migrate()
 
 
 def seed_demo(data_dir: Path) -> bool:

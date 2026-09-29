@@ -23,7 +23,7 @@ def hub(monkeypatch):
     monkeypatch.setenv("MADI_DATABASE_URL", TEST_URL)
     routes.login_attempts.clear()
     with db.connect() as conn:
-        conn.execute("""DROP TABLE IF EXISTS hub_files, hub_answers, hub_questions, hub_messages,
+        conn.execute("""DROP TABLE IF EXISTS hub_schema_migrations, hub_files, hub_answers, hub_questions, hub_messages,
                         hub_channels, hub_memberships, hub_cohorts, hub_sessions, hub_accounts CASCADE""")
     db.initialize_schema()
     admin = db.create_account("admin_user", "Admin", PASSWORD)
