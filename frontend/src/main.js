@@ -40,6 +40,13 @@ function el(tag, props = {}, ...children) {
 const isManager = () => ['admin', 'instructor'].includes(state.cohort?.role);
 // Authors delete their own posts; instructors and admins any post in their cohort. Archived cohorts are read-only.
 const canDelete = item => !!state.cohort && !state.cohort.archived && (item.username === state.account?.username || isManager());
+// Only authors edit, so nobody's words are changed under their name.
+const canEdit = item => !!state.cohort && !state.cohort.archived && item.username === state.account?.username;
+function editedMark(item) {
+  return item.edited_at ? el('span', { class: 'edited', text: '(수정됨)', title: `${new Date(item.edited_at).toLocaleString('ko-KR')}에 수정` }) : null;
+}
+// One place that turns stored text into what is shown, so formatting can be added here later.
+function renderBody(node, text) { node.textContent = text; return node; }
 const roleClass = role => (role === 'instructor' || role === 'admin') ? role : '';
 function hue(text) { let h = 0; for (const ch of String(text)) h = (h * 31 + ch.codePointAt(0)) % 360; return h; }
 function initials(name) { const trimmed = String(name || '?').trim(); return /[가-힣]/.test(trimmed[0]) ? trimmed.slice(0, 1) : trimmed.slice(0, 2).toUpperCase(); }
@@ -297,6 +304,7 @@ function flushHolding() {
 function applyChannelEvent(event) {
   if (event.type === 'message') receive(event.message);
   else if (event.type === 'message_deleted') removeMessage(event.id);
+  else if (event.type === 'message_edited') updateMessage(event.message);
 }
 function handleEvent(event) {
   if (event.type === 'presence') { state.online = new Set(event.online); renderMembers(); return; }
@@ -399,20 +407,53 @@ function appendMessage(message) {
   const name = message.display_name || message.username;
   const time = el('time', { datetime: message.created_at, text: stamp(message.created_at), title: when.toLocaleString('ko-KR') });
   const data = { messageId: message.id, username: message.username, createdAt: message.created_at };
-  const remove = canDelete(message)
-    ? el('button', { class: 'msg-delete', type: 'button', text: '삭제', 'aria-label': `${name}의 메시지 삭제`, onclick: () => deleteMessage(message) })
-    : null;
+  const body = el('div', { class: 'msg-body' }, renderBody(el('span', { class: 'msg-text' }), message.body), editedMark(message));
   const row = grouped
     ? el('div', { class: 'msg', dataset: data },
-        el('span', { class: 'hover-time', 'aria-hidden': 'true', text: timeFmt.format(when) }),
-        el('div', { class: 'msg-body', text: message.body }), remove)
+        el('span', { class: 'hover-time', 'aria-hidden': 'true', text: timeFmt.format(when) }), body)
     : el('div', { class: 'msg head', dataset: data },
         avatar(name, message.username),
         el('div', { class: 'msg-head' }, el('strong', { class: roleClass(message.role), text: name, title: `@${message.username}` }), roleTag(message.role), time),
-        el('div', { class: 'msg-body', text: message.body }), remove);
+        body);
+  row.append(messageActions(message, row));
   box.append(row);
   state.lastMessage = message;
   if (nearBottom || message.username === state.account?.username) box.scrollTop = box.scrollHeight;
+}
+function messageActions(message, row) {
+  const name = message.display_name || message.username;
+  const bar = el('div', { class: 'msg-actions', role: 'toolbar', 'aria-label': '메시지 작업' },
+    canEdit(message) ? el('button', { type: 'button', text: '수정', 'aria-label': '내 메시지 수정', onclick: () => startEditMessage(message, row) }) : null,
+    canDelete(message) ? el('button', { type: 'button', class: 'danger-text', text: '삭제', 'aria-label': `${name}의 메시지 삭제`, onclick: () => deleteMessage(message) }) : null);
+  return bar.childElementCount ? bar : null;
+}
+function updateMessage(message) {
+  const row = $('messages').querySelector(`[data-message-id="${message.id}"]`);
+  if (!row || row.classList.contains('editing')) return;
+  row.querySelector('.msg-body').replaceChildren(renderBody(el('span', { class: 'msg-text' }), message.body), editedMark(message));
+}
+function startEditMessage(message, row) {
+  if (row.classList.contains('editing')) return;
+  const body = row.querySelector('.msg-body'), original = [...body.childNodes];
+  const current = row.querySelector('.msg-text').textContent;
+  const input = el('textarea', { class: 'edit-input', rows: 2, maxlength: 2000, 'aria-label': '메시지 수정' });
+  input.value = current;
+  const done = () => { row.classList.remove('editing'); body.replaceChildren(...original); };
+  const save = async () => {
+    const text = input.value.trim();
+    if (!text || text === current) { done(); return; }
+    try {
+      const updated = await api(`/cohorts/${state.cohort.id}/channels/${state.channel.id}/messages/${message.id}`, { method: 'PATCH', json: { body: text } });
+      Object.assign(message, updated); row.classList.remove('editing'); updateMessage(updated);
+    } catch (error) { status(error.message, true); }
+  };
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); save(); }
+    else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); done(); }
+  });
+  row.classList.add('editing');
+  body.replaceChildren(input, el('small', { class: 'edit-hint', text: 'Enter 저장 · Esc 취소 · Shift+Enter 줄바꿈' }));
+  input.focus(); input.setSelectionRange(input.value.length, input.value.length);
 }
 function removeMessage(id) {
   const box = $('messages'), row = box.querySelector(`[data-message-id="${id}"]`);
@@ -548,8 +589,10 @@ async function selectQuestion(question, updateUrl = true) {
   $('post-meta').replaceChildren(...[avatar(question.display_name || question.username, question.username, true),
     el('strong', { text: question.display_name || question.username }), roleTag(question.role),
     el('span', { text: `· ${stamp(question.created_at)}` }), el('span', { text: `· 질문 #${question.id}` })].filter(Boolean));
-  $('post-body').textContent = question.body;
+  $('post-body').replaceChildren(renderBody(el('span'), question.body), editedMark(question));
   $('post-delete').classList.toggle('hidden', !canDelete(question));
+  $('post-edit').classList.toggle('hidden', !canEdit(question));
+  $('post-edit-form').classList.add('hidden'); $('post-content').classList.remove('hidden');
   $('instructor-answers').replaceChildren(); $('student-answers').replaceChildren();
   renderFeed(); updateControls();
   const answers = await api(`/cohorts/${cohort.id}/questions/${question.id}/answers`);
@@ -566,12 +609,47 @@ function renderAnswers(answers) {
       el('span', { text: stamp(answer.created_at) }),
       answer.endorsed ? el('span', { class: 'endorsed-mark', text: '✓ 강사 인정' }) : null,
       canEndorse && !byInstructor(answer) ? el('button', { class: 'endorse-btn', text: answer.endorsed ? '인정 취소' : '👍 좋은 답변', onclick: event => endorse(answer, event.currentTarget) }) : null,
+      canEdit(answer) ? el('button', { class: 'ghost answer-edit', type: 'button', text: '수정', 'aria-label': '내 답변 수정', onclick: event => startEditAnswer(answer, event.currentTarget.closest('li')) }) : null,
       canDelete(answer) ? el('button', { class: 'ghost danger-text answer-delete', type: 'button', text: '삭제', 'aria-label': '답변 삭제', onclick: () => deleteAnswer(answer) }) : null),
-    el('div', { class: 'answer-body', text: answer.body }));
+    el('div', { class: 'answer-body' }, renderBody(el('span'), answer.body), editedMark(answer)));
   const fill = (id, list, empty) => $(id).replaceChildren(...(list.length ? list.map(item) : [el('li', { class: 'empty-answer', text: empty })]));
   fill('instructor-answers', answers.filter(byInstructor), '아직 강사 답변이 없습니다.');
   fill('student-answers', answers.filter(a => !byInstructor(a)), '아직 수강생 답변이 없습니다. 아는 내용이 있다면 먼저 답해 보세요.');
 }
+function startEditAnswer(answer, item) {
+  const body = item.querySelector('.answer-body');
+  if (body.querySelector('form')) return;
+  const original = [...body.childNodes];
+  const input = el('textarea', { name: 'body', rows: 4, maxlength: 5000, required: true, 'aria-label': '답변 수정' });
+  input.value = answer.body;
+  const form = el('form', { class: 'inline-edit' }, input,
+    el('div', { class: 'form-actions' }, el('button', { type: 'button', class: 'ghost', text: '취소', onclick: () => body.replaceChildren(...original) }), el('button', { class: 'primary', text: '저장' })));
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const epoch = state.epoch, question = state.question;
+    try {
+      await api(`/cohorts/${state.cohort.id}/questions/${question.id}/answers/${answer.id}`, { method: 'PATCH', json: { body: input.value } });
+      if (epoch === state.epoch && state.question?.id === question.id) await selectQuestion(state.question, false);
+      status('답변을 수정했습니다.');
+    } catch (error) { status(error.message, true); }
+  });
+  body.replaceChildren(form); input.focus();
+}
+$('post-edit').addEventListener('click', () => {
+  const question = state.question, form = $('post-edit-form');
+  if (!question) return;
+  form.elements.title.value = question.title; form.elements.body.value = question.body;
+  $('post-content').classList.add('hidden'); form.classList.remove('hidden'); form.elements.title.focus();
+});
+$('post-edit-cancel').addEventListener('click', () => { $('post-edit-form').classList.add('hidden'); $('post-content').classList.remove('hidden'); });
+handleForm('post-edit-form', async form => {
+  const epoch = state.epoch, question = state.question;
+  await api(`/cohorts/${state.cohort.id}/questions/${question.id}`, { method: 'PATCH', json: formValues(form) });
+  if (epoch !== state.epoch) return;
+  await loadQuestions();
+  if (state.question?.id === question.id) await selectQuestion(state.question, false);
+  status('질문을 수정했습니다.');
+});
 async function deleteAnswer(answer) {
   if (!confirm('이 답변을 삭제할까요?')) return;
   const epoch = state.epoch, question = state.question;

@@ -127,10 +127,20 @@
           <article id="post-view" class="board-pane hidden">
             <header class="post-head">
               <p id="post-meta" class="post-meta"></p>
-              <button id="post-delete" class="ghost danger-text hidden" type="button">질문 삭제</button>
-              <h2 id="post-title"></h2>
+              <div class="post-tools">
+                <button id="post-edit" class="ghost hidden" type="button">질문 수정</button>
+                <button id="post-delete" class="ghost danger-text hidden" type="button">질문 삭제</button>
+              </div>
             </header>
-            <div id="post-body" class="post-body"></div>
+            <div id="post-content">
+              <h2 id="post-title"></h2>
+              <div id="post-body" class="post-body"></div>
+            </div>
+            <form id="post-edit-form" class="inline-edit hidden">
+              <input name="title" maxlength="200" required aria-label="질문 제목">
+              <textarea name="body" rows="6" maxlength="5000" required aria-label="질문 내용"></textarea>
+              <div class="form-actions"><button type="button" id="post-edit-cancel" class="ghost">취소</button><button class="primary">저장</button></div>
+            </form>
             <section class="answer-block instructor">
               <h3>강사 답변</h3>
               <ul id="instructor-answers" class="answers"></ul>

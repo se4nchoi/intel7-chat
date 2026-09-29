@@ -690,3 +690,71 @@ async def delete_answer(cohort_id: int, question_id: int, answer_id: int, reques
     await asyncio.to_thread(db.soft_delete, "answer", answer_id, account["id"])
     log.info("answer deleted by=%r cohort=%s question=%s answer=%s own=%s", account["username"], cohort_id,
              question_id, answer_id, found["author_id"] == account["id"])
+
+
+# --- Editing: authors only, within writable cohorts ---
+
+class MessageEdit(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class QuestionEdit(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=5000)
+
+
+class AnswerEdit(BaseModel):
+    body: str = Field(min_length=1, max_length=5000)
+
+
+def _clean(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        raise HTTPException(400, "Text cannot be empty")
+    return cleaned
+
+
+@router.patch("/api/cohorts/{cohort_id}/channels/{channel_id}/messages/{message_id}")
+async def edit_message(cohort_id: int, channel_id: int, message_id: int, body: MessageEdit, request: Request):
+    _same_origin(request)
+    account, _ = await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+        raise HTTPException(404, "Channel not found")
+    found = await asyncio.to_thread(db.message_author, channel_id, message_id)
+    if not found:
+        raise HTTPException(404, "Message not found")
+    if found["author_id"] != account["id"]:
+        raise HTTPException(403, "You can only edit your own posts")
+    await asyncio.to_thread(db.edit_post, "message", message_id, account["id"], _clean(body.body))
+    message = jsonable_encoder(await asyncio.to_thread(db.message, channel_id, message_id))
+    await _broadcast(cohort_id, {"type": "message_edited", "channel_id": channel_id, "message": message})
+    log.info("message edited user=%r cohort=%s channel=%s message=%s", account["username"], cohort_id, channel_id, message_id)
+    return message
+
+
+@router.patch("/api/cohorts/{cohort_id}/questions/{question_id}", status_code=204)
+async def edit_question(cohort_id: int, question_id: int, body: QuestionEdit, request: Request):
+    _same_origin(request)
+    account, _ = await _cohort(request, cohort_id)
+    found = await asyncio.to_thread(db.question, cohort_id, question_id)
+    if not found:
+        raise HTTPException(404, "Question not found")
+    if found["author_id"] != account["id"]:
+        raise HTTPException(403, "You can only edit your own posts")
+    await asyncio.to_thread(db.edit_post, "question", question_id, account["id"], _clean(body.body), _clean(body.title))
+    log.info("question edited user=%r cohort=%s question=%s", account["username"], cohort_id, question_id)
+
+
+@router.patch("/api/cohorts/{cohort_id}/questions/{question_id}/answers/{answer_id}", status_code=204)
+async def edit_answer(cohort_id: int, question_id: int, answer_id: int, body: AnswerEdit, request: Request):
+    _same_origin(request)
+    account, _ = await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.question, cohort_id, question_id):
+        raise HTTPException(404, "Question not found")
+    found = await asyncio.to_thread(db.answer_author, question_id, answer_id)
+    if not found:
+        raise HTTPException(404, "Answer not found")
+    if found["author_id"] != account["id"]:
+        raise HTTPException(403, "You can only edit your own posts")
+    await asyncio.to_thread(db.edit_post, "answer", answer_id, account["id"], _clean(body.body))
+    log.info("answer edited user=%r cohort=%s question=%s answer=%s", account["username"], cohort_id, question_id, answer_id)

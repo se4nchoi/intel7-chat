@@ -226,7 +226,7 @@ def channels(cohort_id: int):
 AUTHOR_ROLE = "COALESCE(mb.role, CASE WHEN a.is_admin THEN 'admin' END, 'member')"
 
 
-MESSAGE_SELECT = f"""SELECT m.id, m.channel_id, m.body, m.created_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
+MESSAGE_SELECT = f"""SELECT m.id, m.channel_id, m.body, m.created_at, m.edited_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
                FROM hub_messages m JOIN hub_accounts a ON a.id=m.author_id
                JOIN hub_channels c ON c.id=m.channel_id
                LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active"""
@@ -248,8 +248,8 @@ def add_message(channel_id: int, account_id: int, body: str):
         return conn.execute(
             f"""WITH new_message AS (
                  INSERT INTO hub_messages (channel_id, author_id, body) VALUES (%s,%s,%s)
-                 RETURNING id, channel_id, author_id, body, created_at)
-               SELECT m.id, m.channel_id, m.body, m.created_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
+                 RETURNING id, channel_id, author_id, body, created_at, edited_at)
+               SELECT m.id, m.channel_id, m.body, m.created_at, m.edited_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
                FROM new_message m JOIN hub_accounts a ON a.id=m.author_id
                JOIN hub_channels c ON c.id=m.channel_id
                LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active""",
@@ -271,7 +271,7 @@ def members(cohort_id: int):
 def questions(cohort_id: int):
     with connect() as conn:
         return conn.execute(
-            f"""SELECT q.id,q.title,q.body,q.created_at,a.username,a.display_name,{AUTHOR_ROLE} AS role,
+            f"""SELECT q.id,q.title,q.body,q.created_at,q.edited_at,a.username,a.display_name,{AUTHOR_ROLE} AS role,
                       count(x.id) AS answer_count,
                       coalesce(bool_or(xm.role='instructor' OR xa.is_admin), FALSE) AS instructor_answered,
                       coalesce(bool_or(x.endorsed), FALSE) AS endorsed,
@@ -303,7 +303,7 @@ def question(cohort_id: int, question_id: int):
 def answers(question_id: int):
     with connect() as conn:
         return conn.execute(
-            f"""SELECT x.id,x.body,x.endorsed,x.created_at,a.username,a.display_name,{AUTHOR_ROLE} AS role
+            f"""SELECT x.id,x.body,x.endorsed,x.created_at,x.edited_at,a.username,a.display_name,{AUTHOR_ROLE} AS role
                FROM hub_answers x JOIN hub_accounts a ON a.id=x.author_id
                JOIN hub_questions q ON q.id=x.question_id
                LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=q.cohort_id AND mb.active
@@ -500,3 +500,29 @@ def mark_read(account_id: int, channel_id: int, message_id: int) -> None:
                ON CONFLICT (account_id, channel_id)
                DO UPDATE SET last_read_id=greatest(hub_read_states.last_read_id, EXCLUDED.last_read_id)""",
             (account_id, channel_id, message_id))
+
+
+# --- Editing (authors only; previous versions are kept) ---
+
+def message(channel_id: int, message_id: int):
+    with connect() as conn:
+        return conn.execute(f"{MESSAGE_SELECT} WHERE m.id=%s AND m.channel_id=%s AND m.deleted_at IS NULL",
+                            (message_id, channel_id)).fetchone()
+
+
+def edit_post(kind: str, item_id: int, editor_id: int, body: str, title: str | None = None) -> bool:
+    """Replace a post's text if editor_id wrote it, keeping the old version in hub_edit_history."""
+    table = _DELETABLE[kind]
+    with connect() as conn:
+        old = conn.execute(
+            f"SELECT {'title, ' if kind == 'question' else ''}body FROM {table} "
+            "WHERE id=%s AND author_id=%s AND deleted_at IS NULL FOR UPDATE", (item_id, editor_id)).fetchone()
+        if not old:
+            return False
+        conn.execute("""INSERT INTO hub_edit_history (kind, item_id, previous_title, previous_body, edited_by)
+                        VALUES (%s, %s, %s, %s, %s)""", (kind, item_id, old.get("title"), old["body"], editor_id))
+        if kind == "question":
+            conn.execute("UPDATE hub_questions SET title=%s, body=%s, edited_at=now() WHERE id=%s", (title, body, item_id))
+        else:
+            conn.execute(f"UPDATE {table} SET body=%s, edited_at=now() WHERE id=%s", (body, item_id))
+        return True

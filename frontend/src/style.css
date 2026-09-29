@@ -287,9 +287,17 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .notice { padding: 10px 12px; border-radius: 8px; background: var(--accent-soft, var(--hover)); border: 1px solid var(--accent); font-size: 14px; user-select: all; }
 .danger-text { color: var(--danger) !important; }
 .post-head { position: relative; }
-#post-delete { position: absolute; right: 0; top: 0; padding: 3px 10px; font-size: 12px; }
-.msg-delete { position: absolute; right: 12px; top: -10px; padding: 2px 10px; font-size: 12px; background: var(--bg); border: 1px solid var(--border); color: var(--danger); visibility: hidden; }
-.msg:hover .msg-delete, .msg:focus-within .msg-delete { visibility: visible; }
+.msg-actions { position: absolute; right: 12px; top: -12px; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); box-shadow: var(--shadow); visibility: hidden; }
+.msg-actions button { padding: 2px 10px; font-size: 12px; border: 0; background: transparent; }
+.msg-actions button:hover { background: var(--hover); }
+.msg:hover .msg-actions, .msg:focus-within .msg-actions { visibility: visible; }
+.msg.editing .msg-actions { display: none; }
+.edited { margin-left: 6px; font-size: 11px; color: var(--faint); }
+.edit-input { width: 100%; min-height: 44px; resize: vertical; }
+.edit-hint { display: block; font-size: 11px; color: var(--faint); margin-top: 2px; }
+.inline-edit { display: grid; gap: 8px; margin: 8px 0; }
+.post-tools { position: absolute; right: 0; top: 0; display: flex; gap: 4px; }
+.post-tools button { padding: 3px 10px; font-size: 12px; }
 .answer-meta .answer-delete { padding: 3px 10px; font-size: 12px; }
 .answer-meta .endorse-btn + .answer-delete { margin-left: 0; }
 .answer-meta .answer-delete:only-of-type { margin-left: auto; }
@@ -304,3 +312,4 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .member.online .presence-dot { background: #2fb36f; }
 .member:not(.online) > span:nth-child(2) { opacity: .7; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+#post-content h2 { margin-bottom: 14px; }
