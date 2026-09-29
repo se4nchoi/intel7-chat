@@ -293,3 +293,14 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .answer-meta .answer-delete { padding: 3px 10px; font-size: 12px; }
 .answer-meta .endorse-btn + .answer-delete { margin-left: 0; }
 .answer-meta .answer-delete:only-of-type { margin-left: auto; }
+
+/* Unread badges and presence */
+.channel-list button .channel-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.channel-list button.unread .channel-name { font-weight: 700; color: var(--text); }
+.channel-list .count { min-width: 20px; padding: 1px 7px; border-radius: 10px; background: var(--muted); color: var(--bg); font-size: 11px; font-weight: 700; text-align: center; }
+.channel-list .count.mention { background: var(--danger); color: #fff; }
+.presence-wrap { position: relative; display: inline-flex; }
+.presence-dot { position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--faint); border: 2px solid var(--panel, var(--bg)); }
+.member.online .presence-dot { background: #2fb36f; }
+.member:not(.online) > span:nth-child(2) { opacity: .7; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

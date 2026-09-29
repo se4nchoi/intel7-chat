@@ -6,6 +6,7 @@ import re
 import secrets
 import time
 from collections import defaultdict, deque
+from typing import NamedTuple
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -25,10 +26,16 @@ router = APIRouter(prefix="/hub", tags=["madi"])
 COOKIE = "madi_session"
 FRONTEND_BUILD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 ALLOWED_FILE_SUFFIXES = {".txt", ".md", ".pdf", ".csv", ".png", ".jpg", ".jpeg", ".docx", ".pptx", ".xlsx"}
-# Open chat sockets per (cohort, channel), mapped to the session cookie that
-# opened them. Access is re-checked before every delivery, so a revoked or
-# expired session, or a removed membership, stops receiving immediately.
-connections: dict[tuple[int, int], dict[WebSocket, str]] = defaultdict(dict)
+# One socket per open cohort page, carrying every channel's events, mapped to
+# the session cookie and account that opened it. Access is re-checked before
+# every delivery, so a revoked or expired session, or a removed membership,
+# stops receiving immediately.
+class Listener(NamedTuple):
+    session: str
+    account_id: int
+
+
+connections: dict[int, dict[WebSocket, Listener]] = defaultdict(dict)
 REVOKED = 1008
 # Failed and successful login attempts per (client IP, username), same limit
 # as the legacy app. Behind a reverse proxy the IP is the proxy's until
@@ -193,8 +200,8 @@ async def logout(request: Request, response: Response):
     response.delete_cookie(COOKIE, path="/hub")
 
 
-async def _drop_socket(key: tuple[int, int], ws: WebSocket) -> None:
-    connections[key].pop(ws, None)
+async def _drop_socket(cohort_id: int, ws: WebSocket) -> None:
+    connections[cohort_id].pop(ws, None)
     try:
         await ws.close(code=REVOKED)
     except Exception:
@@ -203,10 +210,10 @@ async def _drop_socket(key: tuple[int, int], ws: WebSocket) -> None:
 
 async def _close_session_sockets(raw: str) -> int:
     closed = 0
-    for key, sockets in list(connections.items()):
-        for ws, session in list(sockets.items()):
-            if session == raw:
-                await _drop_socket(key, ws)
+    for cohort_id, sockets in list(connections.items()):
+        for ws, listener in list(sockets.items()):
+            if listener.session == raw:
+                await _drop_socket(cohort_id, ws)
                 closed += 1
     return closed
 
@@ -349,47 +356,83 @@ async def add_message(cohort_id: int, channel_id: int, body: Message, request: R
     if not clean:
         raise HTTPException(400, "Message cannot be empty")
     message = await asyncio.to_thread(db.add_message, channel_id, account["id"], clean)
-    await _broadcast(cohort_id, channel_id, {"type": "message", "message": jsonable_encoder(message)})
+    await _broadcast(cohort_id, {"type": "message", "channel_id": channel_id, "message": jsonable_encoder(message)})
     return message
 
 
-async def _broadcast(cohort_id: int, channel_id: int, payload: dict) -> None:
-    key = (cohort_id, channel_id)
+async def _broadcast(cohort_id: int, payload: dict, recipients: set[int] | None = None) -> None:
+    """Send to the cohort's open sockets (only recipients' accounts, if given) that still have access."""
     allowed: dict[str, bool] = {}  # one access check per session per delivery
-    for ws, raw in list(connections[key].items()):
-        if raw not in allowed:
-            allowed[raw] = await asyncio.to_thread(_socket_allowed, raw, cohort_id)
-        if not allowed[raw]:
-            log.info("chat socket revoked cohort=%s channel=%s reason=session-or-membership", cohort_id, channel_id)
-            await _drop_socket(key, ws)
+    for ws, listener in list(connections[cohort_id].items()):
+        if recipients is not None and listener.account_id not in recipients:
+            continue
+        if listener.session not in allowed:
+            allowed[listener.session] = await asyncio.to_thread(_socket_allowed, listener.session, cohort_id)
+        if not allowed[listener.session]:
+            log.info("chat socket revoked cohort=%s account=%s reason=session-or-membership", cohort_id, listener.account_id)
+            await _drop_socket(cohort_id, ws)
             continue
         try:
             await ws.send_json(payload, mode="text")
         except Exception:
-            connections[key].pop(ws, None)
+            connections[cohort_id].pop(ws, None)
 
 
-@router.websocket("/ws/cohorts/{cohort_id}/channels/{channel_id}")
-async def chat_socket(ws: WebSocket, cohort_id: int, channel_id: int):
+def _online(cohort_id: int) -> list[int]:
+    return sorted({listener.account_id for listener in connections[cohort_id].values()})
+
+
+async def _announce_presence(cohort_id: int) -> None:
+    await _broadcast(cohort_id, {"type": "presence", "online": _online(cohort_id)})
+
+
+@router.websocket("/ws/cohorts/{cohort_id}")
+async def cohort_socket(ws: WebSocket, cohort_id: int):
     origin = ws.headers.get("origin")
     if origin != f"https://{ws.headers.get('host', '')}":
         await ws.close(code=1008)
         return
     raw = ws.cookies.get(COOKIE, "")
     account = await asyncio.to_thread(db.session_account, raw)
-    if not account or not await asyncio.to_thread(db.access, account, cohort_id) or not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+    if not account or not await asyncio.to_thread(db.access, account, cohort_id):
         await ws.close(code=1008)
         return
     await ws.accept()
-    key = (cohort_id, channel_id)
-    connections[key][ws] = raw
+    connections[cohort_id][ws] = Listener(raw, account["id"])
     try:
+        await _announce_presence(cohort_id)
         while True:
             await ws.receive_text()
-    except WebSocketDisconnect:
-        pass
+    except (WebSocketDisconnect, RuntimeError):
+        pass  # client left, or the server closed it (revoked) and receive_text raised
     finally:
-        connections[key].pop(ws, None)
+        connections[cohort_id].pop(ws, None)
+        try:
+            await _announce_presence(cohort_id)
+        except Exception:
+            log.exception("presence update failed cohort=%s", cohort_id)
+
+
+class ReadMark(BaseModel):
+    message_id: int = Field(ge=0)
+
+
+@router.get("/api/cohorts/{cohort_id}/unread")
+async def unread(cohort_id: int, request: Request):
+    account, _ = await _cohort(request, cohort_id)
+    return await asyncio.to_thread(db.unread_counts, cohort_id, account)
+
+
+@router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/read", status_code=204)
+async def mark_read(cohort_id: int, channel_id: int, body: ReadMark, request: Request):
+    # A read marker is personal state, so it is allowed in archived cohorts too.
+    _same_origin(request)
+    account = await _account(request)
+    if not await asyncio.to_thread(db.access, account, cohort_id):
+        raise HTTPException(403, "No access to this cohort")
+    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+        raise HTTPException(404, "Channel not found")
+    await asyncio.to_thread(db.mark_read, account["id"], channel_id, body.message_id)
 
 
 @router.get("/api/cohorts/{cohort_id}/questions")
@@ -490,14 +533,14 @@ async def _prune_sockets(cohort_id: int | None = None) -> int:
     """Close open chat sockets whose session or membership no longer grants access."""
     checked: dict[tuple[str, int], bool] = {}
     dropped = 0
-    for key, sockets in list(connections.items()):
-        if cohort_id is not None and key[0] != cohort_id:
+    for cohort, sockets in list(connections.items()):
+        if cohort_id is not None and cohort != cohort_id:
             continue
-        for ws, raw in list(sockets.items()):
-            if (raw, key[0]) not in checked:
-                checked[(raw, key[0])] = await asyncio.to_thread(_socket_allowed, raw, key[0])
-            if not checked[(raw, key[0])]:
-                await _drop_socket(key, ws)
+        for ws, listener in list(sockets.items()):
+            if (listener.session, cohort) not in checked:
+                checked[(listener.session, cohort)] = await asyncio.to_thread(_socket_allowed, listener.session, cohort)
+            if not checked[(listener.session, cohort)]:
+                await _drop_socket(cohort, ws)
                 dropped += 1
     return dropped
 
@@ -614,7 +657,7 @@ async def delete_message(cohort_id: int, channel_id: int, message_id: int, reque
     if not _may_delete(account, cohort, found["author_id"]):
         raise HTTPException(403, "You can only delete your own posts")
     await asyncio.to_thread(db.soft_delete, "message", message_id, account["id"])
-    await _broadcast(cohort_id, channel_id, {"type": "message_deleted", "id": message_id})
+    await _broadcast(cohort_id, {"type": "message_deleted", "channel_id": channel_id, "id": message_id})
     log.info("message deleted by=%r cohort=%s channel=%s message=%s own=%s", account["username"], cohort_id,
              channel_id, message_id, found["author_id"] == account["id"])
 

@@ -3,7 +3,7 @@
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from tests.test_hub_board_api import ORIGIN, PASSWORD, TEST_URL, hub, login, open_socket, post  # noqa: F401
+from tests.test_hub_board_api import ORIGIN, PASSWORD, TEST_URL, hub, login, open_socket, post, receive  # noqa: F401
 
 pytestmark = pytest.mark.skipif(not TEST_URL, reason="MADI_TEST_DATABASE_URL not set")
 
@@ -15,7 +15,7 @@ def account_id(app, username):
 
 def assert_closed(ws):
     with pytest.raises(WebSocketDisconnect) as closed:
-        ws.receive_json()
+        receive(ws)
     assert closed.value.code == 1008
 
 
@@ -80,7 +80,7 @@ def test_change_own_password_keeps_this_session_only(hub):
         assert laptop.post(url, json={"current_password": PASSWORD, "new_password": "brand-new-1"}, headers=ORIGIN).status_code == 204
         assert_closed(phone_ws)
         post(teacher, cohort_id, channel_id, "still here")
-        assert laptop_ws.receive_json()["message"]["body"] == "still here"
+        assert receive(laptop_ws)["message"]["body"] == "still here"
     assert laptop.get("/hub/api/me").status_code == 200
     assert phone.get("/hub/api/me").status_code == 401
     assert login_status(app, "student", "brand-new-1") == 200

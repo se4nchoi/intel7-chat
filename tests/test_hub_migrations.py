@@ -3,23 +3,21 @@ import os
 
 import pytest
 
+from tests.hub_reset import drop_hub_tables
+
 TEST_URL = os.environ.get("MADI_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not TEST_URL, reason="MADI_TEST_DATABASE_URL not set")
 
-HUB_TABLES = ("hub_schema_migrations, hub_files, hub_answers, hub_questions, hub_messages, hub_channels, "
-              "hub_memberships, hub_cohorts, hub_sessions, hub_accounts, hub_test_extra")
 
 
 @pytest.fixture
 def db(monkeypatch):
     from app.hub import db
     monkeypatch.setenv("MADI_DATABASE_URL", TEST_URL)
-    with db.connect() as conn:
-        conn.execute(f"DROP TABLE IF EXISTS {HUB_TABLES} CASCADE")
+    drop_hub_tables(db)
     yield db
     # Don't leave fake future versions behind for the next user of this database.
-    with db.connect() as conn:
-        conn.execute(f"DROP TABLE IF EXISTS {HUB_TABLES} CASCADE")
+    drop_hub_tables(db)
     db.migrate()
 
 

@@ -226,7 +226,7 @@ def channels(cohort_id: int):
 AUTHOR_ROLE = "COALESCE(mb.role, CASE WHEN a.is_admin THEN 'admin' END, 'member')"
 
 
-MESSAGE_SELECT = f"""SELECT m.id, m.body, m.created_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
+MESSAGE_SELECT = f"""SELECT m.id, m.channel_id, m.body, m.created_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
                FROM hub_messages m JOIN hub_accounts a ON a.id=m.author_id
                JOIN hub_channels c ON c.id=m.channel_id
                LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active"""
@@ -249,7 +249,7 @@ def add_message(channel_id: int, account_id: int, body: str):
             f"""WITH new_message AS (
                  INSERT INTO hub_messages (channel_id, author_id, body) VALUES (%s,%s,%s)
                  RETURNING id, channel_id, author_id, body, created_at)
-               SELECT m.id, m.body, m.created_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
+               SELECT m.id, m.channel_id, m.body, m.created_at, a.username, a.display_name, {AUTHOR_ROLE} AS role
                FROM new_message m JOIN hub_accounts a ON a.id=m.author_id
                JOIN hub_channels c ON c.id=m.channel_id
                LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active""",
@@ -468,3 +468,35 @@ def soft_delete(kind: str, item_id: int, by_account_id: int) -> bool:
         return bool(conn.execute(
             f"UPDATE {_DELETABLE[kind]} SET deleted_at=now(), deleted_by=%s WHERE id=%s AND deleted_at IS NULL RETURNING id",
             (by_account_id, item_id)).fetchone())
+
+
+# --- Read states ---
+
+def _like_literal(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def unread_counts(cohort_id: int, account: dict):
+    """Per channel: messages from others since the account last read it, and how many mention @username."""
+    mention = f"%@{_like_literal(account['username'])}%"
+    with connect() as conn:
+        return conn.execute(
+            """SELECT c.id AS channel_id,
+                      count(m.id) AS unread,
+                      count(m.id) FILTER (WHERE m.body ILIKE %(mention)s ESCAPE '\\') AS mentions
+               FROM hub_channels c
+               LEFT JOIN hub_read_states r ON r.channel_id=c.id AND r.account_id=%(me)s
+               LEFT JOIN hub_messages m ON m.channel_id=c.id AND m.id > coalesce(r.last_read_id, 0)
+                    AND m.deleted_at IS NULL AND m.author_id <> %(me)s
+               WHERE c.cohort_id=%(cohort)s
+               GROUP BY c.id ORDER BY c.id""",
+            {"mention": mention, "me": account["id"], "cohort": cohort_id}).fetchall()
+
+
+def mark_read(account_id: int, channel_id: int, message_id: int) -> None:
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO hub_read_states (account_id, channel_id, last_read_id) VALUES (%s, %s, %s)
+               ON CONFLICT (account_id, channel_id)
+               DO UPDATE SET last_read_id=greatest(hub_read_states.last_read_id, EXCLUDED.last_read_id)""",
+            (account_id, channel_id, message_id))

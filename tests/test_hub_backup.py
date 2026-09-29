@@ -9,6 +9,8 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from tests.hub_reset import drop_hub_tables
+
 TEST_URL = os.environ.get("MADI_TEST_DATABASE_URL")
 pytestmark = [
     pytest.mark.skipif(not TEST_URL, reason="MADI_TEST_DATABASE_URL not set"),
@@ -23,9 +25,7 @@ def madi(monkeypatch, tmp_path):
     monkeypatch.setenv("MADI_FILE_DIR", str(tmp_path / "files"))
     monkeypatch.delenv("MADI_PG_BIN", raising=False)
     monkeypatch.setattr(backup, "PORTABLE_BIN", tmp_path / "no-portable")
-    with db.connect() as conn:
-        conn.execute("DROP TABLE IF EXISTS hub_schema_migrations, hub_files, hub_answers, hub_questions, hub_messages, "
-                     "hub_channels, hub_memberships, hub_cohorts, hub_sessions, hub_accounts CASCADE")
+    drop_hub_tables(db)
     db.migrate()
     account = db.create_account("keeper", "Keeper", "test-pass-1234")
     cohort = db.create_cohort("backup-2026", "Backup")

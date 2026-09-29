@@ -7,6 +7,8 @@ all hub_* tables in it are dropped and recreated.
 import os
 
 import pytest
+
+from tests.hub_reset import drop_hub_tables
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -22,9 +24,7 @@ def hub(monkeypatch):
     from app.hub import db, routes
     monkeypatch.setenv("MADI_DATABASE_URL", TEST_URL)
     routes.login_attempts.clear()
-    with db.connect() as conn:
-        conn.execute("""DROP TABLE IF EXISTS hub_schema_migrations, hub_files, hub_answers, hub_questions, hub_messages,
-                        hub_channels, hub_memberships, hub_cohorts, hub_sessions, hub_accounts CASCADE""")
+    drop_hub_tables(db)
     db.initialize_schema()
     admin = db.create_account("admin_user", "Admin", PASSWORD)
     with db.connect() as conn:
@@ -90,12 +90,21 @@ def test_question_summary_and_endorsement(hub):
 from starlette.websockets import WebSocketDisconnect  # noqa: E402
 
 
-def open_socket(client, cohort_id, channel_id):
+def open_socket(client, cohort_id, channel_id=None):
+    """The cohort socket; channel_id is accepted for readability at call sites."""
     from app.hub.routes import COOKIE
     return client.websocket_connect(
-        f"/hub/ws/cohorts/{cohort_id}/channels/{channel_id}",
+        f"/hub/ws/cohorts/{cohort_id}",
         headers={"origin": "https://testserver", "cookie": f"{COOKIE}={client.cookies[COOKIE]}"},
     )
+
+
+def receive(ws):
+    """Next event other than presence updates."""
+    while True:
+        event = ws.receive_json()
+        if event["type"] != "presence":
+            return event
 
 
 def post(client, cohort_id, channel_id, body):
@@ -105,7 +114,7 @@ def post(client, cohort_id, channel_id, body):
 
 def assert_revoked(ws):
     with pytest.raises(WebSocketDisconnect) as closed:
-        ws.receive_json()
+        receive(ws)
     assert closed.value.code == 1008
 
 
@@ -114,7 +123,7 @@ def test_socket_delivers_while_session_valid(hub):
     student, teacher = login(app, "student"), login(app, "teacher")
     with open_socket(student, cohort_id, channel_id) as ws:
         post(teacher, cohort_id, channel_id, "hello")
-        assert ws.receive_json()["message"]["body"] == "hello"
+        assert receive(ws)["message"]["body"] == "hello"
 
 
 def test_logout_closes_open_socket(hub):
@@ -157,7 +166,7 @@ def test_other_sessions_keep_receiving_after_one_logout(hub):
         phone.post("/hub/api/logout", headers=ORIGIN)
         post(teacher, cohort_id, channel_id, "still here")
         assert_revoked(phone_ws)
-        assert laptop_ws.receive_json()["message"]["body"] == "still here"
+        assert receive(laptop_ws)["message"]["body"] == "still here"
 
 
 # --- Pre-deployment hardening: pooled connections, login throttling ---

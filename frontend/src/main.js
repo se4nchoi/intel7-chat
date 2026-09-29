@@ -1,5 +1,5 @@
 import { errorMessage, installKoreanValidation } from './korean.js';
-import { api, channelSocket, fileDownloadUrl, uploadFile } from './api.js';
+import { api, cohortSocket, fileDownloadUrl, uploadFile } from './api.js';
 import { readRoute, spaceUrl } from './navigation.js';
 
 const $ = id => document.getElementById(id);
@@ -12,6 +12,7 @@ const state = {
   account: null, cohorts: [], cohort: null, channel: null, socket: null, mediaRoom: null,
   space: readRoute(location.pathname).space, epoch: 0, channelEpoch: 0, questionEpoch: 0, mediaEpoch: 0,
   channels: new Map(), lastMessage: null, lastSeenId: 0, reconnectTimer: null, reconnectNow: null,
+  channelList: [], unread: new Map(), online: new Set(), members: [], holding: null, historyLoaded: false, ackTimer: null,
   questions: [], question: null, filter: 'all', search: '', boardView: 'home', fileCount: null,
 };
 
@@ -109,6 +110,8 @@ function resetContent() {
   state.epoch++; state.channelEpoch++; state.questionEpoch++;
   closeChat(); void leaveMedia().catch(error => status(error.message, true));
   state.channel = null; state.question = null; state.questions = []; state.lastMessage = null; state.lastSeenId = 0; state.fileCount = null;
+  state.channelList = []; state.unread = new Map(); state.online = new Set(); state.members = []; state.holding = null; state.historyLoaded = false;
+  clearTimeout(state.ackTimer); updateTitle();
   for (const id of ['channel-list', 'messages', 'question-list', 'instructor-answers', 'student-answers', 'file-list', 'member-list', 'board-stats']) $(id).replaceChildren();
   $('channel-heading').textContent = '채널을 선택하세요';
   $('message-input').placeholder = '메시지 보내기';
@@ -139,7 +142,7 @@ function showSpace() {
     if (space === state.space) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
     $(`${space}-cohort`).textContent = cohort?.name || '';
   }
-  document.title = `마디 · ${chat ? '채팅' : 'Q&A 게시판'}${cohort ? ` · ${cohort.name}` : ''}`;
+  updateTitle();
   renderRail();
   updateControls();
 }
@@ -183,7 +186,7 @@ async function loadSpace() {
   resetContent(); showSpace();
   const epoch = state.epoch;
   try {
-    if (state.space === 'chat') await Promise.all([loadChannels(), loadMembers()]);
+    if (state.space === 'chat') { connectChat(state.cohort); await Promise.all([loadChannels(), loadMembers()]); }
     else await loadBoard();
     if (epoch === state.epoch && state.cohort.archived) status('종료된 수강반입니다. 기존 내용만 열람할 수 있습니다.');
   } catch (error) { if (epoch === state.epoch) status(error.message, true); }
@@ -208,81 +211,150 @@ async function loadChannels() {
   const epoch = state.epoch, cohort = state.cohort;
   const channels = await api(`/cohorts/${cohort.id}/channels`);
   if (epoch !== state.epoch) return;
-  const list = $('channel-list'); list.replaceChildren();
-  for (const channel of channels) {
-    list.append(el('button', {
-      dataset: { id: channel.id }, 'aria-pressed': 'false',
-      onclick: () => { closeNav(); selectChannel(channel).catch(error => status(error.message, true)); },
-    }, el('span', { class: 'hash', 'aria-hidden': 'true', text: '#' }), el('span', { text: channel.name })));
-  }
+  state.channelList = channels;
+  renderChannelList();
   if (channels.length) await selectChannel(channels.find(c => c.id === state.channels.get(cohort.id)) || channels[0]);
   else {
-    list.append(el('p', { class: 'muted', text: '아직 채널이 없습니다.' }));
     $('messages').append(el('p', { class: 'muted', text: cohort.archived ? '종료된 수강반이라 채널을 만들 수 없습니다.' : isManager() ? '채널 목록 옆의 + 버튼으로 첫 채널을 만드세요.' : '강사에게 채널 개설을 요청하세요.' }));
     updateControls();
   }
+}
+function renderChannelList() {
+  const list = $('channel-list');
+  if (!state.channelList.length) { list.replaceChildren(el('p', { class: 'muted', text: '아직 채널이 없습니다.' })); return; }
+  list.replaceChildren(...state.channelList.map(channel => {
+    const active = channel.id === state.channel?.id;
+    const counts = active ? null : state.unread.get(channel.id);
+    const unread = Number(counts?.unread || 0), mentions = Number(counts?.mentions || 0);
+    const label = [channel.name, unread ? `안 읽은 메시지 ${unread}개` : '', mentions ? `나를 멘션 ${mentions}개` : ''].filter(Boolean).join(', ');
+    return el('button', {
+      class: `${active ? 'active' : ''}${unread ? ' unread' : ''}`, dataset: { id: channel.id }, 'aria-pressed': String(active), 'aria-label': label,
+      onclick: () => { closeNav(); selectChannel(channel).catch(error => status(error.message, true)); },
+    }, el('span', { class: 'hash', 'aria-hidden': 'true', text: '#' }), el('span', { class: 'channel-name', text: channel.name }),
+      unread ? el('span', { class: `count${mentions ? ' mention' : ''}`, 'aria-hidden': 'true', text: mentions ? `@${mentions}` : unread > 99 ? '99+' : String(unread) }) : null);
+  }));
+  updateTitle();
+}
+function updateTitle() {
+  const cohort = state.cohort, chat = state.space === 'chat';
+  const total = [...state.unread.entries()].reduce((sum, [id, c]) => sum + (id === state.channel?.id ? 0 : Number(c.unread || 0)), 0);
+  document.title = `${total ? `(${total > 99 ? '99+' : total}) ` : ''}마디 · ${chat ? '채팅' : 'Q&A 게시판'}${cohort ? ` · ${cohort.name}` : ''}`;
 }
 async function loadMembers() {
   const epoch = state.epoch, cohort = state.cohort;
   let members;
   try { members = await api(`/cohorts/${cohort.id}/members`); } catch { return; }
   if (epoch !== state.epoch) return;
+  state.members = members;
+  renderMembers();
+}
+function renderMembers() {
   const groups = [['instructor', '강사'], ['student', '수강생']];
   const nodes = [];
   for (const [role, label] of groups) {
-    const people = members.filter(m => m.role === role);
+    const people = state.members.filter(m => m.role === role)
+      .sort((a, b) => Number(state.online.has(b.id)) - Number(state.online.has(a.id)) || a.display_name.localeCompare(b.display_name, 'ko'));
     if (!people.length) continue;
-    nodes.push(el('h3', { text: `${label} — ${people.length}` }));
-    for (const person of people) nodes.push(el('div', { class: `member ${roleClass(role)}`, title: `@${person.username}` }, avatar(person.display_name, person.username, true), el('span', { text: person.display_name })));
+    const online = people.filter(p => state.online.has(p.id)).length;
+    nodes.push(el('h3', { text: `${label} — ${people.length}명${online ? ` · 접속 ${online}` : ''}` }));
+    for (const person of people) {
+      const on = state.online.has(person.id);
+      nodes.push(el('div', { class: `member ${roleClass(role)}${on ? ' online' : ''}`, title: `@${person.username}${on ? ' · 접속 중' : ''}` },
+        el('span', { class: 'presence-wrap' }, avatar(person.display_name, person.username, true), el('span', { class: 'presence-dot', 'aria-hidden': 'true' })),
+        el('span', { text: person.display_name }), on ? el('span', { class: 'visually-hidden', text: '(접속 중)' }) : null));
+    }
   }
   if (!nodes.length) nodes.push(el('p', { class: 'muted', text: '구성원이 없습니다.' }));
   $('member-list').replaceChildren(...nodes);
 }
 async function selectChannel(channel) {
   const epoch = state.epoch, channelEpoch = ++state.channelEpoch, cohort = state.cohort;
-  closeChat(); await leaveMedia();
+  await leaveMedia();
   if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
   state.channel = channel; state.channels.set(cohort.id, channel.id); state.lastMessage = null; state.lastSeenId = 0;
+  state.historyLoaded = false; state.holding = [];
   $('channel-heading').textContent = `# ${channel.name}`;
   $('message-input').placeholder = `#${channel.name}에 메시지 보내기`;
   $('messages').replaceChildren(el('div', { class: 'channel-intro' },
     el('div', { class: 'hash-big', 'aria-hidden': 'true', text: '#' }),
     el('h3', { text: `#${channel.name}에 오신 것을 환영합니다` }),
     el('p', { class: 'muted', text: `${cohort.name}의 #${channel.name} 채널입니다. 최근 메시지 100개까지 표시됩니다.` })));
-  updateControls();
-  for (const button of $('channel-list').querySelectorAll('button')) {
-    const active = button.dataset.id === String(channel.id);
-    button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
+  renderChannelList(); updateControls();
+  // Live messages for this channel are held while its history loads, then applied in order.
+  const history = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages`);
+  if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
+  history.forEach(receive);
+  state.historyLoaded = true;
+  flushHolding();
+  ackRead(true);
+}
+function receive(message) { state.lastSeenId = Math.max(state.lastSeenId, message.id); appendMessage(message); }
+function flushHolding() {
+  const held = state.holding || [];
+  state.holding = null;
+  for (const event of held) applyChannelEvent(event);
+}
+function applyChannelEvent(event) {
+  if (event.type === 'message') receive(event.message);
+  else if (event.type === 'message_deleted') removeMessage(event.id);
+}
+function handleEvent(event) {
+  if (event.type === 'presence') { state.online = new Set(event.online); renderMembers(); return; }
+  if (event.channel_id === state.channel?.id) {
+    if (state.holding) state.holding.push(event);
+    else { applyChannelEvent(event); if (event.type === 'message') ackRead(); }
+    return;
   }
-  connectChat(cohort, channel);
+  if (event.type === 'message' && event.message.username !== state.account?.username) {
+    const counts = state.unread.get(event.channel_id) || { unread: 0, mentions: 0 };
+    const mentioned = event.message.body.toLowerCase().includes(`@${state.account.username.toLowerCase()}`);
+    state.unread.set(event.channel_id, { unread: Number(counts.unread) + 1, mentions: Number(counts.mentions) + (mentioned ? 1 : 0) });
+    renderChannelList();
+  }
+}
+async function loadUnread() {
+  const epoch = state.epoch, cohort = state.cohort;
+  const counts = await api(`/cohorts/${cohort.id}/unread`);
+  if (epoch !== state.epoch) return;
+  state.unread = new Map(counts.map(c => [c.channel_id, c]));
+  renderChannelList();
+}
+// Mark the open channel read up to the newest message shown, while the tab is visible.
+function ackRead(now = false) {
+  clearTimeout(state.ackTimer);
+  const send = () => {
+    const cohort = state.cohort, channel = state.channel, upTo = state.lastSeenId;
+    if (!cohort || !channel || document.visibilityState !== 'visible') return;
+    state.unread.set(channel.id, { unread: 0, mentions: 0 }); renderChannelList();
+    if (upTo) api(`/cohorts/${cohort.id}/channels/${channel.id}/read`, { method: 'POST', json: { message_id: upTo } }).catch(() => { /* retried on next message */ });
+  };
+  if (now) send(); else state.ackTimer = setTimeout(send, 800);
+}
+// After a (re)connect: fetch what the open channel missed, and refresh every channel's unread count.
+async function catchUp() {
+  const cohort = state.cohort, channel = state.channel, channelEpoch = state.channelEpoch;
+  if (!channel || !state.historyLoaded) return;  // a history load in progress already covers it
+  state.holding = state.holding || [];
+  const missed = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages?after=${state.lastSeenId}`);
+  if (channelEpoch !== state.channelEpoch) return;
+  missed.forEach(receive);
+  flushHolding();
+  if (missed.length) ackRead();
 }
 const REVOKED_MESSAGE = '로그인이 만료되었거나 이 수강반에 접근할 수 없어 채팅 연결이 종료되었습니다. 다시 로그인하세요.';
-// Open the socket first and hold live messages while fetching history (or,
-// after a drop, everything since the last message seen), so nothing posted in
-// between is lost or shown out of order. Drops reconnect with backoff.
-function connectChat(cohort, channel, retry = 0) {
-  const epoch = state.epoch, channelEpoch = state.channelEpoch;
-  const current = () => epoch === state.epoch && channelEpoch === state.channelEpoch;
-  const socket = channelSocket(cohort.id, channel.id); state.socket = socket;
-  let held = [], opened = false;
-  const receive = message => { state.lastSeenId = Math.max(state.lastSeenId, message.id); appendMessage(message); };
-  const handle = payload => {
-    if (payload.type === 'message') receive(payload.message);
-    else if (payload.type === 'message_deleted') removeMessage(payload.id);
-  };
-  socket.onmessage = event => {
-    if (state.socket !== socket) return;
-    const payload = JSON.parse(event.data);
-    if (held) held.push(payload); else handle(payload);
-  };
+// One socket per cohort carries every channel's events. After each (re)connect
+// the open channel catches up on anything missed, and drops reconnect with backoff.
+function connectChat(cohort, retry = 0) {
+  const epoch = state.epoch;
+  const current = () => epoch === state.epoch;
+  const socket = cohortSocket(cohort.id); state.socket = socket;
+  let opened = false;
+  socket.onmessage = event => { if (state.socket === socket) handleEvent(JSON.parse(event.data)); };
   socket.onopen = async () => {
     opened = true;
-    const after = state.lastSeenId ? `?after=${state.lastSeenId}` : '';
     try {
-      const missed = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages${after}`);
-      if (state.socket !== socket) return;
-      missed.forEach(receive); held.forEach(handle); held = null;
-      if (retry) status('채팅에 다시 연결되었습니다.');
+      await Promise.all([catchUp(), loadUnread()]);
+      if (retry && state.socket === socket) status('채팅에 다시 연결되었습니다.');
     } catch (error) {
       if (state.socket === socket) { status(error.message, true); socket.close(); }
     }
@@ -290,6 +362,7 @@ function connectChat(cohort, channel, retry = 0) {
   socket.onclose = async event => {
     if (state.socket !== socket) return;
     state.socket = null;
+    state.online = new Set(); renderMembers();
     // 1008: the server revoked this session or cohort access (logout elsewhere, expiry, removal).
     if (event.code === 1008) { status(REVOKED_MESSAGE, true); return; }
     // A handshake refused before opening looks like a network error; check the session.
@@ -305,14 +378,14 @@ function connectChat(cohort, channel, retry = 0) {
     status('채팅 연결이 끊겼습니다. 다시 연결하는 중…', true);
     const reconnect = () => {
       clearTimeout(state.reconnectTimer); state.reconnectTimer = null; state.reconnectNow = null;
-      if (current()) connectChat(cohort, channel, next);
+      if (current()) connectChat(cohort, next);
     };
     state.reconnectTimer = setTimeout(reconnect, delay); state.reconnectNow = reconnect;
   };
 }
 // Skip the wait when the network or the tab comes back.
 addEventListener('online', () => state.reconnectNow?.());
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') state.reconnectNow?.(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { state.reconnectNow?.(); if (state.historyLoaded) ackRead(true); } });
 function appendMessage(message) {
   const box = $('messages');
   if (box.querySelector(`[data-message-id="${message.id}"]`)) return;

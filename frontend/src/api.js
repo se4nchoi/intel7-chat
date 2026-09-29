@@ -15,9 +15,9 @@ export async function api(path, options = {}) {
   return data;
 }
 
-export function channelSocket(cohortId, channelId) {
+export function cohortSocket(cohortId) {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return new WebSocket(`${protocol}//${location.host}/hub/ws/cohorts/${cohortId}/channels/${channelId}`);
+  return new WebSocket(`${protocol}//${location.host}/hub/ws/cohorts/${cohortId}`);
 }
 
 export function fileDownloadUrl(cohortId, fileId) {

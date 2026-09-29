@@ -1,7 +1,7 @@
 """마디 moderation: soft-deleting messages, questions and answers."""
 import pytest
 
-from tests.test_hub_board_api import ORIGIN, TEST_URL, hub, login, open_socket, post  # noqa: F401
+from tests.test_hub_board_api import ORIGIN, TEST_URL, hub, login, open_socket, post, receive  # noqa: F401
 
 pytestmark = pytest.mark.skipif(not TEST_URL, reason="MADI_TEST_DATABASE_URL not set")
 
@@ -18,7 +18,7 @@ def test_author_deletes_own_message_and_listeners_are_told(hub):
     kept = student.post(url, json={"body": "keep"}, headers=ORIGIN).json()["id"]
     with open_socket(teacher, cohort_id, channel_id) as ws:
         assert student.delete(f"{url}/{mine}", headers=ORIGIN).status_code == 204
-        assert ws.receive_json() == {"type": "message_deleted", "id": mine}
+        assert receive(ws) == {"type": "message_deleted", "channel_id": channel_id, "id": mine}
     assert [m["id"] for m in teacher.get(url).json()] == [kept]
     assert teacher.get(url, params={"after": 0}).json()[0]["id"] == kept
     assert student.delete(f"{url}/{mine}", headers=ORIGIN).status_code == 404  # already gone
