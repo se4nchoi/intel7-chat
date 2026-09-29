@@ -43,6 +43,8 @@
       <div id="chat-side" class="side-scroll">
         <div class="side-section"><span>채팅 채널</span><button id="add-channel-btn" class="icon-btn hidden" title="채널 만들기" aria-label="채널 만들기">+</button></div>
         <div id="channel-list" class="channel-list"></div>
+        <div class="side-section"><span>다이렉트 메시지</span><button id="new-dm-btn" class="icon-btn" title="DM 보내기" aria-label="DM 보내기">+</button></div>
+        <div id="dm-list" class="channel-list dm-list"></div>
       </div>
 
       <div id="board-side" class="side-scroll board-side hidden">
@@ -182,6 +184,15 @@
         </div>
       </section>
     </main>
+
+    <dialog id="dm-picker" class="dialog narrow" aria-labelledby="dm-picker-title">
+      <header class="dialog-head"><h2 id="dm-picker-title">DM 보낼 사람</h2><button id="dm-picker-close" class="icon-btn" aria-label="닫기">✕</button></header>
+      <div class="dm-picker-body">
+        <input id="dm-filter" type="search" placeholder="이름 또는 아이디로 찾기" aria-label="구성원 찾기" autocomplete="off">
+        <ul id="dm-candidates" class="manage-list"></ul>
+        <p class="muted small">DM은 두 사람만 볼 수 있습니다. 같은 수강반 구성원에게만 보낼 수 있어요.</p>
+      </div>
+    </dialog>
 
     <dialog id="management" class="dialog" aria-labelledby="management-title">
       <header class="dialog-head"><h2 id="management-title">계정 및 관리</h2><button id="management-close" class="icon-btn" aria-label="닫기">✕</button></header>

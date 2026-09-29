@@ -210,15 +210,20 @@ def cohorts_for(account: dict):
         ).fetchall()
 
 
-def channel(cohort_id: int, channel_id: int):
+def channel(cohort_id: int, channel_id: int, account_id: int | None = None):
+    """A cohort channel, or a DM only when account_id is one of its two members."""
     with connect() as conn:
-        return conn.execute("SELECT id, name, slug FROM hub_channels WHERE id=%s AND cohort_id=%s",
-                            (channel_id, cohort_id)).fetchone()
+        return conn.execute(
+            """SELECT c.id, c.name, c.slug, c.kind FROM hub_channels c
+               WHERE c.id=%s AND c.cohort_id=%s AND (c.kind='channel' OR EXISTS
+                     (SELECT 1 FROM hub_dm_members d WHERE d.channel_id=c.id AND d.account_id=%s))""",
+            (channel_id, cohort_id, account_id)).fetchone()
 
 
 def channels(cohort_id: int):
     with connect() as conn:
-        return conn.execute("SELECT id, name, slug FROM hub_channels WHERE cohort_id=%s ORDER BY id", (cohort_id,)).fetchall()
+        return conn.execute("SELECT id, name, slug FROM hub_channels WHERE cohort_id=%s AND kind='channel' ORDER BY id",
+                            (cohort_id,)).fetchall()
 
 
 # Cohort role of an author, as shown next to their name. Admins without a
@@ -493,7 +498,8 @@ def unread_counts(cohort_id: int, account: dict):
                LEFT JOIN hub_read_states r ON r.channel_id=c.id AND r.account_id=%(me)s
                LEFT JOIN hub_messages m ON m.channel_id=c.id AND m.id > coalesce(r.last_read_id, 0)
                     AND m.deleted_at IS NULL AND m.author_id <> %(me)s
-               WHERE c.cohort_id=%(cohort)s
+               WHERE c.cohort_id=%(cohort)s AND (c.kind='channel' OR EXISTS
+                     (SELECT 1 FROM hub_dm_members d WHERE d.channel_id=c.id AND d.account_id=%(me)s))
                GROUP BY c.id ORDER BY c.id""",
             {"mention": mention, "me": account["id"], "cohort": cohort_id}).fetchall()
 
@@ -557,3 +563,40 @@ def pinned_messages(channel_id: int):
     with connect() as conn:
         return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.pinned_at IS NOT NULL AND m.deleted_at IS NULL "
                             "ORDER BY m.pinned_at DESC LIMIT 50", (channel_id,)).fetchall()
+
+
+# --- Direct messages ---
+
+def dm_channels(cohort_id: int, account_id: int):
+    """This account's DMs in a cohort, each with the other person and the time of the latest message."""
+    with connect() as conn:
+        return conn.execute(
+            """SELECT c.id, o.id AS other_id, o.username AS other_username, o.display_name AS other_display_name,
+                      o.active AS other_active,
+                      (SELECT max(m.created_at) FROM hub_messages m WHERE m.channel_id=c.id AND m.deleted_at IS NULL) AS last_at
+               FROM hub_channels c
+               JOIN hub_dm_members me ON me.channel_id=c.id AND me.account_id=%s
+               JOIN hub_dm_members other ON other.channel_id=c.id AND other.account_id<>%s
+               JOIN hub_accounts o ON o.id=other.account_id
+               WHERE c.cohort_id=%s AND c.kind='dm'
+               ORDER BY last_at DESC NULLS LAST, c.id DESC""", (account_id, account_id, cohort_id)).fetchall()
+
+
+def open_dm(cohort_id: int, account_id: int, other_id: int) -> int:
+    """The DM channel between two accounts in a cohort, created on first use."""
+    low, high = sorted((account_id, other_id))
+    with connect() as conn:
+        row = conn.execute(
+            """INSERT INTO hub_channels (cohort_id, slug, name, kind) VALUES (%s, %s, '', 'dm')
+               ON CONFLICT (cohort_id, slug) DO UPDATE SET kind=hub_channels.kind RETURNING id, kind""",
+            (cohort_id, f"dm-{low}-{high}")).fetchone()
+        if row["kind"] != "dm":
+            raise RuntimeError("DM slug collides with a regular channel")
+        conn.execute("INSERT INTO hub_dm_members (channel_id, account_id) VALUES (%s, %s), (%s, %s) ON CONFLICT DO NOTHING",
+                     (row["id"], low, row["id"], high))
+        return row["id"]
+
+
+def dm_members(channel_id: int) -> set[int]:
+    with connect() as conn:
+        return {r["account_id"] for r in conn.execute("SELECT account_id FROM hub_dm_members WHERE channel_id=%s", (channel_id,))}

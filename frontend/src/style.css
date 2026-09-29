@@ -335,3 +335,18 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .msg.flash { animation: flash 1.6s ease; }
 @keyframes flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .msg.flash { animation: none; outline: 2px solid var(--accent); } }
+
+/* Direct messages */
+.dm-list .avatar.sm { width: 22px; height: 22px; font-size: 10px; }
+.presence-dot.on { background: #2fb36f; }
+button.member { width: 100%; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+button.member .dm-hint { margin-left: auto; font-size: 11px; color: var(--faint); visibility: hidden; }
+button.member:hover .dm-hint, button.member:focus-visible .dm-hint { visibility: visible; }
+.dialog.narrow { width: min(440px, calc(100vw - 32px)); }
+.dm-picker-body { padding: 16px 20px 20px; display: grid; gap: 10px; }
+#dm-candidates { max-height: 50vh; overflow-y: auto; }
+#dm-candidates li { padding: 0; background: transparent; }
+.dm-candidate { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: var(--hover); text-align: left; }
+.dm-candidate:hover, .dm-candidate:focus-visible { background: var(--active); }
+.online-tag { background: color-mix(in srgb, #2fb36f 18%, transparent); color: #1f8a53; }
+.small { font-size: 12px; }

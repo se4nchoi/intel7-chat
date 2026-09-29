@@ -301,6 +301,8 @@ async def channels(cohort_id: int, request: Request):
 async def create_channel(cohort_id: int, body: NewChannel, request: Request):
     _same_origin(request)
     actor, _ = await _cohort(request, cohort_id, manage=True)
+    if body.slug.startswith("dm-"):
+        raise HTTPException(400, "Channel IDs starting with dm- are reserved")
     try:
         channel = await asyncio.to_thread(db.create_channel, cohort_id, body.slug, body.name.strip())
     except UniqueViolation:
@@ -311,8 +313,8 @@ async def create_channel(cohort_id: int, body: NewChannel, request: Request):
 
 @router.get("/api/cohorts/{cohort_id}/channels/{channel_id}/messages")
 async def messages(cohort_id: int, channel_id: int, request: Request, after: int | None = Query(None, ge=0)):
-    await _cohort(request, cohort_id)
-    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+    account, _ = await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"]):
         raise HTTPException(404, "Channel not found")
     return await asyncio.to_thread(db.messages, channel_id, after)
 
@@ -321,7 +323,8 @@ async def messages(cohort_id: int, channel_id: int, request: Request, after: int
 async def media_token(cohort_id: int, channel_id: int, request: Request):
     _same_origin(request)
     account, cohort = await _cohort(request, cohort_id)
-    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+    channel = await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"])
+    if not channel or channel["kind"] != "channel":
         raise HTTPException(404, "Channel not found")
     config = settings()
     url, api_key, api_secret = config.sfu_url, config.livekit_api_key, config.livekit_api_secret
@@ -350,14 +353,21 @@ async def media_token(cohort_id: int, channel_id: int, request: Request):
 async def add_message(cohort_id: int, channel_id: int, body: Message, request: Request):
     _same_origin(request)
     account, _ = await _cohort(request, cohort_id)
-    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+    channel = await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"])
+    if not channel:
         raise HTTPException(404, "Channel not found")
     clean = body.body.strip()
     if not clean:
         raise HTTPException(400, "Message cannot be empty")
     message = await asyncio.to_thread(db.add_message, channel_id, account["id"], clean)
-    await _broadcast(cohort_id, {"type": "message", "channel_id": channel_id, "message": jsonable_encoder(message)})
+    await _broadcast(cohort_id, {"type": "message", "channel_id": channel_id, "message": jsonable_encoder(message)},
+                     await _recipients(channel))
     return message
+
+
+async def _recipients(channel: dict) -> set[int] | None:
+    """A DM's events go only to its two members; a channel's to the whole cohort."""
+    return await asyncio.to_thread(db.dm_members, channel["id"]) if channel["kind"] == "dm" else None
 
 
 async def _broadcast(cohort_id: int, payload: dict, recipients: set[int] | None = None) -> None:
@@ -430,7 +440,7 @@ async def mark_read(cohort_id: int, channel_id: int, body: ReadMark, request: Re
     account = await _account(request)
     if not await asyncio.to_thread(db.access, account, cohort_id):
         raise HTTPException(403, "No access to this cohort")
-    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+    if not await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"]):
         raise HTTPException(404, "Channel not found")
     await asyncio.to_thread(db.mark_read, account["id"], channel_id, body.message_id)
 
@@ -649,15 +659,17 @@ def _may_delete(account: dict, cohort: dict, author_id: int) -> bool:
 async def delete_message(cohort_id: int, channel_id: int, message_id: int, request: Request):
     _same_origin(request)
     account, cohort = await _cohort(request, cohort_id)
-    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+    channel = await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"])
+    if not channel:
         raise HTTPException(404, "Channel not found")
     found = await asyncio.to_thread(db.message_author, channel_id, message_id)
     if not found:
         raise HTTPException(404, "Message not found")
-    if not _may_delete(account, cohort, found["author_id"]):
+    # In a DM only the author deletes; instructors moderate channels, not private conversations.
+    if not _may_delete(account, cohort, found["author_id"]) or (channel["kind"] == "dm" and found["author_id"] != account["id"]):
         raise HTTPException(403, "You can only delete your own posts")
     await asyncio.to_thread(db.soft_delete, "message", message_id, account["id"])
-    await _broadcast(cohort_id, {"type": "message_deleted", "channel_id": channel_id, "id": message_id})
+    await _broadcast(cohort_id, {"type": "message_deleted", "channel_id": channel_id, "id": message_id}, await _recipients(channel))
     log.info("message deleted by=%r cohort=%s channel=%s message=%s own=%s", account["username"], cohort_id,
              channel_id, message_id, found["author_id"] == account["id"])
 
@@ -718,7 +730,8 @@ def _clean(text: str) -> str:
 async def edit_message(cohort_id: int, channel_id: int, message_id: int, body: MessageEdit, request: Request):
     _same_origin(request)
     account, _ = await _cohort(request, cohort_id)
-    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+    channel = await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"])
+    if not channel:
         raise HTTPException(404, "Channel not found")
     found = await asyncio.to_thread(db.message_author, channel_id, message_id)
     if not found:
@@ -727,7 +740,7 @@ async def edit_message(cohort_id: int, channel_id: int, message_id: int, body: M
         raise HTTPException(403, "You can only edit your own posts")
     await asyncio.to_thread(db.edit_post, "message", message_id, account["id"], _clean(body.body))
     message = jsonable_encoder(await asyncio.to_thread(db.message, channel_id, message_id))
-    await _broadcast(cohort_id, {"type": "message_edited", "channel_id": channel_id, "message": message})
+    await _broadcast(cohort_id, {"type": "message_edited", "channel_id": channel_id, "message": message}, await _recipients(channel))
     log.info("message edited user=%r cohort=%s channel=%s message=%s", account["username"], cohort_id, channel_id, message_id)
     return message
 
@@ -772,11 +785,12 @@ class PinUpdate(BaseModel):
 
 async def _live_message(request: Request, cohort_id: int, channel_id: int, message_id: int):
     account, cohort = await _cohort(request, cohort_id)
-    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+    channel = await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"])
+    if not channel:
         raise HTTPException(404, "Channel not found")
     if not await asyncio.to_thread(db.message_author, channel_id, message_id):
         raise HTTPException(404, "Message not found")
-    return account, cohort
+    return account, cohort, channel
 
 
 @router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/messages/{message_id}/reactions")
@@ -784,23 +798,24 @@ async def toggle_reaction(cohort_id: int, channel_id: int, message_id: int, body
     _same_origin(request)
     if body.emoji not in db.REACTION_EMOJI:
         raise HTTPException(400, "Unsupported reaction")
-    account, _ = await _live_message(request, cohort_id, channel_id, message_id)
+    account, _, channel = await _live_message(request, cohort_id, channel_id, message_id)
     await asyncio.to_thread(db.toggle_reaction, message_id, account["id"], body.emoji)
     message = jsonable_encoder(await asyncio.to_thread(db.message, channel_id, message_id))
     await _broadcast(cohort_id, {"type": "reactions", "channel_id": channel_id, "message_id": message_id,
-                                 "reactions": message["reactions"]})
+                                 "reactions": message["reactions"]}, await _recipients(channel))
     return message["reactions"]
 
 
 @router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/messages/{message_id}/pin")
 async def pin_message(cohort_id: int, channel_id: int, message_id: int, body: PinUpdate, request: Request):
     _same_origin(request)
-    account, cohort = await _live_message(request, cohort_id, channel_id, message_id)
-    if cohort["role"] not in {"admin", "instructor"}:
+    account, cohort, channel = await _live_message(request, cohort_id, channel_id, message_id)
+    # Channels: instructors and admins pin. DMs: either member (they're the only ones there).
+    if channel["kind"] == "channel" and cohort["role"] not in {"admin", "instructor"}:
         raise HTTPException(403, "Instructor access required")
     await asyncio.to_thread(db.set_pinned, message_id, body.pinned, account["id"])
     message = jsonable_encoder(await asyncio.to_thread(db.message, channel_id, message_id))
-    await _broadcast(cohort_id, {"type": "message_pinned", "channel_id": channel_id, "message": message})
+    await _broadcast(cohort_id, {"type": "message_pinned", "channel_id": channel_id, "message": message}, await _recipients(channel))
     log.info("message %s by=%r cohort=%s channel=%s message=%s", "pinned" if body.pinned else "unpinned",
              account["username"], cohort_id, channel_id, message_id)
     return message
@@ -808,7 +823,33 @@ async def pin_message(cohort_id: int, channel_id: int, message_id: int, body: Pi
 
 @router.get("/api/cohorts/{cohort_id}/channels/{channel_id}/pins")
 async def pins(cohort_id: int, channel_id: int, request: Request):
-    await _cohort(request, cohort_id)
-    if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
+    account, _ = await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"]):
         raise HTTPException(404, "Channel not found")
     return await asyncio.to_thread(db.pinned_messages, channel_id)
+
+
+# --- Direct messages: between two people who share the cohort ---
+
+class NewDM(BaseModel):
+    account_id: int
+
+
+@router.get("/api/cohorts/{cohort_id}/dms")
+async def list_dms(cohort_id: int, request: Request):
+    account, _ = await _cohort(request, cohort_id)
+    return await asyncio.to_thread(db.dm_channels, cohort_id, account["id"])
+
+
+@router.post("/api/cohorts/{cohort_id}/dms", status_code=201)
+async def open_dm(cohort_id: int, body: NewDM, request: Request):
+    _same_origin(request)
+    account, _ = await _cohort(request, cohort_id)
+    if body.account_id == account["id"]:
+        raise HTTPException(400, "You cannot message yourself")
+    other = await asyncio.to_thread(db.account, body.account_id)
+    if not other or not other["active"] or not await asyncio.to_thread(db.access, other, cohort_id):
+        raise HTTPException(404, "Member not found")
+    channel_id = await asyncio.to_thread(db.open_dm, cohort_id, account["id"], body.account_id)
+    return {"id": channel_id, "other_id": other["id"], "other_username": other["username"],
+            "other_display_name": other["display_name"], "other_active": other["active"]}

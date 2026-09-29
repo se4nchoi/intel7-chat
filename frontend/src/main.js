@@ -13,7 +13,7 @@ const state = {
   space: readRoute(location.pathname).space, epoch: 0, channelEpoch: 0, questionEpoch: 0, mediaEpoch: 0,
   channels: new Map(), lastMessage: null, lastSeenId: 0, reconnectTimer: null, reconnectNow: null,
   channelList: [], unread: new Map(), online: new Set(), members: [], holding: null, historyLoaded: false, ackTimer: null,
-  messageMap: new Map(), pins: [],
+  messageMap: new Map(), pins: [], dms: [],
   questions: [], question: null, filter: 'all', search: '', boardView: 'home', fileCount: null,
 };
 
@@ -40,7 +40,8 @@ function el(tag, props = {}, ...children) {
 }
 const isManager = () => ['admin', 'instructor'].includes(state.cohort?.role);
 // Authors delete their own posts; instructors and admins any post in their cohort. Archived cohorts are read-only.
-const canDelete = item => !!state.cohort && !state.cohort.archived && (item.username === state.account?.username || isManager());
+const isDM = () => state.channel?.kind === 'dm';
+const canDelete = item => !!state.cohort && !state.cohort.archived && (item.username === state.account?.username || (isManager() && !isDM()));
 // Only authors edit, so nobody's words are changed under their name.
 const canEdit = item => !!state.cohort && !state.cohort.archived && item.username === state.account?.username;
 function editedMark(item) {
@@ -119,7 +120,7 @@ function resetContent() {
   closeChat(); void leaveMedia().catch(error => status(error.message, true));
   state.channel = null; state.question = null; state.questions = []; state.lastMessage = null; state.lastSeenId = 0; state.fileCount = null;
   state.channelList = []; state.unread = new Map(); state.online = new Set(); state.members = []; state.holding = null; state.historyLoaded = false;
-  state.messageMap = new Map(); state.pins = []; renderPins();
+  state.messageMap = new Map(); state.pins = []; state.dms = []; renderPins();
   clearTimeout(state.ackTimer); updateTitle();
   for (const id of ['channel-list', 'messages', 'question-list', 'instructor-answers', 'student-answers', 'file-list', 'member-list', 'board-stats']) $(id).replaceChildren();
   $('channel-heading').textContent = '채널을 선택하세요';
@@ -195,7 +196,7 @@ async function loadSpace() {
   resetContent(); showSpace();
   const epoch = state.epoch;
   try {
-    if (state.space === 'chat') { connectChat(state.cohort); await Promise.all([loadChannels(), loadMembers()]); }
+    if (state.space === 'chat') { connectChat(state.cohort); await Promise.all([loadChannels(), loadMembers(), loadDMs()]); }
     else await loadBoard();
     if (epoch === state.epoch && state.cohort.archived) status('종료된 수강반입니다. 기존 내용만 열람할 수 있습니다.');
   } catch (error) { if (epoch === state.epoch) status(error.message, true); }
@@ -242,8 +243,55 @@ function renderChannelList() {
     }, el('span', { class: 'hash', 'aria-hidden': 'true', text: '#' }), el('span', { class: 'channel-name', text: channel.name }),
       unread ? el('span', { class: `count${mentions ? ' mention' : ''}`, 'aria-hidden': 'true', text: mentions ? `@${mentions}` : unread > 99 ? '99+' : String(unread) }) : null);
   }));
+  renderDMList();
   updateTitle();
 }
+async function loadDMs() {
+  const epoch = state.epoch, cohort = state.cohort;
+  const dms = await api(`/cohorts/${cohort.id}/dms`);
+  if (epoch !== state.epoch) return;
+  state.dms = dms.map(dmChannel);
+  renderDMList();
+}
+function dmChannel(dm) {
+  return { id: dm.id, kind: 'dm', name: dm.other_display_name, username: dm.other_username, otherId: dm.other_id, active: dm.other_active };
+}
+function renderDMList() {
+  const list = $('dm-list');
+  if (!state.dms.length) { list.replaceChildren(el('p', { class: 'muted', text: '구성원 이름을 누르면 DM을 보낼 수 있어요.' })); return; }
+  list.replaceChildren(...state.dms.map(dm => {
+    const active = dm.id === state.channel?.id, unread = active ? 0 : Number(state.unread.get(dm.id)?.unread || 0);
+    return el('button', {
+      class: `${active ? 'active' : ''}${unread ? ' unread' : ''}`, 'aria-pressed': String(active),
+      'aria-label': `${dm.name}님과의 DM${unread ? `, 안 읽은 메시지 ${unread}개` : ''}`,
+      onclick: () => { closeNav(); selectChannel(dm).catch(error => status(error.message, true)); },
+    }, el('span', { class: 'presence-wrap' }, avatar(dm.name, dm.username, true), el('span', { class: `presence-dot${state.online.has(dm.otherId) ? ' on' : ''}`, 'aria-hidden': 'true' })),
+      el('span', { class: 'channel-name', text: dm.name }),
+      unread ? el('span', { class: 'count mention', 'aria-hidden': 'true', text: unread > 99 ? '99+' : String(unread) }) : null);
+  }));
+}
+async function openDM(member) {
+  if (!state.cohort || member.id === state.account?.id) return;
+  try {
+    const dm = dmChannel(await api(`/cohorts/${state.cohort.id}/dms`, { method: 'POST', json: { account_id: member.id } }));
+    if (!state.dms.some(d => d.id === dm.id)) state.dms.unshift(dm);
+    $('dm-picker').close(); closeNav(); $('hub-app').classList.remove('members-open');
+    await selectChannel(dm);
+    $('message-input').focus();
+  } catch (error) { status(error.message, true); }
+}
+function renderDMCandidates() {
+  const term = $('dm-filter').value.trim().toLowerCase();
+  const people = state.members.filter(m => m.id !== state.account?.id)
+    .filter(m => !term || `${m.display_name} ${m.username}`.toLowerCase().includes(term));
+  $('dm-candidates').replaceChildren(...(people.length ? people.map(m => el('li', {},
+    el('button', { type: 'button', class: 'dm-candidate', onclick: () => openDM(m) },
+      avatar(m.display_name, m.username, true), el('span', { class: 'who', text: `${m.display_name} (@${m.username})` }), roleTag(m.role),
+      state.online.has(m.id) ? el('span', { class: 'tag online-tag', text: '접속 중' }) : null))) : [el('li', { class: 'muted', text: '찾는 구성원이 없습니다.' })]));
+}
+$('new-dm-btn').addEventListener('click', () => { $('dm-filter').value = ''; renderDMCandidates(); $('dm-picker').showModal(); $('dm-filter').focus(); });
+$('dm-filter').addEventListener('input', renderDMCandidates);
+$('dm-picker-close').addEventListener('click', () => $('dm-picker').close());
 function updateTitle() {
   const cohort = state.cohort, chat = state.space === 'chat';
   const total = [...state.unread.entries()].reduce((sum, [id, c]) => sum + (id === state.channel?.id ? 0 : Number(c.unread || 0)), 0);
@@ -268,9 +316,12 @@ function renderMembers() {
     nodes.push(el('h3', { text: `${label} — ${people.length}명${online ? ` · 접속 ${online}` : ''}` }));
     for (const person of people) {
       const on = state.online.has(person.id);
-      nodes.push(el('div', { class: `member ${roleClass(role)}${on ? ' online' : ''}`, title: `@${person.username}${on ? ' · 접속 중' : ''}` },
+      const self = person.id === state.account?.id;
+      nodes.push(el(self ? 'div' : 'button', { class: `member ${roleClass(role)}${on ? ' online' : ''}`, type: self ? null : 'button',
+          title: self ? '나' : `@${person.username}${on ? ' · 접속 중' : ''} · 눌러서 DM 보내기`, onclick: self ? null : () => openDM(person) },
         el('span', { class: 'presence-wrap' }, avatar(person.display_name, person.username, true), el('span', { class: 'presence-dot', 'aria-hidden': 'true' })),
-        el('span', { text: person.display_name }), on ? el('span', { class: 'visually-hidden', text: '(접속 중)' }) : null));
+        el('span', { text: self ? `${person.display_name} (나)` : person.display_name }), on ? el('span', { class: 'visually-hidden', text: '(접속 중)' }) : null,
+        self ? null : el('span', { class: 'dm-hint', 'aria-hidden': 'true', text: 'DM' })));
     }
   }
   if (!nodes.length) nodes.push(el('p', { class: 'muted', text: '구성원이 없습니다.' }));
@@ -282,12 +333,19 @@ async function selectChannel(channel) {
   if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
   state.channel = channel; state.channels.set(cohort.id, channel.id); state.lastMessage = null; state.lastSeenId = 0;
   state.historyLoaded = false; state.holding = []; state.messageMap = new Map(); state.pins = []; renderPins();
-  $('channel-heading').textContent = `# ${channel.name}`;
-  $('message-input').placeholder = `#${channel.name}에 메시지 보내기`;
-  $('messages').replaceChildren(el('div', { class: 'channel-intro' },
-    el('div', { class: 'hash-big', 'aria-hidden': 'true', text: '#' }),
-    el('h3', { text: `#${channel.name}에 오신 것을 환영합니다` }),
-    el('p', { class: 'muted', text: `${cohort.name}의 #${channel.name} 채널입니다. 최근 메시지 100개까지 표시됩니다.` })));
+  const dm = channel.kind === 'dm';
+  $('channel-heading').textContent = dm ? `@ ${channel.name}` : `# ${channel.name}`;
+  $('message-input').placeholder = dm ? `${channel.name}님에게 메시지 보내기` : `#${channel.name}에 메시지 보내기`;
+  $('stage-toggle').classList.toggle('hidden', dm);
+  if (dm) { $('stage').classList.add('hidden'); $('stage-toggle').setAttribute('aria-pressed', 'false'); }
+  $('messages').replaceChildren(dm
+    ? el('div', { class: 'channel-intro' }, avatar(channel.name, channel.username),
+        el('h3', { text: `${channel.name}님과의 DM` }),
+        el('p', { class: 'muted', text: '🔒 두 사람만 볼 수 있는 대화입니다. 강사와 관리자도 볼 수 없어요.' }))
+    : el('div', { class: 'channel-intro' },
+        el('div', { class: 'hash-big', 'aria-hidden': 'true', text: '#' }),
+        el('h3', { text: `#${channel.name}에 오신 것을 환영합니다` }),
+        el('p', { class: 'muted', text: `${cohort.name}의 #${channel.name} 채널입니다. 최근 메시지 100개까지 표시됩니다.` })));
   renderChannelList(); updateControls();
   // Live messages for this channel are held while its history loads, then applied in order.
   const history = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages`);
@@ -312,11 +370,14 @@ function applyChannelEvent(event) {
   else if (event.type === 'message_pinned') { updateMessage(event.message); loadPins().catch(() => {}); }
 }
 function handleEvent(event) {
-  if (event.type === 'presence') { state.online = new Set(event.online); renderMembers(); return; }
+  if (event.type === 'presence') { state.online = new Set(event.online); renderMembers(); renderDMList(); return; }
   if (event.channel_id === state.channel?.id) {
     if (state.holding) state.holding.push(event);
     else { applyChannelEvent(event); if (event.type === 'message') ackRead(); }
     return;
+  }
+  if (event.type === 'message' && !state.channelList.some(c => c.id === event.channel_id) && !state.dms.some(d => d.id === event.channel_id)) {
+    loadDMs().catch(() => {});  // someone started a DM with me
   }
   if (event.type === 'message' && event.message.username !== state.account?.username) {
     const counts = state.unread.get(event.channel_id) || { unread: 0, mentions: 0 };
@@ -433,7 +494,7 @@ function messageActions(message, row) {
   const writable = !!state.cohort && !state.cohort.archived;
   const bar = el('div', { class: 'msg-actions', role: 'toolbar', 'aria-label': '메시지 작업' },
     writable ? el('button', { type: 'button', text: '😀', title: '반응 추가', 'aria-label': '반응 추가', onclick: event => openReactionPicker(message, event.currentTarget) }) : null,
-    writable && isManager() ? el('button', { type: 'button', text: message.pinned_at ? '고정 해제' : '📌 고정', 'aria-label': message.pinned_at ? '고정 해제' : '메시지 고정',
+    writable && (isManager() || isDM()) ? el('button', { type: 'button', text: message.pinned_at ? '고정 해제' : '📌 고정', 'aria-label': message.pinned_at ? '고정 해제' : '메시지 고정',
       onclick: () => setPinned(message, !message.pinned_at) }) : null,
     canEdit(message) ? el('button', { type: 'button', text: '수정', 'aria-label': '내 메시지 수정', onclick: () => startEditMessage(message, row) }) : null,
     canDelete(message) ? el('button', { type: 'button', class: 'danger-text', text: '삭제', 'aria-label': `${name}의 메시지 삭제`, onclick: () => deleteMessage(message) }) : null);
