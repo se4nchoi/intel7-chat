@@ -15,6 +15,8 @@ tests and a restarted launcher see the current environment.
 | LIVEKIT_API_SECRET    | (none)                        | LiveKit secret for media tokens          |
 | MADI_ALLOWED_HOSTS    | (none)                        | Extra host names the app answers to,     |
 |                       |                               | comma-separated (e.g. madi.example.kr)   |
+| MADI_LOG_FILE         | <repo>/data_dev/logs/madi.log | Rotating event log (5 MB x 10)           |
+| MADI_LOG_LEVEL        | INFO                          | DEBUG, INFO, WARNING or ERROR            |
 
 The launcher (prototype_run.py) also reads MADI_HOST, MADI_PORT,
 MADI_TLS_CERT and MADI_TLS_KEY.
@@ -27,6 +29,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FILE_DIR = REPO_ROOT / "data_dev" / "hub-files"
+DEFAULT_LOG_FILE = REPO_ROOT / "data_dev" / "logs" / "madi.log"
+LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
 
 @dataclass(frozen=True)
@@ -38,6 +42,8 @@ class Settings:
     sfu_url: str | None
     livekit_api_key: str | None
     livekit_api_secret: str | None
+    log_file: Path
+    log_level: str
 
     @property
     def sfu_configured(self) -> bool:
@@ -60,6 +66,10 @@ def _positive_int(name: str, default: int) -> int:
 def settings() -> Settings:
     env = os.environ.get
     file_dir = env("MADI_FILE_DIR", "").strip()
+    log_file = env("MADI_LOG_FILE", "").strip()
+    log_level = env("MADI_LOG_LEVEL", "INFO").strip().upper() or "INFO"
+    if log_level not in LOG_LEVELS:
+        raise RuntimeError(f"MADI_LOG_LEVEL must be one of {sorted(LOG_LEVELS)}, got {log_level!r}")
     return Settings(
         database_url=env("MADI_DATABASE_URL") or None,
         db_pool_size=_positive_int("MADI_DB_POOL_SIZE", 10),
@@ -68,6 +78,8 @@ def settings() -> Settings:
         sfu_url=env("MADI_SFU_URL") or None,
         livekit_api_key=env("LIVEKIT_API_KEY") or None,
         livekit_api_secret=env("LIVEKIT_API_SECRET") or None,
+        log_file=Path(log_file).expanduser().resolve() if log_file else DEFAULT_LOG_FILE,
+        log_level=log_level,
     )
 
 

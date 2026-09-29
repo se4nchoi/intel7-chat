@@ -100,6 +100,14 @@ differs as environment variables before starting `prototype_run.py`:
 | `MADI_SFU_URL` | `wss://127.0.0.1:7882` | LiveKit address browsers connect to |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | from `data_dev/livekit.env` | Media token signing |
 | `MADI_ALLOWED_HOSTS` | none | Extra host names, e.g. an internal DNS name |
+| `MADI_LOG_FILE` | `data_dev/logs/madi.log` | Event log, rotated at 5 MB, 10 files kept |
+| `MADI_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
+
+The event log records logins (success, failure, throttled), logouts, admin
+and instructor actions, access denials, uploads, media tokens and revoked
+chat connections as `key=value` lines in UTC. It never contains passwords or
+session tokens. `data_dev\server.stderr.log` is overwritten on each restart;
+`madi.log` is not.
 
 Private IPs, `localhost` and single-label or `.local` names are always
 accepted. Invalid numbers stop startup with the variable's name. The full

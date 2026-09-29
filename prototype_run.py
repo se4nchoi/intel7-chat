@@ -109,6 +109,10 @@ def main() -> None:
         print(f"Prototype ready: https://{HOST}:{PORT}; data: {DATA_DIR}; TLS: {CERT_PATH}")
         return
 
+    from app.hub.logs import configure as configure_logging
+    from app.hub.settings import settings
+    configure_logging(settings().log_file, settings().log_level)
+
     os.environ["BAMBOOCHAT_CONFIG"] = str(CONFIG_PATH)
     os.environ["BAMBOOCHAT_SESSION_COOKIE"] = "bamboochat_prototype_session"
 

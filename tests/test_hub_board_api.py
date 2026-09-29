@@ -231,3 +231,65 @@ def test_session_lifetime_follows_setting(hub, monkeypatch):
     with db.connect() as conn:
         hours = conn.execute("SELECT extract(epoch FROM max(expires_at) - now()) / 3600 AS h FROM hub_sessions").fetchone()["h"]
     assert 1.9 < float(hours) <= 2.0
+
+
+# --- Event log ---
+
+def madi_lines(caplog):
+    return [r.getMessage() for r in caplog.records if r.name == "madi"]
+
+
+def test_login_events_are_logged_without_secrets(hub, caplog):
+    import logging
+    from app.hub.routes import COOKIE
+    caplog.set_level(logging.INFO, logger="madi")
+    app, _, _ = hub
+    client = TestClient(app, base_url="https://testserver")
+    client.post("/hub/api/login", json={"username": "student", "password": "wrong-pass-1234"}, headers=ORIGIN)
+    injected = "evil\n2026-01-01T00:00:00Z INFO madi login ok user='admin_user'"
+    client.post("/hub/api/login", json={"username": injected, "password": "x"}, headers=ORIGIN)
+    ok = login(app, "student")
+    ok.post("/hub/api/logout", headers=ORIGIN)
+    lines = madi_lines(caplog)
+    assert any(l.startswith("login failed user='student'") for l in lines)
+    assert any(l.startswith("login ok user='student'") for l in lines)
+    assert any(l.startswith("logout user='student'") for l in lines)
+    assert all("\n" not in l for l in lines)  # the injected newline stays escaped
+    text = "\n".join(lines)
+    assert "wrong-pass-1234" not in text and PASSWORD not in text
+    assert ok.cookies.get(COOKIE) is None or ok.cookies[COOKIE] not in text
+
+
+def test_admin_actions_and_denials_are_logged(hub, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="madi")
+    app, cohort_id, _ = hub
+    admin, student = login(app, "admin_user"), login(app, "student")
+    admin.post("/hub/api/accounts", json={"username": "newbie", "display_name": "New", "password": "test-pass-1234"}, headers=ORIGIN)
+    admin.post(f"/hub/api/cohorts/{cohort_id}/memberships", json={"username": "newbie", "role": "student"}, headers=ORIGIN)
+    student.post("/hub/api/cohorts", json={"slug": "sneaky", "name": "Sneaky"}, headers=ORIGIN)
+    other = admin.post("/hub/api/cohorts", json={"slug": "other-2026", "name": "Other"}, headers=ORIGIN).json()
+    student.get(f"/hub/api/cohorts/{other['id']}/channels")
+    lines = madi_lines(caplog)
+    assert any(l.startswith("account created by='admin_user'") and "user='newbie'" in l for l in lines)
+    assert any(l.startswith("membership set by='admin_user'") and "role=student" in l for l in lines)
+    assert any(l.startswith("admin denied user='student'") for l in lines)
+    assert any(l.startswith("cohort created by='admin_user'") for l in lines)
+    assert any(l.startswith("access denied user='student'") and f"cohort={other['id']}" in l for l in lines)
+
+
+def test_configure_writes_rotating_file(tmp_path):
+    import logging
+    from app.hub.logs import configure, log
+    try:
+        configure(tmp_path / "logs" / "madi.log", "INFO")
+        log.info("hello user=%r", "x")
+        log.debug("hidden")
+        content = (tmp_path / "logs" / "madi.log").read_text(encoding="utf-8")
+        assert "INFO madi hello user='x'" in content and "hidden" not in content
+    finally:
+        for handler in log.handlers[:]:
+            log.removeHandler(handler)
+            handler.close()
+        log.propagate = True
+        log.setLevel(logging.NOTSET)

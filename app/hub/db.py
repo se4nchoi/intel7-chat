@@ -98,7 +98,9 @@ def schema_version() -> int:
 
 
 def initialize_schema() -> None:
-    migrate()
+    from app.hub.logs import log
+    applied = migrate()
+    log.info("schema version=%s applied_now=%s", schema_version(), applied or "none")
 
 
 def seed_demo(data_dir: Path) -> bool:

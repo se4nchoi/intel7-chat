@@ -6,7 +6,7 @@ from app.hub import settings as madi
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
-    for name in ("MADI_DATABASE_URL", "MADI_DB_POOL_SIZE", "MADI_FILE_DIR", "MADI_SESSION_HOURS",
+    for name in ("MADI_DATABASE_URL", "MADI_DB_POOL_SIZE", "MADI_FILE_DIR", "MADI_SESSION_HOURS", "MADI_LOG_FILE", "MADI_LOG_LEVEL",
                  "MADI_SFU_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "MADI_ALLOWED_HOSTS"):
         monkeypatch.delenv(name, raising=False)
 
@@ -44,3 +44,13 @@ def test_sfu_needs_url_key_and_secret(monkeypatch):
 def test_allowed_hosts_extend_the_app_host_check(monkeypatch):
     monkeypatch.setenv("MADI_ALLOWED_HOSTS", " Madi.Example.kr , other.example ")
     assert madi.allowed_hosts() == {"madi.example.kr", "other.example"}
+
+
+def test_log_settings(monkeypatch, tmp_path):
+    assert madi.settings().log_level == "INFO"
+    monkeypatch.setenv("MADI_LOG_LEVEL", "debug")
+    monkeypatch.setenv("MADI_LOG_FILE", str(tmp_path / "m.log"))
+    assert (madi.settings().log_level, madi.settings().log_file) == ("DEBUG", tmp_path / "m.log")
+    monkeypatch.setenv("MADI_LOG_LEVEL", "loud")
+    with pytest.raises(RuntimeError, match="MADI_LOG_LEVEL"):
+        madi.settings()
