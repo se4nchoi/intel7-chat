@@ -91,7 +91,7 @@ Management moved into a dialog opened from the gear in the user panel (or the
   `hub_answers.endorsed` column, so no schema change.
 
 `tests/test_hub_board_api.py` covers these against a disposable PostgreSQL
-database and skips unless `BAMBOOCHAT_HUB_TEST_DATABASE_URL` is set.
+database and skips unless `MADI_TEST_DATABASE_URL` is set.
 
 ### Not in this pass
 

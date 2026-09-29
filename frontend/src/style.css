@@ -1,4 +1,4 @@
-/* BambooChat hub: Discord-style chat, Piazza-style Q&A. Colors are tokens; dark
+/* 마디 (Madi) hub: Discord-style chat, Piazza-style Q&A. Colors are tokens; dark
    follows the OS unless the user picks a theme (html[data-theme]). */
 :root {
   --rail: #dfe5e1; --side: #eef2ef; --bg: #ffffff; --elev: #f5f7f5; --hover: rgba(20, 50, 40, .06); --active: rgba(31, 122, 85, .14);
@@ -81,6 +81,7 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .rail { background: var(--rail); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 0; overflow-y: auto; }
 .rail-home, .rail-item { width: 48px; height: 48px; border-radius: 24px; display: grid; place-items: center; text-decoration: none; font-weight: 700; background: var(--bg); color: var(--text); border: 0; padding: 0; position: relative; transition: border-radius .15s, background .15s; flex: none; }
 .rail-home { background: var(--accent); color: var(--accent-text); font-size: 22px; border-radius: 16px; }
+.madi-mark { width: 60%; height: 60%; }
 .rail-item:hover, .rail-item[aria-current="true"] { border-radius: 16px; background: var(--accent); color: var(--accent-text); }
 .rail-item::before { content: ""; position: absolute; left: -12px; width: 4px; height: 0; border-radius: 0 4px 4px 0; background: var(--text); transition: height .15s; }
 .rail-item:hover::before { height: 20px; }

@@ -376,7 +376,7 @@ async def broadcast_users() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    if os.environ.get("BAMBOOCHAT_HUB_DATABASE_URL"):
+    if os.environ.get("MADI_DATABASE_URL"):
         from app.hub.db import initialize_schema
         await asyncio.to_thread(initialize_schema)
     UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
@@ -385,7 +385,7 @@ async def lifespan(app: FastAPI):
     prune_expired_sessions()
     logger.info("Persistent storage initialized at %s", CONFIG.data_path)
     yield
-    if os.environ.get("BAMBOOCHAT_HUB_DATABASE_URL"):
+    if os.environ.get("MADI_DATABASE_URL"):
         from app.hub.db import close_pools
         await asyncio.to_thread(close_pools)
 
@@ -437,7 +437,7 @@ app.include_router(admin_router)
 app.include_router(quiz_router)
 app.include_router(games_router)
 app.include_router(screenshare_router)
-if os.environ.get("BAMBOOCHAT_HUB_DATABASE_URL"):
+if os.environ.get("MADI_DATABASE_URL"):
     from app.hub.routes import FRONTEND_BUILD_DIR, router as hub_router
     app.mount("/hub/assets", StaticFiles(directory=FRONTEND_BUILD_DIR / "assets", check_dir=False), name="hub-assets")
     app.include_router(hub_router)

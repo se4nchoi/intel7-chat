@@ -1,6 +1,8 @@
 # Prototype handoff (2026-09-23)
 
-Start here when continuing BambooChat on another PC or in another Codex task.
+Start here when continuing 마디 (Madi), the hub that replaces BambooChat
+(대나무챗), on another PC or in another Codex task. The legacy `/` app keeps
+the BambooChat name until it is retired.
 
 For the 2026-09-28 setup on the current PC, verified workflows, and open bugs,
 see [Edu prototype audit](edu-audit-2026-09-28.md). The host-specific paths and

@@ -1,4 +1,4 @@
-"""HTTPS and WSS entry points for the PostgreSQL-backed prototype hub."""
+"""HTTPS and WSS entry points for 마디 (Madi), the PostgreSQL-backed hub."""
 from __future__ import annotations
 
 import asyncio
@@ -20,8 +20,8 @@ from psycopg.errors import UniqueViolation
 from app.auth import normalize_username, validate_password, validate_username
 from app.hub import db
 
-router = APIRouter(prefix="/hub", tags=["prototype-hub"])
-COOKIE = "bamboochat_hub_session"
+router = APIRouter(prefix="/hub", tags=["madi"])
+COOKIE = "madi_session"
 DATA_DIR = Path(__file__).resolve().parents[2] / "data_dev"
 FILE_DIR = DATA_DIR / "hub-files"
 FRONTEND_BUILD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -137,7 +137,7 @@ async def health():
         with db.connect() as conn:
             return conn.execute("SELECT 1 AS ready").fetchone()["ready"] == 1
     try:
-        return {"postgresql": await asyncio.to_thread(check), "sfu_configured": bool(os.environ.get("BAMBOOCHAT_HUB_SFU_URL"))}
+        return {"postgresql": await asyncio.to_thread(check), "sfu_configured": bool(os.environ.get("MADI_SFU_URL"))}
     except Exception:
         raise HTTPException(503, "PostgreSQL unavailable")
 
@@ -271,7 +271,7 @@ async def media_token(cohort_id: int, channel_id: int, request: Request):
     account, cohort = await _cohort(request, cohort_id)
     if not await asyncio.to_thread(db.channel, cohort_id, channel_id):
         raise HTTPException(404, "Channel not found")
-    url = os.environ.get("BAMBOOCHAT_HUB_SFU_URL")
+    url = os.environ.get("MADI_SFU_URL")
     api_key = os.environ.get("LIVEKIT_API_KEY")
     api_secret = os.environ.get("LIVEKIT_API_SECRET")
     if not url or not api_key or not api_secret:

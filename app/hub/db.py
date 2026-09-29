@@ -1,4 +1,4 @@
-"""PostgreSQL persistence for the new cohort-scoped hub."""
+"""PostgreSQL persistence for 마디 (Madi), the cohort-scoped hub."""
 from __future__ import annotations
 
 import os
@@ -21,14 +21,14 @@ _pools_lock = threading.Lock()
 
 
 def _pool() -> ConnectionPool:
-    url = os.environ.get("BAMBOOCHAT_HUB_DATABASE_URL")
+    url = os.environ.get("MADI_DATABASE_URL")
     if not url:
         raise RuntimeError("Prototype PostgreSQL URL is not configured")
     with _pools_lock:
         pool = _pools.get(url)
         if pool is None:
             pool = ConnectionPool(
-                url, min_size=1, max_size=int(os.environ.get("BAMBOOCHAT_HUB_DB_POOL_SIZE", "10")),
+                url, min_size=1, max_size=int(os.environ.get("MADI_DB_POOL_SIZE", "10")),
                 kwargs={"row_factory": dict_row}, check=ConnectionPool.check_connection,
                 timeout=10, open=True, name="hub",
             )

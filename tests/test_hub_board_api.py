@@ -1,7 +1,7 @@
 """Hub API additions for the Discord/Piazza UI: author roles, members, endorsement.
 
 These tests need a disposable PostgreSQL database. Set
-BAMBOOCHAT_HUB_TEST_DATABASE_URL (e.g. postgresql://hub@127.0.0.1:55432/hub_test);
+MADI_TEST_DATABASE_URL (e.g. postgresql://hub@127.0.0.1:55432/hub_test);
 all hub_* tables in it are dropped and recreated.
 """
 import os
@@ -10,8 +10,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-TEST_URL = os.environ.get("BAMBOOCHAT_HUB_TEST_DATABASE_URL")
-pytestmark = pytest.mark.skipif(not TEST_URL, reason="BAMBOOCHAT_HUB_TEST_DATABASE_URL not set")
+TEST_URL = os.environ.get("MADI_TEST_DATABASE_URL")
+pytestmark = pytest.mark.skipif(not TEST_URL, reason="MADI_TEST_DATABASE_URL not set")
 
 PASSWORD = "test-pass-1234"
 ORIGIN = {"origin": "https://testserver"}
@@ -20,7 +20,7 @@ ORIGIN = {"origin": "https://testserver"}
 @pytest.fixture
 def hub(monkeypatch):
     from app.hub import db, routes
-    monkeypatch.setenv("BAMBOOCHAT_HUB_DATABASE_URL", TEST_URL)
+    monkeypatch.setenv("MADI_DATABASE_URL", TEST_URL)
     routes.login_attempts.clear()
     with db.connect() as conn:
         conn.execute("""DROP TABLE IF EXISTS hub_files, hub_answers, hub_questions, hub_messages,

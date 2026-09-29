@@ -1,4 +1,4 @@
-# BambooChat rework: proposed architecture
+# 마디 (Madi, formerly the BambooChat rework): proposed architecture
 
 Status: working decisions and open deployment questions, 2026-09-23. This
 records the goals discussed for the `edu/prototype` worktree. It is not a

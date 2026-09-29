@@ -31,7 +31,7 @@ def initialize() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     password = "".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(12))
     config = RoomConfig(
-        server_name="BambooChat Prototype",
+        server_name="Madi Prototype",
         data_dir=str(DATA_DIR),
         bind_host=HOST,
         port=PORT,
@@ -80,8 +80,8 @@ def main() -> None:
     line = PG_ENV_PATH.read_text(encoding="utf-8").strip()
     if not line.startswith("DATABASE_URL=postgresql://") or "@127.0.0.1:55432/" not in line:
         raise SystemExit("Prototype PostgreSQL must use 127.0.0.1:55432")
-    os.environ["BAMBOOCHAT_HUB_DATABASE_URL"] = line.partition("=")[2]
-    os.environ["BAMBOOCHAT_HUB_SFU_URL"] = "wss://127.0.0.1:7882"
+    os.environ["MADI_DATABASE_URL"] = line.partition("=")[2]
+    os.environ["MADI_SFU_URL"] = "wss://127.0.0.1:7882"
     if not LIVEKIT_ENV_PATH.is_file():
         raise SystemExit(f"Missing prototype LiveKit credentials: {LIVEKIT_ENV_PATH}")
     for line in LIVEKIT_ENV_PATH.read_text(encoding="utf-8").splitlines():
