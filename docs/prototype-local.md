@@ -105,6 +105,34 @@ Private IPs, `localhost` and single-label or `.local` names are always
 accepted. Invalid numbers stop startup with the variable's name. The full
 list is in `app/hub/settings.py`.
 
+## Backup and restore
+
+`app/hub/backup.py` backs up the 마디 database and uploaded files together.
+It reads the same settings as the app and finds the portable PostgreSQL tools
+in `data_dev/pg-portable/pgsql/bin` automatically (they must be at least the
+server's major version; override with `--pg-bin` or `MADI_PG_BIN`).
+
+```powershell
+uv run python -m app.hub.backup backup --keep 14      # -> data_dev\backups\madi-<UTC time>\
+uv run python -m app.hub.backup verify data_dev\backups\madi-20260929-020312
+uv run python -m app.hub.backup restore data_dev\backups\madi-20260929-020312 --replace
+```
+
+- A backup folder holds `db.dump`, `files\` and `manifest.json` with
+  checksums and the schema version. Only complete backups are named `madi-*`.
+- Stop the app before restoring; restore refuses while anything else is
+  connected to the database, refuses to overwrite existing 마디 data without
+  `--replace`, and refuses a backup newer than the code. Current upload files
+  are moved to `hub-files.before-restore-<time>`, not deleted. An older
+  backup is upgraded with the pending migrations after restore.
+- `data_dev\backups` is on the same disk as the database. Copy backups to
+  another disk or the NAS for them to survive a disk failure. A daily Windows
+  Task Scheduler job running the `backup --keep 14` command from this folder
+  is enough for the prototype.
+- Rehearse a restore into a scratch database before relying on the backups;
+  `tests/test_hub_backup.py` does this automatically when
+  `MADI_TEST_DATABASE_URL` is set and `pg_dump` is on `PATH`.
+
 ## Verified locally
 
 - PostgreSQL accepts app credentials on loopback; the hub reads and writes

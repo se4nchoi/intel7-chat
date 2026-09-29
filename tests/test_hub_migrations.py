@@ -16,7 +16,11 @@ def db(monkeypatch):
     monkeypatch.setenv("MADI_DATABASE_URL", TEST_URL)
     with db.connect() as conn:
         conn.execute(f"DROP TABLE IF EXISTS {HUB_TABLES} CASCADE")
-    return db
+    yield db
+    # Don't leave fake future versions behind for the next user of this database.
+    with db.connect() as conn:
+        conn.execute(f"DROP TABLE IF EXISTS {HUB_TABLES} CASCADE")
+    db.migrate()
 
 
 def versions(db):
