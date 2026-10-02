@@ -596,15 +596,25 @@ export function appendMessageNode(msg, previousMsg) {
   } else {
     const label = document.createElement('div');
     label.className = 'dm-label';
-    const partnerNick = isOwn ? msg.to_nick : msg.from_nick;
-    const rawNick = partnerNick || (isOwn ? '나' : '상대방');
-    const displayName = displayNickname(rawNick);
+    const senderNick = msg.from_nick || (isOwn ? myNick : '');
+    const rawNick = senderNick || (isOwn ? '나' : '상대방');
+    const displayName = (isOwn && state.currentUser?.display_name)
+      ? state.currentUser.display_name
+      : displayNickname(rawNick);
     const author = document.createElement('span');
     author.className = 'message-author-name';
     author.dataset.username = rawNick;
     author.textContent = displayName;
     author.title = `@${rawNick}`;
     label.appendChild(author);
+
+    if (msg.quiz_badge) {
+      const badgeSpan = document.createElement('span');
+      badgeSpan.className = `quiz-user-badge badge-${msg.quiz_badge.type}`;
+      badgeSpan.textContent = `${msg.quiz_badge.icon} ${msg.quiz_badge.label}`;
+      label.appendChild(badgeSpan);
+    }
+
     const time = document.createElement('time');
     time.className = 'dm-time';
     time.dateTime = msg.created_at || '';

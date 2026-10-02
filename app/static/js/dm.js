@@ -9,6 +9,9 @@ import { screenshareState, getDmRoomId } from './screenshare.js';
 export const userDirectory = new Map();
 
 export function displayNickname(nick) {
+  if (state.currentUser && nick === state.currentUser.username && state.currentUser.display_name) {
+    return state.currentUser.display_name;
+  }
   const entry = userDirectory.get(nick);
   return entry?.display_name || nick;
 }

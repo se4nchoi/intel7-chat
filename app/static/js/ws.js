@@ -219,6 +219,7 @@ export function initWebSocket(callbacks = {}) {
           reactions: Array.isArray(data.reactions) ? data.reactions : [],
           is_pinned: Boolean(data.is_pinned),
           history: Boolean(data.history),
+          quiz_badge: data.quiz_badge || null,
         };
 
         if (state.activeRoom.type === 'dm' && (state.activeRoom.id === partner || state.activeRoom.id === data.from_nick)) {
