@@ -22,7 +22,7 @@ The repository includes the browser interface, Python backend, persistent storag
 
 Implementation highlights include persisted read state across sessions, account-based attachment permissions, administrator controls, schema migrations, and server-validated chess moves and clocks. These are useful entry points for reviewing the full-stack work in this repository.
 
-**Deployment scope:** The app is designed for a trusted classroom LAN and uses HTTP. It does not encrypt browser-to-server traffic and should not be exposed through public internet port forwarding. Gemini quiz generation requires an API key and internet access; it sends the selected source PDF or text to the Gemini API.
+**Deployment scope:** The app is designed for a trusted classroom LAN. HTTP is the default; [local HTTPS setup](docs/local-https.md) enables encrypted browser-to-server traffic and screen capture without an insecure-origin flag. Do not expose the app through public internet port forwarding. Gemini quiz generation requires an API key and internet access; it sends the selected source PDF or text to the Gemini API.
 
 ## 한국어 사용 및 운영 안내
 

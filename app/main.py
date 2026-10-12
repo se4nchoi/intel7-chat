@@ -72,6 +72,13 @@ MAX_CONNECTIONS_TOTAL = 50
 MAX_CONNECTIONS_PER_IP = 4
 RATE_LIMIT_MESSAGES = 30
 RATE_LIMIT_WINDOW_SECONDS = 10
+# One presenter sends offers and several ICE candidates to every viewer.
+# Keep this account-wide budget separate from chat, sized for a 50-client room.
+SCREENSHARE_RATE_LIMIT_MESSAGES = 1000
+SCREENSHARE_MESSAGE_TYPES = frozenset({
+    "screenshare_start", "screenshare_stop", "screenshare_status",
+    "screenshare_join", "screenshare_leave", "screenshare_signal",
+})
 UPLOAD_RATE_LIMIT = 8
 UPLOAD_RATE_WINDOW_SECONDS = 60
 LOGIN_RATE_LIMIT = 12
@@ -107,6 +114,7 @@ class ClientInfo:
 connected_clients: Dict[WebSocket, ClientInfo] = {}
 user_registry: Dict[str, Set[WebSocket]] = defaultdict(set)
 message_timestamps: Dict[str, Deque[float]] = defaultdict(deque)
+screenshare_timestamps: Dict[str, Deque[float]] = defaultdict(deque)
 upload_timestamps: Dict[str, Deque[float]] = defaultdict(deque)
 login_timestamps: Dict[str, Deque[float]] = defaultdict(deque)
 
@@ -488,14 +496,21 @@ async def websocket_endpoint(ws: WebSocket):
             raw=await ws.receive_text()
             if len(raw)>MAX_RAW_MESSAGE_LEN:
                 await ws.close(code=1009,reason="메시지 프레임이 너무 큽니다."); break
-            if not sliding_window_allowed(message_timestamps,str(info.user_id),RATE_LIMIT_MESSAGES,RATE_LIMIT_WINDOW_SECONDS):
-                await ws.send_text(json.dumps({"type":"error","message":"메시지를 너무 빠르게 보내고 있습니다."},ensure_ascii=False))
-                await ws.close(code=1008); break
             try: data=json.loads(raw)
-            except json.JSONDecodeError: continue
+            except json.JSONDecodeError: data = None
+            msg_type = data.get("type") if isinstance(data, dict) else None
+            is_screenshare = isinstance(msg_type, str) and msg_type in SCREENSHARE_MESSAGE_TYPES
+            registry = screenshare_timestamps if is_screenshare else message_timestamps
+            limit = SCREENSHARE_RATE_LIMIT_MESSAGES if is_screenshare else RATE_LIMIT_MESSAGES
+            if not sliding_window_allowed(registry,str(info.user_id),limit,RATE_LIMIT_WINDOW_SECONDS):
+                category = "screenshare" if is_screenshare else "message"
+                logger.warning("WebSocket rate limit exceeded user=%s ip=%s category=%s limit=%s window=%s",
+                               info.user_id, ip, category, limit, RATE_LIMIT_WINDOW_SECONDS)
+                await ws.send_text(json.dumps({"type":"error", "code":f"{category}_rate_limited",
+                    "message":"화면 공유 신호를 너무 빠르게 보내고 있습니다." if is_screenshare
+                              else "메시지를 너무 빠르게 보내고 있습니다."},ensure_ascii=False))
+                await ws.close(code=1008, reason=f"{category} rate limit exceeded"); break
             if not isinstance(data,dict): continue
-
-            msg_type = data.get("type")
 
             # --- Multi-Channel & DM Screen Sharing Handlers ---
             if msg_type == "screenshare_start":

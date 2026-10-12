@@ -9,6 +9,98 @@ from app.config import GIB
 from app.screenshare import ScreenShareManager
 
 
+def _authenticated_client(username):
+    from fastapi.testclient import TestClient
+    user = database.create_user(username, "unused_test_hash")
+    token = f"screenshare-test-token-{user['id']}"
+    database.create_session(auth.token_hash(token), user["id"], "2999-01-01T00:00:00Z")
+    client = TestClient(main.app)
+    client.cookies.set(main.SESSION_COOKIE, token)
+    return client, user
+
+
+def _receive_event(ws, event_type):
+    for _ in range(100):
+        message = ws.receive_json()
+        if message.get("type") == event_type:
+            return message
+    raise AssertionError(f"Missing WebSocket event: {event_type}")
+
+
+def test_classroom_signaling_burst_preserves_share_and_chat_budget():
+    """49 handshakes worth of signaling must not close the presenter's socket."""
+    from starlette.websockets import WebSocketDisconnect
+    presenter, presenter_user = _authenticated_client("burst_presenter")
+    viewer, viewer_user = _authenticated_client("burst_viewer")
+    origin = {"origin": "http://testserver"}
+    with presenter.websocket_connect("/ws", headers=origin) as sender, \
+         viewer.websocket_connect("/ws", headers=origin) as receiver:
+        _receive_event(sender, "history_ready")
+        _receive_event(receiver, "history_ready")
+        sender.send_json({"type": "screenshare_start", "channel_id": 2})
+        _receive_event(sender, "screenshare_started")
+        _receive_event(receiver, "screenshare_started")
+        # A connected receiver is a sink for the volume of a full classroom's
+        # offers/candidates; the signaling handler forwards their contents unchanged.
+        for peer in range(main.MAX_CONNECTIONS_TOTAL - 1):
+            for index in range(7):
+                signal = {"type": "offer", "sdp": f"offer-{peer}"} if index == 0 else {
+                    "type": "candidate", "candidate": {"candidate": f"candidate-{peer}-{index}"}}
+                sender.send_json({"type": "screenshare_signal", "channel_id": 2,
+                                  "target_user_id": viewer_user["id"], "signal": signal})
+                forwarded = _receive_event(receiver, "screenshare_signal")
+                assert forwarded["signal"] == signal
+        assert not main.message_timestamps[str(presenter_user["id"])]
+        sender.send_json({"type": "screenshare_status", "channel_id": 2})
+        assert _receive_event(sender, "screenshare_status")["is_active"]
+
+        # Screen sharing must leave the existing chat allowance intact.
+        for index in range(main.RATE_LIMIT_MESSAGES):
+            sender.send_json({"type": "chat", "channel_id": 1, "content": f"chat-{index}"})
+            assert _receive_event(sender, "chat")["content"] == f"chat-{index}"
+        sender.send_json({"type": "screenshare_status", "channel_id": 2})
+        assert _receive_event(sender, "screenshare_status")["is_active"]
+        sender.send_json({"type": "chat", "channel_id": 1, "content": "over chat limit"})
+        assert _receive_event(sender, "error")["code"] == "message_rate_limited"
+        with pytest.raises(WebSocketDisconnect) as closed:
+            sender.receive_json()
+        assert closed.value.code == 1008
+
+
+def test_screenshare_limit_is_bounded_and_shared_across_account_sockets(monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+    monkeypatch.setattr(main, "SCREENSHARE_RATE_LIMIT_MESSAGES", 5)
+    client, _ = _authenticated_client("bounded_presenter")
+    origin = {"origin": "http://testserver"}
+    with client.websocket_connect("/ws", headers=origin) as first, \
+         client.websocket_connect("/ws", headers=origin) as second:
+        _receive_event(first, "history_ready")
+        _receive_event(second, "history_ready")
+        for ws in (first, second, first, second, first):
+            ws.send_json({"type": "screenshare_status", "channel_id": 2})
+            assert _receive_event(ws, "screenshare_status")["is_active"] is False
+        second.send_json({"type": "screenshare_status", "channel_id": 2})
+        assert _receive_event(second, "error")["code"] == "screenshare_rate_limited"
+        with pytest.raises(WebSocketDisconnect) as closed:
+            second.receive_json()
+        assert closed.value.code == 1008
+
+
+@pytest.mark.parametrize("raw", ["invalid json", "[]", '{"type": ["screenshare_signal"]}'])
+def test_malformed_frames_still_use_normal_rate_limit(raw, monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+    monkeypatch.setattr(main, "RATE_LIMIT_MESSAGES", 2)
+    client, _ = _authenticated_client("malformed_sender")
+    with client.websocket_connect("/ws", headers={"origin": "http://testserver"}) as ws:
+        _receive_event(ws, "history_ready")
+        for _ in range(3):
+            ws.send_text(raw)
+        assert _receive_event(ws, "error")["code"] == "message_rate_limited"
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+        assert closed.value.code == 1008
+
+
 @pytest.fixture(autouse=True)
 def isolated_state(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "chat.db")
@@ -17,6 +109,7 @@ def isolated_state(tmp_path: Path, monkeypatch):
     main.connected_clients.clear()
     main.user_registry.clear()
     main.message_timestamps.clear()
+    main.screenshare_timestamps.clear()
     main.upload_timestamps.clear()
     main.login_timestamps.clear()
     screenshare.screenshare_manager.sessions.clear()

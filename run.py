@@ -8,6 +8,7 @@ from pathlib import Path
 import uvicorn
 from app.auth import hash_secret, validate_password, validate_username
 from app.config import GIB, RoomConfig, load_config, save_config
+from app.tls import add_tls_arguments, tls_options
 
 def detect_lan_ip() -> str:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -83,6 +84,7 @@ def first_run(config_path: Path) -> RoomConfig:
 def main() -> None:
     parser = argparse.ArgumentParser(description="BambooChat classroom LAN server")
     parser.add_argument("--config", type=Path, default=Path("bamboochat.json"))
+    add_tls_arguments(parser)
     registration = parser.add_mutually_exclusive_group()
     registration.add_argument("--open-registration", action="store_true",
                               help="학생 계정 신규 가입을 허용합니다.")
@@ -121,19 +123,28 @@ def main() -> None:
         delete_user_sessions(user["id"])
         print(f"{user['username']} 비밀번호를 재설정했습니다. 기존 세션은 종료되었습니다.")
         return
+    try:
+        tls = tls_options(config, config_path, certfile=args.ssl_certfile, keyfile=args.ssl_keyfile)
+    except ValueError as exc:
+        parser.error(str(exc))
+    scheme = "https" if tls else "http"
     print(f"\n{config.server_name}")
     hostname = socket.gethostname()
     if config.bind_host == "0.0.0.0":
-        print(f"접속 주소 (호스트 로컬): http://localhost:{config.port}")
+        print(f"접속 주소 (호스트 로컬): {scheme}://localhost:{config.port}")
         for ip in get_all_lan_ips():
-            print(f"접속 주소 (교실 LAN):   http://{ip}:{config.port}")
+            print(f"접속 주소 (교실 LAN):   {scheme}://{ip}:{config.port}")
         if hostname:
-            print(f"접속 주소 (호스트명):   http://{hostname}:{config.port}")
+            print(f"접속 주소 (호스트명):   {scheme}://{hostname}:{config.port}")
     else:
-        print(f"접속 주소: http://{config.bind_host}:{config.port}")
-    print("주의: HTTP LAN 서비스입니다. 비밀번호를 재사용하거나 민감정보를 공유하지 마세요.\n")
+        print(f"접속 주소: {scheme}://{config.bind_host}:{config.port}")
+    if tls:
+        print("HTTPS: 인증서에 포함된 주소를 사용하세요. 로컬 인증서는 브라우저 경고에서 계속 진행하거나 CA를 신뢰할 수 있습니다.\n")
+    else:
+        print("주의: HTTP LAN 서비스입니다. 비밀번호를 재사용하거나 민감정보를 공유하지 마세요.\n")
     uvicorn.run("app.main:app", host=config.bind_host, port=config.port, ws_max_size=65536,
-        ws_max_queue=16, ws_per_message_deflate=False, limit_concurrency=60, server_header=False)
+        ws_max_queue=16, ws_per_message_deflate=False, limit_concurrency=60, server_header=False,
+        **tls)
 
 if __name__ == "__main__":
     main()

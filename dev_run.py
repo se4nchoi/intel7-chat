@@ -18,11 +18,13 @@ if venv_python.exists() and Path(sys.executable).resolve() != venv_python.resolv
 import argparse
 import uvicorn
 from app.config import load_config
+from app.tls import add_tls_arguments, tls_options
 from run import first_run, get_all_lan_ips
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="BambooChat Development Server")
+    add_tls_arguments(parser)
     parser.add_argument(
         "-p", "--port",
         type=int,
@@ -59,17 +61,24 @@ def main() -> None:
 
     port = args.port if args.port is not None else config.port
     host = args.host if args.host is not None else config.bind_host
+    try:
+        tls = tls_options(config, config_path, certfile=args.ssl_certfile, keyfile=args.ssl_keyfile)
+    except ValueError as exc:
+        parser.error(str(exc))
+    scheme = "https" if tls else "http"
 
     print(f"\n[DEV SERVER] {config.server_name}")
     print(f"Host: {host}")
     print(f"Port: {port}")
     print(f"Auto-reload: {'ON' if args.reload else 'OFF'}")
-    print(f"접속 주소 (로컬): http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}")
+    print(f"접속 주소 (로컬): {scheme}://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}")
     if host == "0.0.0.0":
         for ip in get_all_lan_ips():
-            print(f"LAN 접속 주소:   http://{ip}:{port}")
+            print(f"LAN 접속 주소:   {scheme}://{ip}:{port}")
     else:
-        print(f"LAN 접속 주소:   http://{host}:{port}")
+        print(f"LAN 접속 주소:   {scheme}://{host}:{port}")
+    if tls:
+        print("HTTPS: 인증서에 포함된 주소를 사용하세요. 로컬 인증서는 브라우저 경고에서 계속 진행하거나 CA를 신뢰할 수 있습니다.")
     print()
 
     uvicorn.run(
@@ -82,6 +91,7 @@ def main() -> None:
         ws_per_message_deflate=False,
         limit_concurrency=60,
         server_header=False,
+        **tls,
     )
 
 

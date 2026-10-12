@@ -75,6 +75,7 @@ def global_database_isolation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         from app import main
         main.connected_clients.clear()
         main.user_registry.clear()
+        main.screenshare_timestamps.clear()
     except Exception:
         pass
 

@@ -21,6 +21,8 @@ class RoomConfig:
     registration_enabled: bool = True
     enrollment_code_hash: str = ""
     gemini_api_key: str = ""
+    ssl_certfile: str = ""
+    ssl_keyfile: str = ""
 
     @property
     def data_path(self) -> Path:
