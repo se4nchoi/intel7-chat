@@ -21,7 +21,7 @@ SECRET = "alice-to-bob-private-note"
 
 
 @pytest.fixture(autouse=True)
-def isolated_state(tmp_path, monkeypatch):
+def isolated_state(tmp_path, monkeypatch, shared_application_loop):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "chat.db")
     monkeypatch.setattr(database, "DB_MAX_BYTES", 3 * GIB)
     monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path / "uploads")
@@ -33,6 +33,7 @@ def isolated_state(tmp_path, monkeypatch):
     main.login_timestamps.clear()
     screenshare_manager.sessions.clear()
     screenshare_manager.viewers.clear()
+    screenshare_manager.viewer_clients.clear()
     main.UPLOAD_DIR.mkdir(parents=True)
     database.init_db()
     yield
@@ -154,7 +155,6 @@ def test_hidden_channel_message_content_is_withheld_from_students(world):
     assert "channel hello" not in response.text
 
 
-@pytest.mark.xfail(strict=True, reason="/api/screenshare/status has no login check and lists DM share rooms.")
 def test_screenshare_status_requires_login(world):
     assert call(world, "anon", "GET", "/api/screenshare/status").status_code == 401
 
@@ -189,7 +189,6 @@ def test_open_socket_cannot_post_after_logout(world):
     assert "after logout" not in saved
 
 
-@pytest.mark.xfail(strict=True, reason="Any user can start a share in an occupied room and replace its presenter.")
 def test_student_cannot_take_over_an_active_channel_share(world):
     admin_client, carol_client = world["clients"]["admin"], world["clients"]["carol"]
     with admin_client.websocket_connect("/ws", headers=ORIGIN) as admin_ws:
@@ -204,7 +203,6 @@ def test_student_cannot_take_over_an_active_channel_share(world):
     assert status["session"]["user_id"] == world["users"]["admin"]["id"]
 
 
-@pytest.mark.xfail(strict=True, reason="Non-participants can join a DM share room; the presenter's client then streams to them.")
 def test_outsider_cannot_join_a_dm_screen_share(world):
     alice_client, carol_client = world["clients"]["alice"], world["clients"]["carol"]
     with alice_client.websocket_connect("/ws", headers=ORIGIN) as alice_ws:
@@ -214,7 +212,8 @@ def test_outsider_cannot_join_a_dm_screen_share(world):
         with carol_client.websocket_connect("/ws", headers=ORIGIN) as carol_ws:
             drain_until(carol_ws, "history_ready")
             carol_ws.send_text(json.dumps({"type": "screenshare_join", "channel_id": "dm:alice:bob"}))
+            assert drain_until(carol_ws, "error")["code"] == "screenshare_forbidden"
             carol_ws.send_text(json.dumps({"type": "screenshare_status", "channel_id": "dm:alice:bob"}))
-            drain_until(carol_ws, "screenshare_status")
+            assert drain_until(carol_ws, "error")["code"] == "screenshare_forbidden"
             viewers = set(screenshare_manager.viewers.get("dm:alice:bob", set()))
     assert world["users"]["carol"]["id"] not in viewers

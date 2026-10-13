@@ -6,6 +6,16 @@ import tempfile
 from pathlib import Path
 import pytest
 
+
+@pytest.fixture
+def shared_application_loop(monkeypatch):
+    """Concurrent test sockets must use one app loop, as they do in Uvicorn."""
+    import anyio
+    from fastapi.testclient import TestClient
+    with anyio.from_thread.start_blocking_portal() as portal:
+        monkeypatch.setattr(TestClient, "portal", portal)
+        yield
+
 # Ensure a temporary dummy config is set before any tests import app.main or app.config,
 # so that the production bamboochat.json (pointing to BambooChatData) is NEVER loaded during test runs.
 _TEST_DATA_DIR = tempfile.mkdtemp(prefix="bamboochat_test_global_")

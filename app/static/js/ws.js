@@ -19,6 +19,8 @@ import {
   handleViewerLeft,
   handleSignal,
   syncAllActiveSessions,
+  onScreenshareDisconnected,
+  handleScreenshareError,
 } from './screenshare.js';
 
 const RECONNECT_DELAY = 3000;
@@ -370,6 +372,7 @@ export function initWebSocket(callbacks = {}) {
       }
 
       case 'error': {
+        if (data.request_type?.startsWith('screenshare_')) handleScreenshareError(data);
         showToast(data.message || '오류가 발생했습니다.', 'error');
         break;
       }
@@ -462,12 +465,13 @@ export function initWebSocket(callbacks = {}) {
     }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     // A socket can close after a newer socket has already been installed.
     // Never let that stale event change the current connection indicator.
     if (state.socket !== ws) return;
     setConnected(false);
-    if (ws.code === 1008) {
+    onScreenshareDisconnected();
+    if (event.code === 1008) {
       state.socket = null;
       if (callbacks.onSessionExpired) callbacks.onSessionExpired();
       return;

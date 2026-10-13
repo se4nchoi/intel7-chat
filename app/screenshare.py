@@ -5,6 +5,7 @@ import asyncio
 from collections import defaultdict
 from datetime import datetime, timezone
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Set, Union
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class ScreenShareManager:
         self.sessions: Dict[Union[int, str], Dict[str, Any]] = {}
         # room_id -> set of viewer user_ids
         self.viewers: Dict[Union[int, str], Set[int]] = defaultdict(set)
+        self.viewer_clients: Dict[Union[int, str], Dict[str, int]] = defaultdict(dict)
 
     async def start_session(
         self,
@@ -47,6 +49,7 @@ class ScreenShareManager:
         display_name: str,
         channel_id: Union[int, str],
         title: str = "",
+        client_id: str | None = None,
     ) -> Dict[str, Any]:
         """Start a screen share session in channel_id (channel int or DM str).
 
@@ -55,14 +58,22 @@ class ScreenShareManager:
         """
         room_id = normalize_room_id(channel_id)
         async with self._lock:
+            current = self.sessions.get(room_id)
+            if current and (current["user_id"] != user_id or
+                            current.get("presenter_client_id") != client_id):
+                raise ValueError("이 채널에서 이미 화면 공유 중입니다.")
+            if current:
+                return dict(current)
+            stopped_sessions = []
             # 1. If presenter is already streaming in another room, clean it up
             old_rooms = [
                 rid for rid, s in self.sessions.items()
                 if s["user_id"] == user_id and rid != room_id
             ]
             for old_rid in old_rooms:
-                self.sessions.pop(old_rid, None)
+                stopped_sessions.append(self.sessions.pop(old_rid))
                 self.viewers.pop(old_rid, None)
+                self.viewer_clients.pop(old_rid, None)
                 logger.info("Presenter %s switched stream away from room %s", username, old_rid)
 
             # 2. Register new session
@@ -76,11 +87,14 @@ class ScreenShareManager:
                 "display_name": display_name or username,
                 "title": title or f"{display_name or username}님의 화면",
                 "started_at": now,
+                "session_id": uuid.uuid4().hex,
+                "presenter_client_id": client_id,
             }
             self.sessions[room_id] = session
             self.viewers[room_id] = {user_id}
+            self.viewer_clients[room_id] = {}
             logger.info("Screen share started in room %s by user %s (%s)", room_id, username, user_id)
-            return dict(session)
+            return {**session, "stopped_sessions": stopped_sessions}
 
     async def stop_session(
         self,
@@ -100,6 +114,7 @@ class ScreenShareManager:
                 if session and (user_id is None or session["user_id"] == user_id):
                     stopped = self.sessions.pop(room_id)
                     self.viewers.pop(room_id, None)
+                    self.viewer_clients.pop(room_id, None)
                     stopped_sessions.append(stopped)
                     logger.info("Screen share stopped in room %s by user %s", room_id, user_id)
             elif user_id is not None:
@@ -110,6 +125,7 @@ class ScreenShareManager:
                 for rid in matching_rids:
                     stopped = self.sessions.pop(rid)
                     self.viewers.pop(rid, None)
+                    self.viewer_clients.pop(rid, None)
                     stopped_sessions.append(stopped)
                     logger.info("Screen share stopped in room %s for user %s", rid, user_id)
 
@@ -149,21 +165,41 @@ class ScreenShareManager:
                 }
             return res
 
-    async def add_viewer(self, channel_id: Union[int, str], user_id: int) -> int:
+    async def add_viewer(self, channel_id: Union[int, str], user_id: int,
+                         client_id: str | None = None) -> int:
         """Add a viewer to a room session and return updated viewer count."""
         room_id = normalize_room_id(channel_id)
         async with self._lock:
             if room_id in self.sessions:
                 self.viewers[room_id].add(user_id)
+                if client_id:
+                    self.viewer_clients[room_id][client_id] = user_id
             return len(self.viewers.get(room_id, set()))
 
-    async def remove_viewer(self, channel_id: Union[int, str], user_id: int) -> int:
+    async def remove_viewer(self, channel_id: Union[int, str], user_id: int,
+                            client_id: str | None = None) -> int:
         """Remove a viewer from a room session and return updated viewer count."""
         room_id = normalize_room_id(channel_id)
         async with self._lock:
             if room_id in self.viewers:
-                self.viewers[room_id].discard(user_id)
+                clients = self.viewer_clients[room_id]
+                if client_id:
+                    clients.pop(client_id, None)
+                else:
+                    for key, uid in list(clients.items()):
+                        if uid == user_id:
+                            clients.pop(key)
+                session = self.sessions.get(room_id)
+                if user_id not in clients.values() and (not session or session["user_id"] != user_id):
+                    self.viewers[room_id].discard(user_id)
             return len(self.viewers.get(room_id, set()))
+
+    def is_viewer(self, channel_id: Union[int, str], user_id: int,
+                  client_id: str | None = None) -> bool:
+        room_id = normalize_room_id(channel_id)
+        if client_id:
+            return self.viewer_clients.get(room_id, {}).get(client_id) == user_id
+        return user_id in self.viewers.get(room_id, set())
 
     async def remove_viewer_from_all(self, user_id: int) -> Dict[Union[int, str], int]:
         """Remove a viewer from all rooms they might be watching.
@@ -175,6 +211,9 @@ class ScreenShareManager:
             for rid, viewer_set in list(self.viewers.items()):
                 if user_id in viewer_set:
                     viewer_set.discard(user_id)
+                    for key, uid in list(self.viewer_clients.get(rid, {}).items()):
+                        if uid == user_id:
+                            self.viewer_clients[rid].pop(key)
                     affected[rid] = len(viewer_set)
         return affected
 

@@ -45,6 +45,12 @@ export const screenshareState = {
   viewingChannelId: null,
   // Peer connections: targetUserId -> RTCPeerConnection
   peerConnections: new Map(),
+  pendingCandidates: new Map(),
+  signalQueues: new Map(),
+  joinTimer: null,
+  retryTimer: null,
+  joinAttempts: 0,
+  presentingTitle: '',
   // Pan & Zoom state
   zoom: 1.0,
   panX: 0,
@@ -170,6 +176,7 @@ async function handleHeaderToggleClick() {
   // If already a live stream in this room -> toggle viewing or join
   if (screenshareState.hasSession(normId)) {
     if (normalizeRoomKey(screenshareState.viewingChannelId) === normId) {
+      videoEl?.play().catch(err => console.warn('Screen-share playback blocked:', err));
       screenshareState.isCollapsed = !screenshareState.isCollapsed;
       panelContainer?.classList.toggle('collapsed', screenshareState.isCollapsed);
       if (toggleViewBtn) toggleViewBtn.textContent = screenshareState.isCollapsed ? '펼치기' : '접기';
@@ -204,6 +211,8 @@ export async function startScreenShare(roomId, customTitle = '') {
       audio: false,
     });
 
+    if (screenshareState.presentingChannelId) stopScreenShare(screenshareState.presentingChannelId);
+
     screenshareState.localStream = stream;
     screenshareState.presentingChannelId = normId;
 
@@ -236,11 +245,16 @@ export async function startScreenShare(roomId, customTitle = '') {
     }
 
     const title = customTitle || `${state.currentUser?.display_name || state.currentUser?.username}님의 화면`;
-    sendWebSocketMessage({
+    screenshareState.presentingTitle = title;
+    const sent = sendWebSocketMessage({
       type: 'screenshare_start',
       channel_id: isDm ? normId : Number(normId),
       title: title,
     });
+    if (!sent) {
+      resetScreenShare();
+      return;
+    }
 
     updateUIForCurrentRoom();
     showToast(`'${targetName}'에서 화면 공유를 시작했습니다.`, 'info');
@@ -268,7 +282,7 @@ export function stopScreenShare(roomId) {
     }
     screenshareState.presentingChannelId = null;
 
-    closeAllPeerConnections();
+    closePeerConnections('presenter', normId);
     showToast('화면 공유가 종료되었습니다.', 'info');
   }
 
@@ -281,18 +295,27 @@ export function stopScreenShare(roomId) {
 }
 
 // --- Viewer Workflow ---
-export function joinScreenShare(roomId) {
+export function joinScreenShare(roomId, { force = false } = {}) {
   const normId = normalizeRoomKey(roomId);
-  if (normalizeRoomKey(screenshareState.presentingChannelId) === normId) return;
-
-  screenshareState.viewingChannelId = normId;
-  screenshareState.isCollapsed = false;
+  if (!normId || !screenshareState.hasSession(normId) ||
+      normalizeRoomKey(screenshareState.presentingChannelId) === normId) return;
+  if (!force && screenshareState.viewingChannelId === normId) return;
+  if (!force) screenshareState.joinAttempts = 0;
+  if (screenshareState.viewingChannelId && screenshareState.viewingChannelId !== normId) {
+    leaveScreenShare(screenshareState.viewingChannelId);
+  }
+  closePeerConnections('viewer', normId);
 
   const isDm = String(normId).startsWith('dm:');
-  sendWebSocketMessage({
+  const sent = sendWebSocketMessage({
     type: 'screenshare_join',
     channel_id: isDm ? normId : Number(normId),
   });
+  if (!sent) return;
+  screenshareState.viewingChannelId = normId;
+  screenshareState.isCollapsed = false;
+  clearTimeout(screenshareState.joinTimer);
+  screenshareState.joinTimer = setTimeout(() => retryViewing(normId), 12000);
 
   updateUIForCurrentRoom();
 }
@@ -306,7 +329,10 @@ export function leaveScreenShare(roomId) {
       channel_id: isDm ? normId : Number(normId),
     });
     screenshareState.viewingChannelId = null;
-    closeAllPeerConnections();
+    clearTimeout(screenshareState.joinTimer);
+    clearTimeout(screenshareState.retryTimer);
+    screenshareState.joinAttempts = 0;
+    closePeerConnections('viewer', normId);
     if (videoEl) {
       videoEl.srcObject = null;
     }
@@ -318,120 +344,203 @@ export function leaveScreenShare(roomId) {
 
 // --- PeerConnection Cleanup ---
 function closeAllPeerConnections() {
-  screenshareState.peerConnections.forEach(pc => {
-    try { pc.close(); } catch {}
+  closePeerConnections();
+  screenshareState.pendingCandidates.clear();
+  screenshareState.signalQueues.clear();
+}
+
+function closePeerConnections(role, roomId) {
+  for (const [key, pc] of screenshareState.peerConnections) {
+    if ((!role || pc.ss.role === role) && (!roomId || pc.ss.roomId === roomId)) {
+      clearTimeout(pc.ss.timer);
+      pc.onconnectionstatechange = null;
+      pc.onicecandidate = null;
+      pc.ontrack = null;
+      pc.close();
+      screenshareState.peerConnections.delete(key);
+      screenshareState.pendingCandidates.delete(key);
+    }
+  }
+  for (const key of screenshareState.pendingCandidates.keys()) {
+    const prefix = role ? `${role}:${roomId || ''}` : null;
+    if ((!role || key.startsWith(prefix)) && (!roomId || key.includes(`:${roomId}:`))) {
+      screenshareState.pendingCandidates.delete(key);
+    }
+  }
+}
+
+function retryViewing(roomId) {
+  if (screenshareState.viewingChannelId !== roomId || !screenshareState.hasSession(roomId)) return;
+  clearTimeout(screenshareState.joinTimer);
+  clearTimeout(screenshareState.retryTimer);
+  if (screenshareState.joinAttempts >= 3) {
+    showToast('화면 연결에 실패했습니다. 화면 공유 버튼을 눌러 다시 연결해 주세요.', 'warning');
+    screenshareState.viewingChannelId = null;
+    closePeerConnections('viewer', roomId);
+    updateUIForCurrentRoom();
+    return;
+  }
+  screenshareState.joinAttempts++;
+  screenshareState.retryTimer = setTimeout(() => joinScreenShare(roomId, { force: true }), 2000);
+}
+
+function peerKey(role, roomId, userId, clientId) {
+  return `${role}:${roomId}:${clientId || userId}`;
+}
+
+function sendPeerSignal(pc, signal) {
+  if (screenshareState.peerConnections.get(pc.ss.key) !== pc) return;
+  sendWebSocketMessage({
+    type: 'screenshare_signal', channel_id: pc.ss.roomId,
+    target_user_id: pc.ss.userId, target_client_id: pc.ss.clientId,
+    session_id: pc.ss.sessionId, connection_id: pc.ss.connectionId, signal,
   });
-  screenshareState.peerConnections.clear();
+}
+
+function createPeer(role, roomId, userId, clientId, sessionId, connectionId) {
+  const key = peerKey(role, roomId, userId, clientId);
+  const old = screenshareState.peerConnections.get(key);
+  if (old) {
+    clearTimeout(old.ss.timer);
+    old.onconnectionstatechange = null;
+    old.close();
+  }
+  const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+  pc.ss = { key, role, roomId, userId, clientId, sessionId, connectionId, timer: null };
+  screenshareState.peerConnections.set(key, pc);
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate) sendPeerSignal(pc, { type: 'candidate', candidate });
+  };
+  pc.onconnectionstatechange = () => {
+    if (screenshareState.peerConnections.get(key) !== pc) return;
+    console.info('Screen-share connection', { roomId, userId, state: pc.connectionState, ice: pc.iceConnectionState });
+    if (pc.connectionState === 'connected') {
+      clearTimeout(pc.ss.timer);
+      if (role === 'viewer') {
+        clearTimeout(screenshareState.joinTimer);
+        clearTimeout(screenshareState.retryTimer);
+        screenshareState.joinAttempts = 0;
+      }
+      updateUIForCurrentRoom();
+    } else if (['failed', 'disconnected'].includes(pc.connectionState)) {
+      clearTimeout(pc.ss.timer);
+      pc.ss.timer = setTimeout(() => {
+        if (role === 'viewer') retryViewing(roomId);
+      }, pc.connectionState === 'failed' ? 0 : 5000);
+    }
+  };
+  return pc;
+}
+
+async function flushCandidates(pc) {
+  const pending = screenshareState.pendingCandidates.get(pc.ss.key) || [];
+  screenshareState.pendingCandidates.delete(pc.ss.key);
+  for (const { candidate, connectionId } of pending) {
+    if (connectionId && connectionId !== pc.ss.connectionId) continue;
+    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+  }
 }
 
 // --- WebRTC Signaling Handlers ---
-export async function handleViewerJoined({ channel_id, viewer_user_id, viewer_username, viewer_display_name }) {
+export async function handleViewerJoined({ channel_id, viewer_user_id, viewer_client_id, session_id }) {
   const normId = normalizeRoomKey(channel_id);
   // Only the active presenter handles new viewers
   if (normalizeRoomKey(screenshareState.presentingChannelId) !== normId || !screenshareState.localStream) return;
 
   const targetId = Number(viewer_user_id);
-  // Create RTCPeerConnection for viewer
-  const pc = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-  });
-
-  screenshareState.peerConnections.set(targetId, pc);
+  const pc = createPeer('presenter', normId, targetId, viewer_client_id, session_id,
+    globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`);
 
   // Add local display tracks
   screenshareState.localStream.getTracks().forEach(track => {
     pc.addTrack(track, screenshareState.localStream);
   });
 
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      sendWebSocketMessage({
-        type: 'screenshare_signal',
-        channel_id: channel_id,
-        target_user_id: targetId,
-        signal: { type: 'candidate', candidate: event.candidate },
-      });
-    }
-  };
-
   try {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    sendWebSocketMessage({
-      type: 'screenshare_signal',
-      channel_id: channel_id,
-      target_user_id: targetId,
-      signal: { type: 'offer', sdp: offer.sdp },
-    });
+    sendPeerSignal(pc, { type: 'offer', sdp: offer.sdp });
   } catch (err) {
     console.error('Failed to create offer for viewer:', err);
   }
 }
 
-export function handleViewerLeft({ channel_id, viewer_user_id }) {
+export function handleViewerLeft({ channel_id, viewer_user_id, viewer_client_id }) {
   const normId = normalizeRoomKey(channel_id);
   if (normalizeRoomKey(screenshareState.presentingChannelId) !== normId) return;
 
   const targetId = Number(viewer_user_id);
-  const pc = screenshareState.peerConnections.get(targetId);
+  const key = peerKey('presenter', normId, targetId, viewer_client_id);
+  const pc = screenshareState.peerConnections.get(key);
   if (pc) {
     try { pc.close(); } catch {}
-    screenshareState.peerConnections.delete(targetId);
+    clearTimeout(pc.ss.timer);
+    pc.onconnectionstatechange = null;
+    screenshareState.peerConnections.delete(key);
+    screenshareState.pendingCandidates.delete(key);
   }
 }
 
-export async function handleSignal({ channel_id, from_user_id, signal }) {
+export function handleSignal(data) {
+  const roomId = normalizeRoomKey(data.channel_id);
+  const role = normalizeRoomKey(screenshareState.presentingChannelId) === roomId ? 'presenter' : 'viewer';
+  const key = peerKey(role, roomId, Number(data.from_user_id), data.from_client_id);
+  const previous = screenshareState.signalQueues.get(key) || Promise.resolve();
+  const current = previous.then(() => processSignal(data, role, key)).catch(err => {
+    console.warn('Screen-share signaling failed:', err);
+    if (role === 'viewer') retryViewing(roomId);
+  });
+  screenshareState.signalQueues.set(key, current);
+  current.finally(() => {
+    if (screenshareState.signalQueues.get(key) === current) screenshareState.signalQueues.delete(key);
+  });
+  return current;
+}
+
+async function processSignal({ channel_id, from_user_id, from_client_id, session_id, connection_id, signal }, role, key) {
   const senderId = Number(from_user_id);
-  if (!signal) return;
+  const roomId = normalizeRoomKey(channel_id);
+  const session = screenshareState.getSession(roomId);
+  if (!signal || !session || (session_id && session_id !== session.session_id)) return;
+  if (role === 'viewer' && (screenshareState.viewingChannelId !== roomId || Number(session.user_id) !== senderId)) return;
 
   // Viewer receives Offer from Presenter
   if (signal.type === 'offer') {
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
-    screenshareState.peerConnections.set(senderId, pc);
+    if (role !== 'viewer') return;
+    const pc = createPeer('viewer', roomId, senderId, from_client_id, session_id, connection_id);
 
     pc.ontrack = (event) => {
-      if (videoEl && event.streams && event.streams[0]) {
+      if (screenshareState.peerConnections.get(key) === pc && getCurrentRoomId() === roomId && videoEl && event.streams && event.streams[0]) {
         videoEl.srcObject = event.streams[0];
-        videoEl.muted = false;
-        videoEl.play().catch(() => {});
-      }
-    };
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        sendWebSocketMessage({
-          type: 'screenshare_signal',
-          channel_id: channel_id,
-          target_user_id: senderId,
-          signal: { type: 'candidate', candidate: event.candidate },
+        videoEl.muted = true;
+        videoEl.play().catch(err => {
+          console.warn('Screen-share playback blocked:', err);
+          showToast('화면 재생이 차단되었습니다. 화면 공유 버튼을 다시 눌러 주세요.', 'warning');
         });
       }
     };
 
     try {
       await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
+      await flushCandidates(pc);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      sendWebSocketMessage({
-        type: 'screenshare_signal',
-        channel_id: channel_id,
-        target_user_id: senderId,
-        signal: { type: 'answer', sdp: answer.sdp },
-      });
+      sendPeerSignal(pc, { type: 'answer', sdp: answer.sdp });
     } catch (err) {
       console.error('Failed to process offer / send answer:', err);
+      retryViewing(roomId);
     }
     return;
   }
 
   // Presenter receives Answer from Viewer
   if (signal.type === 'answer') {
-    const pc = screenshareState.peerConnections.get(senderId);
+    const pc = screenshareState.peerConnections.get(key);
+    if (connection_id && pc?.ss.connectionId !== connection_id) return;
     if (pc) {
       try {
         await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: signal.sdp }));
+        await flushCandidates(pc);
       } catch (err) {
         console.error('Failed to set remote answer:', err);
       }
@@ -441,8 +550,13 @@ export async function handleSignal({ channel_id, from_user_id, signal }) {
 
   // ICE Candidate
   if (signal.type === 'candidate' && signal.candidate) {
-    const pc = screenshareState.peerConnections.get(senderId);
-    if (pc) {
+    const pc = screenshareState.peerConnections.get(key);
+    if (pc && connection_id && pc.ss.connectionId !== connection_id) return;
+    if (!pc || !pc.remoteDescription) {
+      const pending = screenshareState.pendingCandidates.get(key) || [];
+      if (pending.length < 64) pending.push({ candidate: signal.candidate, connectionId: connection_id });
+      screenshareState.pendingCandidates.set(key, pending);
+    } else {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
       } catch (err) {
@@ -455,7 +569,13 @@ export async function handleSignal({ channel_id, from_user_id, signal }) {
 // --- WebSocket Event Handlers (Broadcasts) ---
 export function onScreenshareStarted(data) {
   const roomId = normalizeRoomKey(data.channel_id);
+  const previous = screenshareState.getSession(roomId);
+  if (previous && previous.session_id !== data.session_id) {
+    closePeerConnections(undefined, roomId);
+    if (screenshareState.viewingChannelId === roomId) screenshareState.viewingChannelId = null;
+  }
   screenshareState.activeSessions.set(roomId, {
+    ...data,
     channel_id: roomId,
     room_type: data.room_type || (String(roomId).startsWith('dm:') ? 'dm' : 'channel'),
     user_id: data.user_id,
@@ -482,6 +602,8 @@ export function onScreenshareStarted(data) {
 
 export function onScreenshareStopped(data) {
   const roomId = normalizeRoomKey(data.channel_id);
+  const session = screenshareState.getSession(roomId);
+  if (data.session_id && session && session.session_id !== data.session_id) return;
   screenshareState.activeSessions.delete(roomId);
 
   // Re-render sidebar channels & DMs to remove LIVE badge
@@ -495,12 +617,15 @@ export function onScreenshareStopped(data) {
       screenshareState.localStream = null;
     }
     screenshareState.presentingChannelId = null;
+    closePeerConnections('presenter', roomId);
   }
 
   if (normalizeRoomKey(screenshareState.viewingChannelId) === roomId) {
     screenshareState.viewingChannelId = null;
     if (videoEl) videoEl.srcObject = null;
-    closeAllPeerConnections();
+    clearTimeout(screenshareState.joinTimer);
+    clearTimeout(screenshareState.retryTimer);
+    closePeerConnections('viewer', roomId);
   }
 
   updateUIForCurrentRoom();
@@ -518,11 +643,13 @@ export function onScreenshareViewersUpdate(data) {
 }
 
 export function syncAllActiveSessions(sessionsMap) {
+  const previous = new Map(screenshareState.activeSessions);
   screenshareState.activeSessions.clear();
   if (sessionsMap && typeof sessionsMap === 'object') {
     Object.entries(sessionsMap).forEach(([ridStr, s]) => {
       const rid = normalizeRoomKey(s.channel_id || ridStr);
       screenshareState.activeSessions.set(rid, {
+        ...s,
         channel_id: rid,
         room_type: s.room_type || (String(rid).startsWith('dm:') ? 'dm' : 'channel'),
         user_id: s.user_id,
@@ -533,8 +660,56 @@ export function syncAllActiveSessions(sessionsMap) {
       });
     });
   }
+  for (const [rid, oldSession] of previous) {
+    const session = screenshareState.getSession(rid);
+    if (!session || session.session_id !== oldSession.session_id) {
+      closePeerConnections(undefined, rid);
+      if (screenshareState.viewingChannelId === rid) screenshareState.viewingChannelId = null;
+    }
+  }
+  const presentingRoom = screenshareState.presentingChannelId;
+  if (presentingRoom && screenshareState.localStream?.getVideoTracks().some(track => track.readyState === 'live')) {
+    sendWebSocketMessage({ type: 'screenshare_start', channel_id: presentingRoom,
+      title: screenshareState.presentingTitle });
+  }
   renderChannels(window.bambooChatSwitchChannel);
   window.bambooChatRenderDms?.();
+  updateUIForCurrentRoom();
+  const roomId = getCurrentRoomId();
+  if (roomId && screenshareState.hasSession(roomId) && roomId !== presentingRoom) joinScreenShare(roomId);
+}
+
+export function onScreenshareDisconnected() {
+  clearTimeout(screenshareState.joinTimer);
+  clearTimeout(screenshareState.retryTimer);
+  closeAllPeerConnections();
+  screenshareState.viewingChannelId = null;
+  screenshareState.joinAttempts = 0;
+  if (!screenshareState.localStream && videoEl) videoEl.srcObject = null;
+}
+
+export function resetScreenShare() {
+  onScreenshareDisconnected();
+  screenshareState.localStream?.getTracks().forEach(track => { track.onended = null; track.stop(); });
+  screenshareState.localStream = null;
+  screenshareState.presentingChannelId = null;
+  screenshareState.presentingTitle = '';
+  screenshareState.activeSessions.clear();
+  if (videoEl) videoEl.srcObject = null;
+  updateUIForCurrentRoom();
+}
+
+export function handleScreenshareError(data) {
+  const roomId = normalizeRoomKey(data.channel_id);
+  if (data.request_type === 'screenshare_start' && screenshareState.presentingChannelId === roomId) {
+    screenshareState.localStream?.getTracks().forEach(track => { track.onended = null; track.stop(); });
+    screenshareState.localStream = null;
+    screenshareState.presentingChannelId = null;
+    closePeerConnections('presenter', roomId);
+    if (videoEl) videoEl.srcObject = null;
+  } else if (data.request_type === 'screenshare_join' && screenshareState.viewingChannelId === roomId) {
+    leaveScreenShare(roomId);
+  }
   updateUIForCurrentRoom();
 }
 
@@ -569,6 +744,8 @@ export function updateUIForCurrentRoom() {
   const session = currentRoomId ? screenshareState.getSession(currentRoomId) : null;
   const isPresentingHere = Boolean(currentRoomId && normalizeRoomKey(screenshareState.presentingChannelId) === currentRoomId);
   const isViewingHere = Boolean(currentRoomId && normalizeRoomKey(screenshareState.viewingChannelId) === currentRoomId);
+  const videoConnected = [...screenshareState.peerConnections.values()].some(pc =>
+    pc.ss.role === 'viewer' && pc.ss.roomId === currentRoomId && pc.connectionState === 'connected');
   const isLive = Boolean(session);
 
   // 1. Update Header Button
@@ -584,7 +761,7 @@ export function updateUIForCurrentRoom() {
       headerToggleBtn.title = '화면 공유 중지하기';
     } else if (isLive) {
       headerToggleBtn.classList.add('is-live');
-      if (labelEl) labelEl.textContent = '🔴 방송 시청 중';
+      if (labelEl) labelEl.textContent = videoConnected ? '🔴 방송 시청 중' : (isViewingHere ? '🔴 방송 연결 중' : '🔴 방송 보기');
       headerToggleBtn.title = isDm ? `${partnerName}님의 화면 시청 중` : '방송 시청 중 (클릭 시 접기/펼치기)';
     } else {
       if (labelEl) labelEl.textContent = '화면 공유';
@@ -603,6 +780,11 @@ export function updateUIForCurrentRoom() {
   }
 
   // Show panel
+  if (isPresentingHere && videoEl && videoEl.srcObject !== screenshareState.localStream) {
+    videoEl.srcObject = screenshareState.localStream;
+    videoEl.muted = true;
+    videoEl.play().catch(err => console.warn('Screen-share preview blocked:', err));
+  }
   panelContainer.classList.remove('hidden');
   panelContainer.classList.toggle('collapsed', screenshareState.isCollapsed);
 

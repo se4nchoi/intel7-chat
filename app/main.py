@@ -12,7 +12,7 @@ import time
 import uuid
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Deque, Dict, Optional, Set
@@ -110,6 +110,7 @@ class ClientInfo:
     username: str
     role: str
     ip: str
+    client_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 connected_clients: Dict[WebSocket, ClientInfo] = {}
 user_registry: Dict[str, Set[WebSocket]] = defaultdict(set)
@@ -213,6 +214,34 @@ def request_user(request: Request) -> dict:
     return user
 
 require_user = request_user
+
+
+def screenshare_room_for_user(raw_id, user: dict):
+    room = normalize_room_id(raw_id)
+    if isinstance(room, int) and not isinstance(room, bool):
+        channel = get_channel_by_id(room)
+        if channel and not channel.get("archived"):
+            return room
+        raise HTTPException(404, "채널을 찾을 수 없습니다.")
+    if isinstance(room, str) and room.startswith("dm:"):
+        parts = room.split(":")
+        if (len(parts) == 3 and parts[1] != parts[2] and
+                parts[1:] == sorted(parts[1:]) and
+                user["username"].lower() in parts[1:]):
+            participants = [get_user_by_username(name) for name in parts[1:]]
+            if all(person and person["active"] for person in participants):
+                return room
+        raise HTTPException(403, "이 DM에 접근할 수 없습니다.")
+    raise HTTPException(400, "잘못된 화면 공유 채널입니다.")
+
+
+async def send_to_screenshare_client(user_id: int, client_id: str | None, payload: dict):
+    for target_ws, target in list(connected_clients.items()):
+        if target.user_id == user_id and (not client_id or target.client_id == client_id):
+            try:
+                await target_ws.send_json(payload)
+            except Exception:
+                logger.debug("Screen-share recipient disconnected", exc_info=True)
 
 
 def public_user(user: dict) -> dict:
@@ -456,42 +485,43 @@ async def websocket_endpoint(ws: WebSocket):
     info=ClientInfo(user["id"],user["username"],user["role"],ip)
     connected_clients[ws]=info; user_registry[info.username].add(ws)
     logger.info("Connected user=%s ip=%s",info.user_id,ip)
-    await broadcast_presence(); await broadcast_users()
-    users = list_mentionable_users()
-    public_candidates = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1)
-    public_history = public_candidates[-PUBLIC_HISTORY_PAGE_SIZE:]
-    for message in public_history:
-        await ws.send_text(json.dumps(
-            {"type":"chat", "history":True, **with_mentions(message, users)}, ensure_ascii=False
-        ))
-    dm_candidates = get_recent_direct_messages(info.user_id, DM_HISTORY_PAGE_SIZE + 1)
-    dm_groups: Dict[str, list[dict]] = defaultdict(list)
-    for message in dm_candidates:
-        partner = message["to_nick"] if message["from_user_id"] == info.user_id else message["from_nick"]
-        dm_groups[partner].append(message)
-    selected_dm_ids = {
-        message["message_id"]
-        for messages in dm_groups.values()
-        for message in messages[-DM_HISTORY_PAGE_SIZE:]
-    }
-    dm_history = [message for message in dm_candidates
-                  if message["message_id"] in selected_dm_ids]
-    for message in dm_history:
-        await ws.send_text(json.dumps({"type":"dm", "history":True, **message}, ensure_ascii=False))
-    states = get_user_conversation_states(info.user_id)
-    unread_counts = get_user_unread_counts(info.user_id)
-    ss_sessions = await screenshare_manager.get_all_sessions(for_username=info.username)
-    await ws.send_text(json.dumps({
-        "type":"history_ready",
-        "public_has_older":len(public_candidates) > PUBLIC_HISTORY_PAGE_SIZE,
-        "dm_has_older":{partner: len(messages) > DM_HISTORY_PAGE_SIZE
-                        for partner, messages in dm_groups.items()},
-        "read_states": states,
-        "unread_counts": unread_counts,
-        "screenshare": ss_sessions,
-        "screenshares": ss_sessions,
-    },ensure_ascii=False))
     try:
+        await broadcast_presence(); await broadcast_users()
+        users = list_mentionable_users()
+        public_candidates = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1)
+        public_history = public_candidates[-PUBLIC_HISTORY_PAGE_SIZE:]
+        for message in public_history:
+            await ws.send_text(json.dumps(
+                {"type":"chat", "history":True, **with_mentions(message, users)}, ensure_ascii=False
+            ))
+        dm_candidates = get_recent_direct_messages(info.user_id, DM_HISTORY_PAGE_SIZE + 1)
+        dm_groups: Dict[str, list[dict]] = defaultdict(list)
+        for message in dm_candidates:
+            partner = message["to_nick"] if message["from_user_id"] == info.user_id else message["from_nick"]
+            dm_groups[partner].append(message)
+        selected_dm_ids = {
+            message["message_id"]
+            for messages in dm_groups.values()
+            for message in messages[-DM_HISTORY_PAGE_SIZE:]
+        }
+        dm_history = [message for message in dm_candidates
+                      if message["message_id"] in selected_dm_ids]
+        for message in dm_history:
+            await ws.send_text(json.dumps({"type":"dm", "history":True, **message}, ensure_ascii=False))
+        states = get_user_conversation_states(info.user_id)
+        unread_counts = get_user_unread_counts(info.user_id)
+        ss_sessions = await screenshare_manager.get_all_sessions(for_username=info.username)
+        await ws.send_text(json.dumps({
+            "type":"history_ready",
+            "public_has_older":len(public_candidates) > PUBLIC_HISTORY_PAGE_SIZE,
+            "dm_has_older":{partner: len(messages) > DM_HISTORY_PAGE_SIZE
+                            for partner, messages in dm_groups.items()},
+            "read_states": states,
+            "unread_counts": unread_counts,
+            "screenshare": ss_sessions,
+            "screenshares": ss_sessions,
+            "client_id": info.client_id,
+        },ensure_ascii=False))
         while True:
             raw=await ws.receive_text()
             if len(raw)>MAX_RAW_MESSAGE_LEN:
@@ -513,30 +543,61 @@ async def websocket_endpoint(ws: WebSocket):
             if not isinstance(data,dict): continue
 
             # --- Multi-Channel & DM Screen Sharing Handlers ---
+            if is_screenshare:
+                if not session_user_from_token(ws.cookies.get(SESSION_COOKIE, "")):
+                    await ws.close(code=1008, reason="Session expired")
+                    break
+                raw_room = data.get("channel_id")
+                try:
+                    if raw_room is not None or msg_type not in {"screenshare_status", "screenshare_stop"}:
+                        screenshare_room_for_user(raw_room, user)
+                except HTTPException as exc:
+                    await ws.send_json({"type": "error", "code": "screenshare_forbidden",
+                                        "request_type": msg_type, "channel_id": raw_room,
+                                        "message": exc.detail})
+                    continue
             if msg_type == "screenshare_start":
                 raw_chan_id = data.get("channel_id")
                 chan_id = normalize_room_id(raw_chan_id)
                 title = str(data.get("title", "")).strip()[:100]
-                session = await screenshare_manager.start_session(
-                    info.user_id, info.username, user.get("display_name") or info.username, chan_id, title
-                )
+                try:
+                    session = await screenshare_manager.start_session(
+                        info.user_id, info.username, user.get("display_name") or info.username,
+                        chan_id, title, info.client_id
+                    )
+                except ValueError as exc:
+                    await ws.send_json({"type": "error", "code": "screenshare_busy",
+                                        "request_type": msg_type, "channel_id": chan_id,
+                                        "message": str(exc)})
+                    continue
+                for stopped in session.pop("stopped_sessions", []):
+                    await notify_screenshare_event(stopped["channel_id"], {
+                        "type": "screenshare_stopped", "channel_id": stopped["channel_id"],
+                        "user_id": stopped["user_id"], "session_id": stopped["session_id"],
+                    })
                 await notify_screenshare_event(chan_id, {
                     "type": "screenshare_started",
                     "channel_id": chan_id,
                     **session,
-                    "viewer_count": 1,
+                    "viewer_count": (await screenshare_manager.get_channel_status(chan_id))["viewer_count"],
                 })
                 continue
 
             if msg_type == "screenshare_stop":
                 raw_chan_id = data.get("channel_id")
                 chan_id = normalize_room_id(raw_chan_id) if raw_chan_id else None
+                owned = [s for s in screenshare_manager.sessions.values()
+                         if s.get("presenter_client_id") == info.client_id and
+                         (chan_id is None or s["channel_id"] == chan_id)]
+                if not owned:
+                    continue
                 stopped_list = await screenshare_manager.stop_session(channel_id=chan_id, user_id=info.user_id)
                 for s in stopped_list:
                     await notify_screenshare_event(s["channel_id"], {
                         "type": "screenshare_stopped",
                         "channel_id": s["channel_id"],
                         "user_id": s["user_id"],
+                        "session_id": s["session_id"],
                     })
                 continue
 
@@ -553,37 +614,44 @@ async def websocket_endpoint(ws: WebSocket):
             if msg_type == "screenshare_join":
                 raw_chan_id = data.get("channel_id")
                 chan_id = normalize_room_id(raw_chan_id)
-                count = await screenshare_manager.add_viewer(chan_id, info.user_id)
+                count = await screenshare_manager.add_viewer(chan_id, info.user_id, info.client_id)
                 status = await screenshare_manager.get_channel_status(chan_id)
                 if status["is_active"] and status["session"]:
                     presenter_id = status["session"]["user_id"]
-                    if presenter_id != info.user_id:
-                        await send_to_user_id(presenter_id, {
+                    if status["session"].get("presenter_client_id") != info.client_id:
+                        await send_to_screenshare_client(presenter_id, status["session"].get("presenter_client_id"), {
                             "type": "screenshare_viewer_joined",
                             "channel_id": chan_id,
                             "viewer_user_id": info.user_id,
                             "viewer_username": info.username,
                             "viewer_display_name": user.get("display_name") or info.username,
+                            "viewer_client_id": info.client_id,
+                            "session_id": status["session"]["session_id"],
                         })
                     await notify_screenshare_event(chan_id, {
                         "type": "screenshare_viewers_update",
                         "channel_id": chan_id,
                         "viewer_count": count,
                     })
+                else:
+                    await ws.send_json({"type": "error", "code": "screenshare_inactive",
+                                        "request_type": msg_type, "channel_id": chan_id,
+                                        "message": "화면 공유가 종료되었습니다."})
                 continue
 
             if msg_type == "screenshare_leave":
                 raw_chan_id = data.get("channel_id")
                 chan_id = normalize_room_id(raw_chan_id)
-                count = await screenshare_manager.remove_viewer(chan_id, info.user_id)
+                count = await screenshare_manager.remove_viewer(chan_id, info.user_id, info.client_id)
                 status = await screenshare_manager.get_channel_status(chan_id)
                 if status["is_active"] and status["session"]:
                     presenter_id = status["session"]["user_id"]
-                    if presenter_id != info.user_id:
-                        await send_to_user_id(presenter_id, {
+                    if status["session"].get("presenter_client_id") != info.client_id:
+                        await send_to_screenshare_client(presenter_id, status["session"].get("presenter_client_id"), {
                             "type": "screenshare_viewer_left",
                             "channel_id": chan_id,
                             "viewer_user_id": info.user_id,
+                            "viewer_client_id": info.client_id,
                         })
                     await notify_screenshare_event(chan_id, {
                         "type": "screenshare_viewers_update",
@@ -600,11 +668,36 @@ async def websocket_endpoint(ws: WebSocket):
                     try:
                         target_id = int(target_user_id)
                         chan_id = normalize_room_id(raw_chan_id)
-                        await send_to_user_id(target_id, {
+                        session = screenshare_manager.sessions.get(chan_id)
+                        target_client_id = data.get("target_client_id")
+                        signal_type = signal.get("type") if isinstance(signal, dict) else None
+                        presenter_id = session["user_id"] if session else None
+                        sender_presenting = bool(session and presenter_id == info.user_id and
+                                                 session.get("presenter_client_id") == info.client_id)
+                        sender_viewing = screenshare_manager.is_viewer(chan_id, info.user_id, info.client_id)
+                        valid_target = False
+                        if session and sender_presenting:
+                            valid_target = screenshare_manager.is_viewer(chan_id, target_id, target_client_id)
+                        elif session and sender_viewing:
+                            valid_target = (target_id == presenter_id and
+                                            (not target_client_id or target_client_id == session.get("presenter_client_id")))
+                        if (not session or not valid_target or not (sender_presenting or sender_viewing) or
+                                signal_type not in {"offer", "answer", "candidate"} or
+                                (signal_type == "offer" and not sender_presenting) or
+                                (signal_type == "answer" and not sender_viewing) or
+                                (data.get("session_id") and data["session_id"] != session["session_id"])):
+                            await ws.send_json({"type": "error", "code": "screenshare_signal_forbidden",
+                                                "request_type": msg_type, "channel_id": chan_id,
+                                                "message": "허용되지 않은 화면 공유 신호입니다."})
+                            continue
+                        await send_to_screenshare_client(target_id, target_client_id, {
                             "type": "screenshare_signal",
                             "channel_id": chan_id,
                             "from_user_id": info.user_id,
                             "signal": signal,
+                            "from_client_id": info.client_id,
+                            "session_id": session["session_id"],
+                            "connection_id": data.get("connection_id"),
                         })
                     except (ValueError, TypeError):
                         pass
@@ -672,6 +765,27 @@ async def websocket_endpoint(ws: WebSocket):
         pass
     finally:
         _remove_client(ws)
+        owned_rooms = [rid for rid, session in screenshare_manager.sessions.items()
+                       if session.get("presenter_client_id") == info.client_id]
+        for rid in owned_rooms:
+            for session in await screenshare_manager.stop_session(rid, info.user_id):
+                await notify_screenshare_event(rid, {
+                    "type": "screenshare_stopped", "channel_id": rid,
+                    "user_id": info.user_id, "session_id": session["session_id"],
+                })
+        viewed_rooms = [rid for rid, clients in screenshare_manager.viewer_clients.items()
+                        if info.client_id in clients]
+        for rid in viewed_rooms:
+            count = await screenshare_manager.remove_viewer(rid, info.user_id, info.client_id)
+            session = screenshare_manager.sessions.get(rid)
+            if session:
+                await send_to_screenshare_client(session["user_id"], session.get("presenter_client_id"), {
+                    "type": "screenshare_viewer_left", "channel_id": rid,
+                    "viewer_user_id": info.user_id, "viewer_client_id": info.client_id,
+                })
+                await notify_screenshare_event(rid, {
+                    "type": "screenshare_viewers_update", "channel_id": rid, "viewer_count": count,
+                })
         user_has_other_sockets = any(c.user_id == info.user_id for c in connected_clients.values())
         if not user_has_other_sockets:
             stopped_list = await screenshare_manager.stop_session(user_id=info.user_id)

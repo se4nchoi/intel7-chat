@@ -37,7 +37,7 @@ import {
   handleLeaderboardInvalidated,
 } from './quiz.js';
 import { initPlayHubListeners } from './play_hub.js';
-import { initScreenShareUI, handleConversationSwitch, handleChannelSwitch } from './screenshare.js';
+import { initScreenShareUI, handleConversationSwitch, handleChannelSwitch, resetScreenShare } from './screenshare.js';
 import {
   openGlobalNotificationModal,
   closeGlobalNotificationModal,
@@ -644,6 +644,7 @@ function initApp() {
       },
       onLeaderboardInvalidated: (event) => handleLeaderboardInvalidated(event),
       onSessionExpired: () => {
+        resetScreenShare();
         setCurrentUser(null);
         if (state.socket) state.socket = null;
         showAuthModal('세션이 만료되었습니다. 다시 로그인해 주세요.');
@@ -659,6 +660,7 @@ function initApp() {
 
 
   const onLogout = () => {
+    resetScreenShare();
     acknowledgedMessageIds.clear();
     const chatApp = document.getElementById('chat-app');
     if (chatApp) chatApp.classList.add('hidden');

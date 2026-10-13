@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import anyio
+import json
 import pytest
 from app import database, auth, main, screenshare
 from app.config import GIB
@@ -21,9 +22,18 @@ def _authenticated_client(username):
 
 def _receive_event(ws, event_type):
     for _ in range(100):
-        message = ws.receive_json()
+        future = ws.portal.start_task_soon(ws._send_rx.receive)
+        try:
+            frame = future.result(timeout=5)
+        except TimeoutError:
+            future.cancel()
+            raise AssertionError(f"Timed out waiting for WebSocket event: {event_type}") from None
+        ws._raise_on_close(frame)
+        message = json.loads(frame["text"])
         if message.get("type") == event_type:
             return message
+        if message.get("type") == "error":
+            raise AssertionError(f"Expected {event_type}, received error: {message}")
     raise AssertionError(f"Missing WebSocket event: {event_type}")
 
 
@@ -40,6 +50,8 @@ def test_classroom_signaling_burst_preserves_share_and_chat_budget():
         sender.send_json({"type": "screenshare_start", "channel_id": 2})
         _receive_event(sender, "screenshare_started")
         _receive_event(receiver, "screenshare_started")
+        receiver.send_json({"type": "screenshare_join", "channel_id": 2})
+        _receive_event(sender, "screenshare_viewer_joined")
         # A connected receiver is a sink for the volume of a full classroom's
         # offers/candidates; the signaling handler forwards their contents unchanged.
         for peer in range(main.MAX_CONNECTIONS_TOTAL - 1):
@@ -102,7 +114,7 @@ def test_malformed_frames_still_use_normal_rate_limit(raw, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def isolated_state(tmp_path: Path, monkeypatch):
+def isolated_state(tmp_path: Path, monkeypatch, shared_application_loop):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "chat.db")
     monkeypatch.setattr(database, "DB_MAX_BYTES", 3 * GIB)
     monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path / "uploads")
@@ -114,6 +126,7 @@ def isolated_state(tmp_path: Path, monkeypatch):
     main.login_timestamps.clear()
     screenshare.screenshare_manager.sessions.clear()
     screenshare.screenshare_manager.viewers.clear()
+    screenshare.screenshare_manager.viewer_clients.clear()
     database.init_db()
     yield
     main.connected_clients.clear()
@@ -226,15 +239,13 @@ def test_screenshare_api_and_websocket():
     from app import main
 
     client = TestClient(main.app)
-    # Check REST status (all channels)
+    # Screen-share status requires authentication, including room metadata.
     res = client.get("/api/screenshare/status")
-    assert res.status_code == 200
-    assert "sessions" in res.json()
+    assert res.status_code == 401
 
     # Check REST status (specific channel)
     res_ch = client.get("/api/screenshare/status?channel_id=2")
-    assert res_ch.status_code == 200
-    assert res_ch.json()["is_active"] is False
+    assert res_ch.status_code == 401
 
     import uuid
     uid = uuid.uuid4().hex[:6]
@@ -253,11 +264,7 @@ def test_screenshare_api_and_websocket():
     origin = {"origin": "http://testserver"}
     with c1.websocket_connect("/ws", headers=origin) as ws1, c2.websocket_connect("/ws", headers=origin) as ws2:
         def wait_for_event(ws, event_type, max_messages=100):
-            for _ in range(max_messages):
-                msg = ws.receive_json()
-                if msg.get("type") == event_type:
-                    return msg
-            raise TimeoutError(f"Exceeded max_messages waiting for event '{event_type}'")
+            return _receive_event(ws, event_type)
 
         # Drain initial connection messages
         wait_for_event(ws1, "history_ready")
@@ -277,6 +284,7 @@ def test_screenshare_api_and_websocket():
         evt2 = wait_for_event(ws1, "screenshare_viewer_joined")
         assert evt2["channel_id"] == 2
         assert evt2["viewer_user_id"] == u2["id"]
+        assert c1.get("/api/screenshare/status").status_code == 200
 
         # Presenter sends WebRTC signal (e.g. offer) to viewer in channel 2
         ws1.send_json({
@@ -328,11 +336,7 @@ def test_screenshare_dm_workflow_and_privacy():
          c_b.websocket_connect("/ws", headers=origin) as ws_b:
 
         def wait_for_event(ws, event_type, max_messages=100):
-            for _ in range(max_messages):
-                msg = ws.receive_json()
-                if msg.get("type") == event_type:
-                    return msg
-            raise TimeoutError(f"Exceeded max_messages waiting for event '{event_type}'")
+            return _receive_event(ws, event_type)
 
         # Drain history_ready
         wait_for_event(ws_a, "history_ready")
@@ -386,3 +390,102 @@ def test_screenshare_dm_workflow_and_privacy():
         evt_stopped = wait_for_event(ws_b, "screenshare_stopped")
         assert evt_stopped["channel_id"] == dm_room
 
+
+def test_private_status_and_signals_reject_outsiders():
+    alice, _ = _authenticated_client("private_alice")
+    _, bob_user = _authenticated_client("private_bob")
+    outsider, _ = _authenticated_client("private_outsider")
+    room = "dm:private_alice:private_bob"
+    origin = {"origin": "http://testserver"}
+    with alice.websocket_connect("/ws", headers=origin) as sender, \
+         outsider.websocket_connect("/ws", headers=origin) as stranger:
+        _receive_event(sender, "history_ready")
+        _receive_event(stranger, "history_ready")
+        sender.send_json({"type": "screenshare_start", "channel_id": room})
+        _receive_event(sender, "screenshare_started")
+        assert room not in outsider.get("/api/screenshare/status").json()["sessions"]
+        assert outsider.get("/api/screenshare/status", params={"channel_id": room}).status_code == 403
+        for kind in ("screenshare_status", "screenshare_join", "screenshare_signal"):
+            stranger.send_json({"type": kind, "channel_id": room,
+                               "target_user_id": bob_user["id"],
+                               "signal": {"type": "offer", "sdp": "untrusted"}})
+            assert _receive_event(stranger, "error")["code"] == "screenshare_forbidden"
+
+
+def test_room_switch_broadcasts_stop_and_occupied_room_is_preserved():
+    presenter, presenter_user = _authenticated_client("switch_presenter")
+    other, _ = _authenticated_client("switch_other")
+    origin = {"origin": "http://testserver"}
+    with presenter.websocket_connect("/ws", headers=origin) as sender, \
+         other.websocket_connect("/ws", headers=origin) as receiver:
+        _receive_event(sender, "history_ready")
+        _receive_event(receiver, "history_ready")
+        sender.send_json({"type": "screenshare_start", "channel_id": 1})
+        _receive_event(receiver, "screenshare_started")
+        sender.send_json({"type": "screenshare_start", "channel_id": 2})
+        assert _receive_event(receiver, "screenshare_stopped")["channel_id"] == 1
+        _receive_event(receiver, "screenshare_started")
+        receiver.send_json({"type": "screenshare_start", "channel_id": 2})
+        assert _receive_event(receiver, "error")["code"] == "screenshare_busy"
+        assert screenshare.screenshare_manager.sessions[2]["user_id"] == presenter_user["id"]
+
+
+def test_signals_target_individual_tabs_and_reject_unjoined_or_stale_signals():
+    presenter, _ = _authenticated_client("tabs_presenter")
+    viewer, viewer_user = _authenticated_client("tabs_viewer")
+    origin = {"origin": "http://testserver"}
+    with presenter.websocket_connect("/ws", headers=origin) as sender, \
+         viewer.websocket_connect("/ws", headers=origin) as tab_one, \
+         viewer.websocket_connect("/ws", headers=origin) as tab_two:
+        _receive_event(sender, "history_ready")
+        first_id = _receive_event(tab_one, "history_ready")["client_id"]
+        second_id = _receive_event(tab_two, "history_ready")["client_id"]
+        sender.send_json({"type": "screenshare_start", "channel_id": 1})
+        session = _receive_event(sender, "screenshare_started")
+        _receive_event(tab_one, "screenshare_started")
+        _receive_event(tab_two, "screenshare_started")
+        signal = {"type": "screenshare_signal", "channel_id": 1,
+                  "target_user_id": viewer_user["id"], "target_client_id": first_id,
+                  "session_id": session["session_id"], "connection_id": "attempt-one",
+                  "signal": {"type": "offer", "sdp": "test-offer"}}
+        sender.send_json(signal)
+        assert _receive_event(sender, "error")["code"] == "screenshare_signal_forbidden"
+
+        for tab in (tab_one, tab_two):
+            tab.send_json({"type": "screenshare_join", "channel_id": 1})
+            _receive_event(sender, "screenshare_viewer_joined")
+        sender.send_json(signal)
+        assert _receive_event(tab_one, "screenshare_signal")["connection_id"] == "attempt-one"
+        tab_two.send_json({"type": "screenshare_status", "channel_id": 1})
+        while True:
+            message = tab_two.receive_json()
+            assert message["type"] != "screenshare_signal"
+            if message["type"] == "screenshare_status":
+                break
+        tab_one.send_json({"type": "screenshare_leave", "channel_id": 1})
+        _receive_event(sender, "screenshare_viewer_left")
+        assert screenshare.screenshare_manager.is_viewer(1, viewer_user["id"], second_id)
+        assert not screenshare.screenshare_manager.is_viewer(1, viewer_user["id"], first_id)
+        sender.send_json({**signal, "target_client_id": second_id, "session_id": "stale-session"})
+        assert _receive_event(sender, "error")["code"] == "screenshare_signal_forbidden"
+
+
+
+def test_presenter_disconnect_releases_share_and_reconnect_can_restore_it():
+    presenter, _ = _authenticated_client("reconnect_presenter")
+    viewer, _ = _authenticated_client("reconnect_viewer")
+    origin = {"origin": "http://testserver"}
+    with viewer.websocket_connect("/ws", headers=origin) as receiver:
+        _receive_event(receiver, "history_ready")
+        with presenter.websocket_connect("/ws", headers=origin) as sender:
+            _receive_event(sender, "history_ready")
+            sender.send_json({"type": "screenshare_start", "channel_id": 1})
+            first = _receive_event(receiver, "screenshare_started")
+        assert _receive_event(receiver, "screenshare_stopped")["session_id"] == first["session_id"]
+        with presenter.websocket_connect("/ws", headers=origin) as sender:
+            assert not _receive_event(sender, "history_ready")["screenshares"]
+            sender.send_json({"type": "screenshare_start", "channel_id": 1})
+            second = _receive_event(receiver, "screenshare_started")
+            assert second["session_id"] != first["session_id"]
+            receiver.send_json({"type": "screenshare_join", "channel_id": 1})
+            assert _receive_event(sender, "screenshare_viewer_joined")["session_id"] == second["session_id"]
