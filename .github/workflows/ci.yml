@@ -24,6 +24,9 @@ jobs:
       - name: Test chat reconnect and reading position
         run: node --experimental-vm-modules scripts/test_chat_reliability.mjs
 
+      - name: Test screen-share pane controls
+        run: node --experimental-vm-modules scripts/test_screenshare_layout.mjs
+
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true

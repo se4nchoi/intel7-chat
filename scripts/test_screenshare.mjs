@@ -30,7 +30,7 @@ async function setup() {
     'screenshare-video': video, 'screenshare-panel-container': element(),
     'ss-connection-status': status, 'ss-connection-message': message, 'ss-connection-retry': retry,
   };
-  const track = { kind: 'video', readyState: 'live', stop() { this.readyState = 'ended'; } };
+  const track = { kind: 'video', contentHint: '', readyState: 'live', stop() { this.readyState = 'ended'; } };
   const stream = { getTracks: () => [track], getVideoTracks: () => [track] };
   class Peer {
     constructor(configuration) {
@@ -60,6 +60,7 @@ async function setup() {
   let online = true;
   const context = vm.createContext({
     console, RTCPeerConnection: Peer,
+    navigator: { mediaDevices: { async getDisplayMedia(options) { stream.requestedCapture = options; return stream; } } },
     RTCSessionDescription: class { constructor(value) { Object.assign(this, value); } },
     RTCIceCandidate: class { constructor(value) { Object.assign(this, value); } },
     window: { location: { origin: 'https://testserver' } }, document: { getElementById: id => elements[id] || null },
@@ -72,6 +73,7 @@ async function setup() {
     './ws.js': { sendWebSocketMessage(payload) { if (online) sent.push(payload); return online; } },
     './channels.js': { channelsDirectory: new Map(), renderChannels() {} },
     './dm.js': { displayNickname: name => name },
+    './screenshare_layout.js': { initScreenShareLayout() {}, updateScreenShareLayout() {} },
   };
   const module = new vm.SourceTextModule(source, { context });
   await module.link(specifier => {
@@ -226,15 +228,17 @@ test('presenter caps each video sender; disconnect displays recovery status', as
   h.api.onScreenshareStarted(h.session);
   await h.api.handleViewerJoined({ channel_id: 1, viewer_user_id: 2, viewer_client_id: 'viewer-tab', session_id: 'session' });
   const pc = [...s.peerConnections.values()][0];
-  assert.equal(pc.senders[0].parameters.encodings[0].maxBitrate, 1_500_000);
+  assert.equal(pc.senders[0].parameters.encodings[0].maxBitrate, 4_000_000);
   assert.equal(pc.senders[0].parameters.encodings[0].maxFramerate, 15);
+  assert.equal(pc.senders[0].parameters.encodings[0].scaleResolutionDownBy, 1);
+  assert.equal(pc.senders[0].parameters.degradationPreference, 'maintain-resolution');
   s.presentingChannelId = null; s.localStream = null;
   h.api.onScreenshareDisconnected();
   assert.equal(h.status.classList.contains('hidden'), false);
   assert.match(h.message.textContent, /서버 연결이 끊겼/);
 });
 
-test('classroom viewers share the presenter upload budget and reclaim it after leaving', async () => {
+test('all classroom viewers retain the same resolution-first encoding policy', async () => {
   const h = await setup();
   const s = h.api.screenshareState;
   s.presentingChannelId = '1'; s.localStream = h.stream;
@@ -245,11 +249,37 @@ test('classroom viewers share the presenter upload budget and reclaim it after l
   }
   const bitrate = pc => pc.senders[0].parameters.encodings[0].maxBitrate;
   const peers = [...s.peerConnections.values()];
-  assert.ok(peers.reduce((sum, pc) => sum + bitrate(pc), 0) <= 20_000_023);
+  for (const pc of peers) {
+    assert.equal(bitrate(pc), 4_000_000);
+    assert.equal(pc.senders[0].parameters.degradationPreference, 'maintain-resolution');
+    assert.equal(pc.senders[0].parameters.encodings[0].scaleResolutionDownBy, 1);
+  }
   const before = bitrate(peers[0]);
   h.api.handleViewerLeft({ channel_id: 1, viewer_user_id: 24, viewer_client_id: 'viewer-22' });
   // Wait for the asynchronous sender updates to settle.
   for (let i = 0; i < 25; i++) await Promise.resolve();
-  assert.ok(bitrate(peers[0]) > before);
+  assert.equal(bitrate(peers[0]), before);
   assert.equal(s.peerConnections.size, 22);
+});
+
+test('capture requests 1080p and prioritizes detail over motion', async () => {
+  const h = await setup();
+  await h.api.startScreenShare(1);
+  assert.equal(h.stream.requestedCapture.video.width.ideal, 1920);
+  assert.equal(h.stream.requestedCapture.video.height.ideal, 1080);
+  assert.equal(h.track.contentHint, 'detail');
+});
+
+test('resolution policy is reapplied after the presenter receives the answer', async () => {
+  const h = await setup();
+  h.api.screenshareState.presentingChannelId = '1';
+  h.api.screenshareState.localStream = h.stream;
+  h.api.onScreenshareStarted(h.session);
+  await h.api.handleViewerJoined({ channel_id: 1, viewer_user_id: 2, viewer_client_id: 'viewer-tab', session_id: 'session' });
+  const pc = [...h.api.screenshareState.peerConnections.values()][0];
+  pc.senders[0].parameters = null;
+  await h.api.handleSignal({ channel_id: 1, from_user_id: 2, from_client_id: 'viewer-tab',
+    session_id: 'session', connection_id: pc.ss.connectionId, signal: { type: 'answer', sdp: 'answer' } });
+  assert.equal(pc.senders[0].parameters.degradationPreference, 'maintain-resolution');
+  assert.equal(pc.senders[0].parameters.encodings[0].scaleResolutionDownBy, 1);
 });

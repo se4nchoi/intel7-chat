@@ -84,10 +84,12 @@
         <button id="ss-btn-zoom-reset" class="ss-tool-btn" type="button" title="줌/위치 초기화">🔄</button>
         <span class="ss-toolbar-sep"></span>
         <button id="ss-btn-pip" class="ss-tool-btn pip-btn" type="button" title="화면 속 화면(PiP) 띄우기">🪟 PiP</button>
+        <button id="ss-btn-theatre" class="ss-tool-btn theatre-btn" type="button" aria-pressed="false" title="채팅을 오른쪽에 두고 화면 공유 크게 보기 · Esc로 복귀">집중 모드</button>
         <button id="ss-btn-fs" class="ss-tool-btn fs-btn" type="button" title="전체화면">⛶ 전체</button>
       </div>
     </div>
   </div>
+  <div id="ss-resize-handle" class="ss-resize-handle hidden" role="separator" tabindex="0" aria-orientation="horizontal" aria-controls="screenshare-panel-container" aria-label="화면 공유 높이 조절 · 위아래 방향키, 두 번 클릭으로 초기화" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><span aria-hidden="true"></span></div>
   <div id="message-search-drawer" class="message-search-drawer hidden" aria-label="메시지와 파일 검색">
     <form id="message-search-form" class="message-search-form">
       <input id="message-search-input" type="search" minlength="2" maxlength="100" placeholder="메시지 또는 파일명 검색" autocomplete="off" />

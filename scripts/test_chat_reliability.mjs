@@ -147,3 +147,11 @@ test('unread counts stay visible while reader is away from latest messages', asy
   h.scroll.scrollToLatest();
   assert.equal(h.api.applyServerUnreadCounts({ 'channel:1': 3 }), 0);
 });
+
+test('visible theatre chat can acknowledge messages at the bottom', async () => {
+  const h = await setup();
+  h.scroll.scrollToLatest();
+  h.list.closest = selector => selector === '.ss-theatre' ? {} : null;
+  assert.equal(h.api.applyServerUnreadCounts({ 'channel:1': 4 }), 0);
+  assert.equal(h.state.unreadCounts.channels[1], 0);
+});

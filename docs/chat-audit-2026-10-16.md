@@ -20,11 +20,13 @@ rendering, and CI. It is not a classroom load test or a measured latency benchma
   button that preserves the existing connection.
 - Kept the first-frame watchdog running after WebRTC transport connects. Previously
   a connected transport canceled recovery even when no video had started playing.
-- Limited capture to 15 fps for slide sharing, preferred H.264 where supported,
-  and added a shared 20 Mbps presenter upload budget. Per-viewer ceilings range
-  from 400 kbps to 1.5 Mbps as the audience changes, with balanced adaptation.
-  These are encoding hints, not measured network utilization or a latency guarantee;
-  full-class picture quality and delay still need validation on classroom PCs.
+- Capture requests up to 1920×1080 at 15 fps. Following the classroom preference
+  for readable slides over motion, the shared 20 Mbps budget has been removed:
+  each viewer gets the same 4 Mbps ceiling, detail content hint, no explicit
+  downscaling, and resolution-preserving adaptation. The policy is reapplied
+  after negotiation. These are encoding requests, not a guarantee of decoded
+  1080p on all hardware/networks; smaller capture sources stay native. Mesh upload
+  grows with the audience and frame rate may fall when resources are constrained.
 - Requested a 50 ms receive jitter-buffer target where supported. This is a browser
   hint, not a guaranteed end-to-end delay. Unsupported tuning falls back to the
   browser's defaults.
@@ -47,7 +49,7 @@ rendering, and CI. It is not a classroom load test or a measured latency benchma
 
 | Priority | Evidence | Effect and next improvement |
 | --- | --- | --- |
-| P1 | `app/static/js/screenshare.js`: one presenter `RTCPeerConnection` and sender per viewer | Presenter encoding and upload costs grow with the audience. At the configured ceiling, 20 viewers could require roughly 60 Mbps of media upload plus overhead. Measure CPU, actual bitrate, RTT, packet loss, and encode/decode delay at 1/5/20 viewers; use an SFU if direct fan-out exceeds classroom hardware/network capacity. |
+| P1 | `app/static/js/screenshare.js`: one presenter `RTCPeerConnection` and sender per viewer | Presenter encoding and upload costs grow with the audience. At the 4 Mbps per-viewer ceiling, 20 viewers could require roughly 80 Mbps of media upload plus overhead. This is a ceiling, not measured usage. Measure CPU, actual bitrate, RTT, packet loss, and encode/decode delay at 1/5/20 viewers; use an SFU if direct fan-out exceeds classroom hardware/network capacity. |
 | Fixed | `app/main.py`: `broadcast`, `send_to_user_id`, `send_to_username`, and screen-share signaling await socket writes sequentially | Accepted chat and game sockets now use one ordered writer with a 128-event / 1 MiB outbound queue. Overflow or a five-second send timeout disconnects that client with code 1013. No unbounded send tasks are created. Reconnection uses existing history synchronization; this does not add a durable event cursor or persistence acknowledgements. |
 | Fixed | `app/main.py` chat/game sockets authenticate at connect; only screen-share messages explicitly revalidate the session in the chat receive loop. `app/routers/auth.py:logout` deletes the token without closing its sockets | Chat and all four game sockets now track the session hash, validate before outbound delivery and after inbound receive, and check idle sessions every ten seconds. Logout immediately closes the session's sockets; administrator disconnects include games. The existing one-session-per-account login policy is preserved. |
 | P2 | `app/db/connection.py`: synchronous SQLite with a five-second busy timeout; async handlers call database functions directly. `app/routers/files.py:upload_file`: synchronous writes inside an async upload loop and one global upload lock | Database contention or slow disks can pause unrelated signaling/chat work; a slow upload holds the upload lock for its whole duration. Move complete database transactions and file I/O to bounded workers; preserve quota reservation/atomicity if uploads become concurrent. Password hashing and AI generation already use worker threads. |
@@ -63,11 +65,16 @@ ownership. These do not replace the follow-ups above.
 ## Validation
 
 - Python suite: **359 passed, 2 xfailed**.
-- Screen-sharing JavaScript suite: **11 passed** (including classroom bitrate sharing, first-frame watchdog,
+- Screen-sharing JavaScript suite: **13 passed** (including full-class resolution policy, capture hints, post-negotiation settings, first-frame watchdog,
   visible connection status, recovery after retry exhaustion, autoplay recovery,
   per-viewer sender limits, and disconnect state).
-- Chat reliability JavaScript suite: **7 passed** (reading position, own/history messages, indicator reset, stale socket events, reconnect timers, send failures, unread counts).
-- JavaScript syntax: **24 modules passed**.
+- Chat reliability JavaScript suite: **8 passed** (reading position, own/history messages, indicator reset, stale socket events, reconnect timers, send failures, unread counts and theatre chat).
+- Pane controls JavaScript suite: **4 passed** (drag/keyboard sizing, theatre,
+  fullscreen Escape behavior, stop/collapse cleanup).
+- A native headless Chrome WebRTC loopback test decoded **1920×1080** from a
+  synthetic slide with the resolution-first policy. This verifies one local
+  browser pair, not simultaneous full-class throughput or hardware capacity.
+- JavaScript syntax: **25 modules passed**.
 - `git diff --check`: passed.
 - Automated peer tests use mocks; actual browser encoding, picture quality, ICE
   connectivity, and Windows socket resets were not reproduced across physical PCs.

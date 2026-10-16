@@ -3,6 +3,7 @@ let pending = 0;
 const initialized = new WeakSet();
 
 export function isNearLatest(list = document.getElementById('message-list')) {
+  if (document.fullscreenElement?.id === 'ss-viewport') return false;
   return !list || list.scrollHeight - list.clientHeight - list.scrollTop <= 80;
 }
 

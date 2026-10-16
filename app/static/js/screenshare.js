@@ -8,6 +8,7 @@ import { showToast, copyText } from './utils.js';
 import { sendWebSocketMessage } from './ws.js';
 import { channelsDirectory, renderChannels } from './channels.js';
 import { displayNickname } from './dm.js';
+import { initScreenShareLayout, updateScreenShareLayout } from './screenshare_layout.js';
 
 // --- Room ID Helpers ---
 export function normalizeRoomKey(id) {
@@ -34,20 +35,12 @@ export function getCurrentRoomId() {
   return null;
 }
 
-// --- Encoding Budget ---
-// Mesh topology: the presenter uploads one separately-encoded copy per viewer,
-// so total upload = per-viewer bitrate x viewer count. Keep the TOTAL bounded
-// so a full classroom does not saturate the presenter's uplink / shared Wi-Fi.
-const SS_TOTAL_UPLOAD_BUDGET = 20_000_000; // bits/s across all viewers
-const SS_MAX_PER_VIEWER = 1_500_000;
-const SS_MIN_PER_VIEWER = 400_000;
+// --- Slide Quality ---
+// Every viewer gets the same 1080p-capable ceiling. Do not divide a fixed
+// classroom budget by audience size: joining viewers must not lower detail.
+// Mesh upload still grows with the audience; prefer dropping fps under load.
+const SS_MAX_PER_VIEWER = 4_000_000;
 const SS_MAX_FPS = 15;
-
-function perViewerBitrate(viewerCount) {
-  const n = Math.max(1, viewerCount);
-  return Math.round(Math.min(SS_MAX_PER_VIEWER,
-    Math.max(SS_MIN_PER_VIEWER, SS_TOTAL_UPLOAD_BUDGET / n)));
-}
 
 // Prefer H.264 so the presenter can use the GPU's hardware encoder instead of
 // running one software VP8 encoder per viewer. Codecs are only REORDERED (never
@@ -193,6 +186,7 @@ export function initScreenShareUI() {
       screenshareState.isCollapsed = !screenshareState.isCollapsed;
       panelContainer?.classList.toggle('collapsed', screenshareState.isCollapsed);
       toggleViewBtn.textContent = screenshareState.isCollapsed ? '펼치기' : '접기';
+      updateScreenShareLayout(true, screenshareState.isCollapsed);
     });
   }
 
@@ -229,6 +223,7 @@ export function initScreenShareUI() {
 
   // Zoom / Pan toolbar
   initPanZoomControls();
+  initScreenShareLayout();
 
   // Insecure help modal
   initHelpModal();
@@ -253,6 +248,7 @@ async function handleHeaderToggleClick() {
       screenshareState.isCollapsed = !screenshareState.isCollapsed;
       panelContainer?.classList.toggle('collapsed', screenshareState.isCollapsed);
       if (toggleViewBtn) toggleViewBtn.textContent = screenshareState.isCollapsed ? '펼치기' : '접기';
+      updateScreenShareLayout(true, screenshareState.isCollapsed);
     } else {
       joinScreenShare(normId);
     }
@@ -276,8 +272,8 @@ export async function startScreenShare(roomId, customTitle = '') {
   }
 
   try {
-    // 1080p for crisp slide text; 15fps (not 30) halves encoder work per
-    // viewer while still animating GIFs/transitions smoothly.
+    // Request up to 1080p for slide text; sources smaller than this stay native.
+    // 15 fps is a ceiling, not a target to preserve at the expense of detail.
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: {
         cursor: 'always',
@@ -296,9 +292,8 @@ export async function startScreenShare(roomId, customTitle = '') {
     // Handle user stopping stream via browser native bar ("Stop sharing")
     const track = stream.getVideoTracks()[0];
     if (track) {
-      // Default screen-capture handling ('detail') freezes motion under load,
-      // which made slide GIFs appear static for viewers.
-      try { if ('contentHint' in track) track.contentHint = 'motion'; } catch {}
+      // Slide readability takes priority over animation smoothness.
+      try { if ('contentHint' in track) track.contentHint = 'detail'; } catch {}
       track.onended = () => {
         stopScreenShare(normId);
       };
@@ -557,8 +552,7 @@ export async function handleViewerJoined({ channel_id, viewer_user_id, viewer_cl
 
   try {
     preferH264(pc);
-    // Re-split the upload budget across all viewers (including this new one).
-    await tunePresenterSenders(normId);
+    await tunePresenterSender(pc);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     sendPeerSignal(pc, { type: 'offer', sdp: offer.sdp });
@@ -580,35 +574,26 @@ export function handleViewerLeft({ channel_id, viewer_user_id, viewer_client_id 
     pc.onconnectionstatechange = null;
     screenshareState.peerConnections.delete(key);
     screenshareState.pendingCandidates.delete(key);
-    // Fewer viewers -> give the remaining ones more bitrate.
-    tunePresenterSenders(normId).catch(() => {});
   }
 }
 
-async function tunePresenterSenders(roomId) {
-  const peers = [...screenshareState.peerConnections.values()]
-    .filter(pc => pc.ss.role === 'presenter' && pc.ss.roomId === roomId);
-  const bitrate = perViewerBitrate(peers.length);
-  for (const pc of peers) {
-    for (const sender of pc.getSenders?.() || []) {
-      if (sender.track?.kind !== 'video') continue;
-      try {
-        const parameters = sender.getParameters();
-        if (!parameters.encodings?.length) parameters.encodings = [{}];
-        parameters.encodings.forEach(encoding => {
-          encoding.maxBitrate = bitrate;
-          encoding.maxFramerate = SS_MAX_FPS;
-        });
-        // 'balanced' lets the encoder trade a little sharpness AND some fps
-        // under congestion instead of stalling on one axis.
-        parameters.degradationPreference = 'balanced';
-        await sender.setParameters(parameters);
-      } catch (err) {
-        console.debug('Screen-share sender tuning unavailable:', err);
-      }
+async function tunePresenterSender(pc) {
+  for (const sender of pc.getSenders?.() || []) {
+    if (sender.track?.kind !== 'video') continue;
+    try {
+      const parameters = sender.getParameters();
+      if (!parameters.encodings?.length) parameters.encodings = [{}];
+      parameters.encodings.forEach(encoding => {
+        encoding.maxBitrate = SS_MAX_PER_VIEWER;
+        encoding.maxFramerate = SS_MAX_FPS;
+        encoding.scaleResolutionDownBy = 1;
+      });
+      parameters.degradationPreference = 'maintain-resolution';
+      await sender.setParameters(parameters);
+    } catch (err) {
+      console.debug('Screen-share sender tuning unavailable:', err);
     }
   }
-  console.info('Screen-share bitrate per viewer', { roomId, viewers: peers.length, bitrate });
 }
 
 export function handleSignal(data) {
@@ -679,6 +664,8 @@ async function processSignal({ channel_id, from_user_id, from_client_id, session
       try {
         await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: signal.sdp }));
         await flushCandidates(pc);
+        // Some browsers expose usable encoding parameters only after negotiation.
+        if (role === 'presenter') await tunePresenterSender(pc);
       } catch (err) {
         console.error('Failed to set remote answer:', err);
       }
@@ -888,6 +875,7 @@ export function updateUIForCurrentRoom() {
   const videoConnected = [...screenshareState.peerConnections.values()].some(pc =>
     pc.ss.role === 'viewer' && pc.ss.roomId === currentRoomId && pc.connectionState === 'connected');
   const isLive = Boolean(session);
+  updateScreenShareLayout(isLive || isPresentingHere, screenshareState.isCollapsed);
   if (connectionStatusEl) {
     const status = screenshareState.playbackState;
     const show = isLive && !isPresentingHere && status !== 'playing';
