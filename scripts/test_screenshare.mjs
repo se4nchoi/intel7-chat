@@ -6,7 +6,7 @@ import test from 'node:test';
 
 const source = await readFile(new URL('../app/static/js/screenshare.js', import.meta.url), 'utf8');
 
-async function setup() {
+async function setup(customElements = {}) {
   const sent = [];
   const timers = new Map();
   let timerId = 0;
@@ -29,6 +29,7 @@ async function setup() {
   const elements = {
     'screenshare-video': video, 'screenshare-panel-container': element(),
     'ss-connection-status': status, 'ss-connection-message': message, 'ss-connection-retry': retry,
+    ...customElements,
   };
   const track = { kind: 'video', contentHint: '', readyState: 'live', stop() { this.readyState = 'ended'; } };
   const stream = { getTracks: () => [track], getVideoTracks: () => [track] };
@@ -282,4 +283,45 @@ test('resolution policy is reapplied after the presenter receives the answer', a
     session_id: 'session', connection_id: pc.ss.connectionId, signal: { type: 'answer', sdp: 'answer' } });
   assert.equal(pc.senders[0].parameters.degradationPreference, 'maintain-resolution');
   assert.equal(pc.senders[0].parameters.encodings[0].scaleResolutionDownBy, 1);
+});
+
+test('screen controls autohide after inactivity and show on interaction or toolbar hover', async () => {
+  function element() {
+    const classes = new Set();
+    const listeners = new Map();
+    return {
+      listeners,
+      classList: {
+        toggle(name, value) { if (value) classes.add(name); else classes.delete(name); },
+        add: name => classes.add(name), remove: name => classes.delete(name),
+        contains: name => classes.has(name),
+      },
+      addEventListener(name, callback) { listeners.set(name, callback); },
+    };
+  }
+  const viewport = element();
+  const toolbar = element();
+  const h = await setup({ 'ss-viewport': viewport, 'ss-floating-toolbar': toolbar });
+  assert.equal(viewport.classList.contains('ss-controls-hidden'), false);
+  assert.equal(h.timers.size, 1);
+  const hideTimer = [...h.timers.values()][0];
+  hideTimer();
+  assert.equal(viewport.classList.contains('ss-controls-hidden'), true);
+
+  viewport.listeners.get('pointermove')();
+  assert.equal(viewport.classList.contains('ss-controls-hidden'), false);
+
+  toolbar.listeners.get('pointerenter')();
+  const timerAfterEnter = [...h.timers.values()][0];
+  if (timerAfterEnter) timerAfterEnter();
+  assert.equal(viewport.classList.contains('ss-controls-hidden'), false);
+
+  toolbar.listeners.get('pointerleave')();
+  const timerAfterLeave = [...h.timers.values()][0];
+  assert.ok(timerAfterLeave);
+  timerAfterLeave();
+  assert.equal(viewport.classList.contains('ss-controls-hidden'), true);
+
+  h.api.showScreenControls();
+  assert.equal(viewport.classList.contains('ss-controls-hidden'), false);
 });

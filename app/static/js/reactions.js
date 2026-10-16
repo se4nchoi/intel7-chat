@@ -5,18 +5,22 @@
 import { state } from './state.js';
 import { showToast } from './utils.js';
 
-export const REACTION_PALETTE = ['👍', '❤️', '😂', '😮', '😢', '👏', '✅', '❌', '👀'];
+export const REACTION_PALETTE = ['👍', '❤️', '😂', '😮', '😢', '👏', '✅', '❌', '👀', '👌'];
 
 let activeReactionPicker = null;
 
 export function closeReactionPicker() {
   if (activeReactionPicker) {
+    const parentShell = activeReactionPicker.parentElement;
+    if (parentShell && !parentShell.querySelector('.msg-more-menu-popover')) {
+      parentShell.classList.remove('has-open-menu');
+    }
     activeReactionPicker.remove();
     activeReactionPicker = null;
   }
 }
 
-document.addEventListener('click', (e) => {
+document?.addEventListener?.('click', (e) => {
   if (!e.target.closest('.reaction-picker-popover') && !e.target.closest('.msg-action-react-btn')) {
     closeReactionPicker();
   }
@@ -51,6 +55,7 @@ export function openReactionPicker(msg, anchorBtn) {
 
   const parentShell = anchorBtn.closest('.message-actions') || anchorBtn.parentElement;
   parentShell.appendChild(picker);
+  parentShell.classList.add('has-open-menu');
   activeReactionPicker = picker;
 }
 

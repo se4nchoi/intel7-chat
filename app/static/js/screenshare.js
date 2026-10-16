@@ -187,6 +187,7 @@ export function initScreenShareUI() {
       panelContainer?.classList.toggle('collapsed', screenshareState.isCollapsed);
       toggleViewBtn.textContent = screenshareState.isCollapsed ? '펼치기' : '접기';
       updateScreenShareLayout(true, screenshareState.isCollapsed);
+      if (!screenshareState.isCollapsed) showScreenControls();
     });
   }
 
@@ -224,6 +225,7 @@ export function initScreenShareUI() {
   // Zoom / Pan toolbar
   initPanZoomControls();
   initScreenShareLayout();
+  initControlsAutohide();
 
   // Insecure help modal
   initHelpModal();
@@ -249,6 +251,7 @@ async function handleHeaderToggleClick() {
       panelContainer?.classList.toggle('collapsed', screenshareState.isCollapsed);
       if (toggleViewBtn) toggleViewBtn.textContent = screenshareState.isCollapsed ? '펼치기' : '접기';
       updateScreenShareLayout(true, screenshareState.isCollapsed);
+      if (!screenshareState.isCollapsed) showScreenControls();
     } else {
       joinScreenShare(normId);
     }
@@ -824,6 +827,8 @@ export function resetScreenShare() {
   screenshareState.activeSessions.clear();
   screenshareState.playbackState = 'idle';
   if (videoEl) videoEl.srcObject = null;
+  const viewport = document.getElementById('ss-viewport');
+  viewport?.classList.remove('ss-controls-hidden');
   updateUIForCurrentRoom();
 }
 
@@ -923,6 +928,8 @@ export function updateUIForCurrentRoom() {
     panelContainer.classList.add('hidden');
     resetPanZoom();
     updateStickyBar();
+    const viewport = document.getElementById('ss-viewport');
+    viewport?.classList.remove('ss-controls-hidden');
     return;
   }
 
@@ -934,6 +941,9 @@ export function updateUIForCurrentRoom() {
   }
   panelContainer.classList.remove('hidden');
   panelContainer.classList.toggle('collapsed', screenshareState.isCollapsed);
+  if (!screenshareState.isCollapsed) {
+    showScreenControls();
+  }
 
   // Update Panel Header details
   const displayTitle = session?.title || `${state.currentUser?.display_name || state.currentUser?.username}님의 화면`;
@@ -1081,6 +1091,7 @@ function initPanZoomControls() {
       screenshareState.isPanning = false;
       canvasContainer?.classList.remove('is-panning');
       try { viewport.releasePointerCapture(e.pointerId); } catch {}
+      pingControls();
     }
   };
 
@@ -1111,6 +1122,94 @@ function applyTransform() {
   if (zoomLabel) {
     zoomLabel.textContent = `${Math.round(screenshareState.zoom * 100)}%`;
   }
+}
+
+// --- Screen Controls Autohide / Show Engine ---
+let pingControls = () => {};
+
+export function showScreenControls() {
+  pingControls();
+}
+
+function initControlsAutohide() {
+  const viewport = document.getElementById('ss-viewport');
+  const toolbar = document.getElementById('ss-floating-toolbar') || viewport?.querySelector?.('.ss-floating-toolbar');
+  if (!viewport || !toolbar) return;
+
+  let hideTimer = null;
+  let isToolbarHovered = false;
+  let isToolbarFocused = false;
+  const AUTOHIDE_DELAY = 2500;
+
+  function showControls() {
+    viewport.classList.remove('ss-controls-hidden');
+    clearTimeout(hideTimer);
+    hideTimer = null;
+  }
+
+  function scheduleHide(delay = AUTOHIDE_DELAY) {
+    clearTimeout(hideTimer);
+    if (isToolbarHovered || isToolbarFocused || screenshareState.isPanning) {
+      return;
+    }
+    hideTimer = setTimeout(() => {
+      if (isToolbarHovered || isToolbarFocused || screenshareState.isPanning) {
+        return;
+      }
+      viewport.classList.add('ss-controls-hidden');
+    }, delay);
+  }
+
+  function onActivity() {
+    showControls();
+    scheduleHide();
+  }
+
+  pingControls = onActivity;
+
+  // Pointer & mouse activity within viewport
+  viewport.addEventListener('pointerenter', onActivity);
+  viewport.addEventListener('pointermove', onActivity);
+  viewport.addEventListener('pointerdown', onActivity);
+  viewport.addEventListener('wheel', onActivity, { passive: true });
+
+  // When leaving the viewport, hide after a short delay
+  viewport.addEventListener('pointerleave', () => {
+    if (!isToolbarFocused) {
+      scheduleHide(800);
+    }
+  });
+
+  // When hovering on toolbar itself, keep it visible unconditionally
+  toolbar.addEventListener('pointerenter', () => {
+    isToolbarHovered = true;
+    showControls();
+  });
+  toolbar.addEventListener('pointerleave', () => {
+    isToolbarHovered = false;
+    scheduleHide();
+  });
+
+  // Keyboard navigation / focus within toolbar keeps it visible
+  toolbar.addEventListener('focusin', () => {
+    isToolbarFocused = true;
+    showControls();
+  });
+  toolbar.addEventListener('focusout', () => {
+    isToolbarFocused = false;
+    scheduleHide();
+  });
+
+  // Fullscreen change & key activity
+  document?.addEventListener?.('fullscreenchange', onActivity);
+  document?.addEventListener?.('keydown', (e) => {
+    if (e.target && ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+    if (document.fullscreenElement || document.querySelector?.('.chat-area.ss-theatre')) {
+      onActivity();
+    }
+  });
+
+  scheduleHide();
 }
 
 // --- Insecure Origin Guidance Modal ---

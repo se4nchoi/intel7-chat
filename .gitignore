@@ -32,3 +32,8 @@ traefik/
 certs/
 *.key
 *-key.pem
+
+# Node
+node_modules/
+dist/
+frontend/

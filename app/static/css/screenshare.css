@@ -462,6 +462,9 @@
   overflow-wrap: anywhere;
 }
 .chat-area.ss-theatre .message-actions {
+  position: static;
+  top: auto;
+  right: auto;
   align-self: flex-end;
   max-width: 100%;
   flex-wrap: wrap;
@@ -518,12 +521,34 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   z-index: 20;
   opacity: 0.85;
-  transition: opacity 0.2s, transform 0.2s;
+  transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
 .ss-floating-toolbar:hover {
   opacity: 1;
 }
+
+/* Autohide controls and cursor when idle in fullscreen, theatre, or general screenshare */
+.ss-viewport.ss-controls-hidden,
+.ss-viewport.ss-controls-hidden .ss-canvas-container,
+.ss-viewport.ss-controls-hidden #screenshare-video {
+  cursor: none;
+}
+
+.ss-viewport.ss-controls-hidden .ss-floating-toolbar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+}
+
+.ss-viewport.ss-controls-hidden .ss-floating-toolbar:hover,
+.ss-viewport.ss-controls-hidden .ss-floating-toolbar:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%);
+  cursor: default;
+}
+
 
 .ss-tool-btn {
   display: inline-flex;

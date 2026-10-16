@@ -3,8 +3,8 @@
 // ============================================================
 
 import { state } from './state.js';
-import { renderMarkdown, highlightMentions, formatTime, formatBytes, showToast } from './utils.js';
-import { openReactionPicker, renderMessageReactions } from './reactions.js';
+import { renderMarkdown, highlightMentions, formatTime, formatBytes, showToast, copyText } from './utils.js';
+import { openReactionPicker, renderMessageReactions, toggleReaction, closeReactionPicker } from './reactions.js';
 import { toggleMessagePin } from './pins.js';
 import { displayNickname, userDirectory } from './dm.js';
 import { channelsDirectory } from './channels.js';
@@ -270,18 +270,171 @@ export function createReplyQuote(reply) {
   return quote;
 }
 
+let activeMessageMoreMenu = null;
+
+export function closeMessageMoreMenu() {
+  if (activeMessageMoreMenu) {
+    activeMessageMoreMenu.popover?.remove();
+    activeMessageMoreMenu.actions?.classList.remove('has-open-menu');
+    activeMessageMoreMenu = null;
+  }
+}
+
+document?.addEventListener?.('click', (e) => {
+  if (!e.target.closest('.msg-more-menu-popover') && !e.target.closest('.msg-action-more-btn')) {
+    closeMessageMoreMenu();
+  }
+});
+
+document?.addEventListener?.('keydown', (e) => {
+  if (e.key === 'Escape' && activeMessageMoreMenu) {
+    closeMessageMoreMenu();
+  }
+});
+
+function forwardMessageToComposer(msg, isChat) {
+  const sender = isChat ? (msg.nickname || '익명') : (msg.from_nick || '익명');
+  const input = document.getElementById('msg-input');
+  if (input) {
+    const textSnippet = msg.content || (msg.attachments?.length ? '첨부 파일' : '');
+    const quote = `> **@${sender}**: ${textSnippet}\n\n`;
+    input.value = input.value ? `${quote}${input.value}` : quote;
+    input.focus();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    showToast('메시지를 입력창에 인용/전달했습니다.', 'info');
+  }
+}
+
+export function openMessageMoreMenu(msg, anchorBtn, actionsContainer) {
+  if (activeMessageMoreMenu && activeMessageMoreMenu.msgId === msg.message_id) {
+    closeMessageMoreMenu();
+    return;
+  }
+  closeMessageMoreMenu();
+  closeReactionPicker();
+
+  const isChat = msg.msgType === 'chat';
+  const myNick = state.currentUser ? state.currentUser.username : '';
+  const isOwn = isChat ? msg.nickname === myNick : msg.from_nick === myNick;
+  const isAdmin = state.currentUser?.role === 'admin';
+
+  const popover = document.createElement('div');
+  popover.className = 'msg-more-menu-popover';
+  popover.setAttribute('role', 'menu');
+
+  const addItem = (label, icon, onClick, isDanger = false) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `msg-more-menu-item${isDanger ? ' danger' : ''}`;
+    item.setAttribute('role', 'menuitem');
+    item.innerHTML = `<span>${label}</span><span class="item-icon">${icon}</span>`;
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMessageMoreMenu();
+      onClick();
+    });
+    popover.appendChild(item);
+  };
+
+  // Pin / Unpin
+  addItem(msg.is_pinned ? '메시지 고정 해제' : '메시지 고정', '📌', () => toggleMessagePin(msg));
+
+  // Copy text
+  if (msg.content) {
+    addItem('텍스트 복사', '📋', () => {
+      copyText(msg.content, '메시지 내용이 복사되었습니다.');
+    });
+  }
+
+  // Forward / Quote
+  addItem('전달 (입력창 인용)', '↪️', () => forwardMessageToComposer(msg, isChat));
+
+  // Edit (if own)
+  if (isOwn) {
+    addItem('메시지 수정', '✏️', () => startInlineMessageEdit(msg));
+  }
+
+  // Admin moderation actions
+  if (isAdmin && isChat) {
+    addItem(msg.is_hidden ? '메시지 숨김 해제' : '메시지 숨기기', msg.is_hidden ? '👁️' : '🙈', () => toggleMessageHidden(msg), !msg.is_hidden);
+    addItem('다른 채널로 이동', '➡️', () => openMoveMessageModal(msg));
+  }
+
+  actionsContainer.appendChild(popover);
+  actionsContainer.classList.add('has-open-menu');
+
+  // Check if near bottom of viewport to flip upwards
+  const rect = popover.getBoundingClientRect();
+  if (rect.bottom > (window.innerHeight || document.documentElement.clientHeight) - 40) {
+    popover.classList.add('open-upwards');
+  }
+
+  activeMessageMoreMenu = { popover, actions: actionsContainer, msgId: msg.message_id };
+}
+
 export function createMessageActions(msg) {
   const actions = document.createElement('div');
   actions.className = 'message-actions';
   const isChat = msg.msgType === 'chat';
   const myNick = state.currentUser ? state.currentUser.username : '';
   const isOwn = isChat ? msg.nickname === myNick : msg.from_nick === myNick;
-  const isAdmin = state.currentUser?.role === 'admin';
+  const myUserId = state.currentUser ? Number(state.currentUser.id) : null;
 
+  // 1. Quick reaction buttons (matching Discord: 👌, ✅, 👍)
+  const QUICK_REACTIONS = ['👌', '✅', '👍'];
+  QUICK_REACTIONS.forEach(emoji => {
+    const quickBtn = document.createElement('button');
+    quickBtn.type = 'button';
+    quickBtn.className = 'msg-action-quick-react-btn';
+    quickBtn.textContent = emoji;
+    quickBtn.title = `${emoji} 반응 남기기`;
+    quickBtn.setAttribute('aria-label', `${emoji} 반응 남기기`);
+    const isReacted = Array.isArray(msg.reactions) && msg.reactions.some(r => r.emoji === emoji && (r.reacted_by_me || r.users?.some(u => Number(u.id) === myUserId)));
+    if (isReacted) quickBtn.classList.add('active');
+    quickBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await toggleReaction(msg, emoji);
+    });
+    actions.appendChild(quickBtn);
+  });
+
+  // 2. Vertical Divider
+  const divider = document.createElement('span');
+  divider.className = 'msg-action-divider';
+  divider.setAttribute('aria-hidden', 'true');
+  actions.appendChild(divider);
+
+  // 3. Add reaction button (Discord filled smiley face)
+  const reactBtn = document.createElement('button');
+  reactBtn.type = 'button';
+  reactBtn.className = 'msg-action-btn msg-action-react-btn';
+  reactBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM8.5 10C9.33 10 10 9.33 10 8.5C10 7.67 9.33 7 8.5 7C7.67 7 7 7.67 7 8.5C7 9.33 7.67 10 8.5 10ZM15.5 10C16.33 10 17 9.33 17 8.5C17 7.67 16.33 7 15.5 7C14.67 7 14 7.67 14 8.5C14 9.33 14.67 10 15.5 10ZM12 17.5C14.33 17.5 16.32 16.05 17.11 14H6.89C7.68 16.05 9.67 17.5 12 17.5Z" fill="currentColor"/></svg>`;
+  reactBtn.title = '반응 남기기';
+  reactBtn.setAttribute('aria-label', '반응 남기기');
+  reactBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openReactionPicker(msg, reactBtn);
+  });
+  actions.appendChild(reactBtn);
+
+  // 4. Edit button (Pencil, if own message - in Discord it sits right after reaction picker)
+  if (isOwn) {
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'msg-action-btn msg-action-edit-btn';
+    editBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
+    editBtn.title = '수정';
+    editBtn.setAttribute('aria-label', '메시지 수정');
+    editBtn.addEventListener('click', () => startInlineMessageEdit(msg));
+    actions.appendChild(editBtn);
+  }
+
+  // 5. Reply button (Curved arrow left ↩️)
   const replyBtn = document.createElement('button');
   replyBtn.type = 'button';
-  replyBtn.className = 'msg-action-reply-btn';
-  replyBtn.textContent = '답장 ↩️';
+  replyBtn.className = 'msg-action-btn msg-action-reply-btn';
+  replyBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>`;
+  replyBtn.title = '답장';
   replyBtn.setAttribute('aria-label', '답장');
   replyBtn.addEventListener('click', () => {
     const currentKey = `${state.activeRoom.type}:${state.activeRoom.id}`;
@@ -295,54 +448,28 @@ export function createMessageActions(msg) {
   });
   actions.appendChild(replyBtn);
 
-  const reactBtn = document.createElement('button');
-  reactBtn.type = 'button';
-  reactBtn.className = 'msg-action-react-btn';
-  reactBtn.textContent = '😀+';
-  reactBtn.title = '반응 남기기';
-  reactBtn.setAttribute('aria-label', '반응 남기기');
-  reactBtn.addEventListener('click', (e) => {
+  // 6. Forward button (Curved arrow right ↪️)
+  const forwardBtn = document.createElement('button');
+  forwardBtn.type = 'button';
+  forwardBtn.className = 'msg-action-btn msg-action-forward-btn';
+  forwardBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"></polyline><path d="M4 18v-2a4 4 0 0 1 4-4h16"></path></svg>`;
+  forwardBtn.title = '전달';
+  forwardBtn.setAttribute('aria-label', '전달');
+  forwardBtn.addEventListener('click', () => forwardMessageToComposer(msg, isChat));
+  actions.appendChild(forwardBtn);
+
+  // 7. More options button (•••)
+  const moreBtn = document.createElement('button');
+  moreBtn.type = 'button';
+  moreBtn.className = 'msg-action-btn msg-action-more-btn';
+  moreBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></svg>`;
+  moreBtn.title = '더 보기';
+  moreBtn.setAttribute('aria-label', '더 보기');
+  moreBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    openReactionPicker(msg, reactBtn);
+    openMessageMoreMenu(msg, moreBtn, actions);
   });
-  actions.appendChild(reactBtn);
-
-  const pinBtn = document.createElement('button');
-  pinBtn.type = 'button';
-  pinBtn.className = 'msg-action-pin-btn';
-  pinBtn.textContent = msg.is_pinned ? '고정 해제 📌' : '고정 📌';
-  pinBtn.setAttribute('aria-label', msg.is_pinned ? '메시지 고정 해제' : '메시지 고정');
-  pinBtn.addEventListener('click', () => toggleMessagePin(msg));
-  actions.appendChild(pinBtn);
-
-  if (isOwn) {
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.className = 'msg-action-edit-btn';
-    editBtn.textContent = '수정';
-    editBtn.setAttribute('aria-label', '메시지 수정');
-    editBtn.addEventListener('click', () => startInlineMessageEdit(msg));
-    actions.appendChild(editBtn);
-
-  }
-
-  if (isAdmin && isChat) {
-    const hideBtn = document.createElement('button');
-    hideBtn.type = 'button';
-    hideBtn.className = 'msg-action-hide-btn';
-    hideBtn.textContent = msg.is_hidden ? '숨김 해제 👁️' : '숨김 🙈';
-    hideBtn.setAttribute('aria-label', msg.is_hidden ? '메시지 숨김 해제' : '메시지 숨기기');
-    hideBtn.addEventListener('click', () => toggleMessageHidden(msg));
-    actions.appendChild(hideBtn);
-
-    const moveBtn = document.createElement('button');
-    moveBtn.type = 'button';
-    moveBtn.className = 'msg-action-move-btn';
-    moveBtn.textContent = '이동 ➡️';
-    moveBtn.setAttribute('aria-label', '메시지 이동');
-    moveBtn.addEventListener('click', () => openMoveMessageModal(msg));
-    actions.appendChild(moveBtn);
-  }
+  actions.appendChild(moreBtn);
 
   return actions;
 }
@@ -406,6 +533,9 @@ export function startInlineMessageEdit(msg) {
   const bubble = row.querySelector('.msg-bubble');
   if (!bubble) return;
 
+  // If already in edit mode, don't duplicate
+  if (row.classList.contains('is-editing')) return;
+
   const originalContent = msg.content || '';
   const originalHtml = bubble.innerHTML;
 
@@ -420,6 +550,7 @@ export function startInlineMessageEdit(msg) {
   textarea.spellcheck = false;
   textarea.setAttribute('autocorrect', 'off');
   textarea.setAttribute('autocapitalize', 'off');
+  textarea.setAttribute('aria-label', '메시지 수정 내용');
   textarea.value = originalContent;
 
   const actionsBox = document.createElement('div');
@@ -427,7 +558,7 @@ export function startInlineMessageEdit(msg) {
 
   const hint = document.createElement('span');
   hint.className = 'inline-edit-hint';
-  hint.textContent = 'ESC: 취소 · Enter: 저장 · Shift+Enter: 줄바꿈';
+  hint.innerHTML = '<kbd>ESC</kbd> 취소 · <kbd>Enter</kbd> 저장 · <kbd>Shift+Enter</kbd> 줄바꿈';
 
   const btnGroup = document.createElement('div');
   btnGroup.className = 'inline-edit-btn-group';
@@ -447,18 +578,31 @@ export function startInlineMessageEdit(msg) {
     bubble.innerHTML = originalHtml;
   };
 
+  const autoResize = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 48), 380)}px`;
+  };
+
   const saveEdit = async () => {
     const newContent = textarea.value.trim();
     if (!newContent) {
       showToast('메시지 내용을 입력해 주세요.', 'warning');
       return;
     }
-    const isChat = msg.msgType === 'chat';
+    if (newContent === originalContent.trim()) {
+      cancelEdit();
+      return;
+    }
+    const isChat = msg.msgType === 'chat'
+      || (state.activeRoom && state.activeRoom.type === 'channel')
+      || Boolean(msg.channel_id)
+      || Boolean(msg.nickname && !msg.from_nick);
     const rawId = typeof msg.message_id === 'string' ? msg.message_id.replace(/^(public|dm):/, '') : String(msg.id || '');
     const numId = Number(rawId);
     const endpoint = isChat ? `/api/messages/${numId}` : `/api/dms/${numId}`;
 
     saveBtn.disabled = true;
+    cancelBtn.disabled = true;
     try {
       const res = await fetch(endpoint, {
         method: 'PATCH',
@@ -478,15 +622,27 @@ export function startInlineMessageEdit(msg) {
       editedBadge.textContent = '(수정됨)';
       markdown.appendChild(editedBadge);
       bubble.appendChild(markdown);
+
+      const attachments = normaliseMessageAttachments(msg);
+      if (attachments.length) {
+        const group = document.createElement('div');
+        group.className = 'message-attachments';
+        attachments.forEach(attachment => group.appendChild(createAttachmentEntry(attachment)));
+        bubble.appendChild(group);
+      }
+
       showToast('메시지가 수정되었습니다.', 'success');
     } catch (err) {
       showToast(err.message || '메시지 수정 실패', 'error');
       saveBtn.disabled = false;
+      cancelBtn.disabled = false;
     }
   };
 
   cancelBtn.addEventListener('click', cancelEdit);
   saveBtn.addEventListener('click', saveEdit);
+
+  textarea.addEventListener('input', autoResize);
 
   textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -502,7 +658,14 @@ export function startInlineMessageEdit(msg) {
   actionsBox.append(hint, btnGroup);
   editBox.append(textarea, actionsBox);
   bubble.appendChild(editBox);
-  textarea.focus();
+
+  requestAnimationFrame(() => {
+    autoResize();
+    textarea.focus();
+    try {
+      textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+    } catch {}
+  });
 }
 
 export function appendMessageNode(msg, previousMsg) {

@@ -233,25 +233,223 @@
   align-items: flex-end;
   gap: 6px;
   max-width: 100%;
+  position: relative;
 }
 .msg-row.own .message-shell,
 .msg-row.dm-own .message-shell { flex-direction: row-reverse; }
 
+/* ── Discord-Style Message Hover Actions Bar ── */
 .message-actions {
-  display: flex;
-  gap: 3px;
+  position: absolute;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  background: var(--bg-secondary, #2b2d31);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.09));
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  padding: 2px 3px;
+  height: 32px;
+  box-sizing: border-box;
   opacity: 0;
+  pointer-events: none;
   transform: translateY(2px);
-  transition: opacity .15s, transform .15s;
-  flex-shrink: 0;
-  position: relative;
+  transition: opacity .15s ease, transform .15s ease;
+  z-index: 25;
+  user-select: none;
+  white-space: nowrap;
 }
+
+/* Hover bridge between bubble and outside floating actions to prevent cursor flicker */
+.message-actions::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  width: 14px;
+}
+
+.msg-row.other .message-actions,
+.msg-row.dm-recv .message-actions {
+  left: calc(100% + 8px);
+  right: auto;
+  transform-origin: top left;
+}
+
+.msg-row.other .message-actions::before,
+.msg-row.dm-recv .message-actions::before {
+  right: 100%;
+}
+
+.msg-row.own .message-actions,
+.msg-row.dm-own .message-actions {
+  right: calc(100% + 8px);
+  left: auto;
+  transform-origin: top right;
+}
+
+.msg-row.own .message-actions::before,
+.msg-row.dm-own .message-actions::before {
+  left: 100%;
+}
+
+@media (max-width: 768px) {
+  .msg-row.other .message-actions,
+  .msg-row.dm-recv .message-actions {
+    left: 0;
+    right: auto;
+    top: -16px;
+  }
+  .msg-row.other .message-actions::before,
+  .msg-row.dm-recv .message-actions::before {
+    display: none;
+  }
+  .msg-row.own .message-actions,
+  .msg-row.dm-own .message-actions {
+    right: 0;
+    left: auto;
+    top: -16px;
+  }
+  .msg-row.own .message-actions::before,
+  .msg-row.dm-own .message-actions::before {
+    display: none;
+  }
+}
+
 .msg-row:hover .message-actions,
-.msg-row:focus-within .message-actions {
+.msg-row:focus-within .message-actions,
+.message-actions.has-open-menu {
   opacity: 1;
+  pointer-events: auto;
   transform: translateY(0);
 }
-.message-actions button,
+
+.msg-action-quick-react-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.msg-action-quick-react-btn:hover {
+  transform: scale(1.22);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.msg-action-quick-react-btn.active {
+  background: rgba(88, 101, 242, 0.25);
+}
+
+.msg-action-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
+.msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #949ba4);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.msg-action-btn:hover {
+  color: #f2f3f5;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.msg-action-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+/* Discord More Options Dropdown Menu */
+.msg-more-menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  background: #111214;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  padding: 5px;
+  z-index: 130;
+  animation: reactionPickerPopIn 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+  user-select: none;
+}
+
+.msg-more-menu-popover.open-upwards {
+  top: auto;
+  bottom: calc(100% + 4px);
+  transform-origin: bottom right;
+}
+
+.msg-more-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: #dbdee1;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  box-sizing: border-box;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.msg-more-menu-item:hover,
+.msg-more-menu-item:focus-visible {
+  background: #5865f2;
+  color: #ffffff;
+  outline: none;
+}
+
+.msg-more-menu-item.danger {
+  color: #f23f43;
+}
+
+.msg-more-menu-item.danger:hover,
+.msg-more-menu-item.danger:focus-visible {
+  background: #da373c;
+  color: #ffffff;
+}
+
+.msg-more-menu-item .item-icon {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
 .code-copy-btn {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -261,10 +459,146 @@
   font-size: .67rem;
   padding: 3px 6px;
 }
-.message-actions button:hover,
 .code-copy-btn:hover { color: var(--text); background: var(--surface3); }
-.message-actions button.danger { color: #ff9b9b; }
-.message-actions button.danger:hover { background: rgba(210, 54, 54, .16); color: #ffc0c0; }
+
+/* ── 인라인 메시지 수정 (Discord-Style Inline Edit Mode) ── */
+.msg-row.is-editing {
+  width: 100% !important;
+  max-width: min(85%, 760px) !important;
+  min-width: min(340px, 100%) !important;
+}
+
+.msg-row.is-editing .message-shell {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.msg-row.is-editing .msg-bubble {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  background: #2b2d31 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+  padding: 10px 12px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45) !important;
+}
+
+.msg-row.is-editing .message-actions {
+  display: none !important;
+}
+
+.inline-edit-box {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+.inline-edit-input {
+  width: 100% !important;
+  min-height: 48px;
+  max-height: 380px;
+  box-sizing: border-box !important;
+  background: #1e1f22 !important;
+  color: #f2f3f5 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 6px !important;
+  padding: 10px 12px !important;
+  font-family: inherit !important;
+  font-size: 0.93rem !important;
+  line-height: 1.5 !important;
+  resize: none !important;
+  outline: none !important;
+  overflow-y: auto !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease !important;
+}
+
+.inline-edit-input:focus {
+  background: #111214 !important;
+  border-color: #5865f2 !important;
+  box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.35) !important;
+}
+
+.inline-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  user-select: none;
+}
+
+.inline-edit-hint {
+  font-size: 0.72rem;
+  color: #949ba4;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.inline-edit-hint kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 0.68rem;
+  color: #dbdee1;
+}
+
+.inline-edit-btn-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.inline-edit-box .inline-edit-cancel {
+  background: transparent !important;
+  color: #dbdee1 !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  border-radius: 5px !important;
+  padding: 6px 14px !important;
+  font-size: 0.8rem !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: background 0.12s ease, color 0.12s ease !important;
+}
+
+.inline-edit-box .inline-edit-cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+.inline-edit-box .inline-edit-save {
+  background: #5865f2 !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 5px !important;
+  padding: 6px 16px !important;
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+  transition: background 0.12s ease, transform 0.1s ease !important;
+}
+
+.inline-edit-box .inline-edit-save:hover:not(:disabled) {
+  background: #4752c4 !important;
+}
+
+.inline-edit-box .inline-edit-save:active:not(:disabled) {
+  transform: translateY(1px) !important;
+}
+
+.inline-edit-box .inline-edit-save:disabled,
+.inline-edit-box .inline-edit-cancel:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
 
 /* ── 리액션 피커 & 뱃지 ── */
 .reaction-picker-popover {
@@ -1269,6 +1603,7 @@ kbd {
   .msg-row,
   .msg-row.dm-own,
   .msg-row.dm-recv { max-width: 88%; }
+  .msg-row.is-editing { max-width: 96% !important; min-width: 0 !important; }
   .message-search-form { grid-template-columns: 1fr auto; }
   .message-search-form input { grid-column: 1 / -1; }
 }

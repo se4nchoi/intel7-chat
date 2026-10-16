@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from app.db.connection import get_connection, utc_now
 
-ALLOWED_REACTION_EMOJIS: Set[str] = {"👍", "❤️", "😂", "😮", "😢", "👏", "✅", "❌", "👀"}
+ALLOWED_REACTION_EMOJIS: Set[str] = {"👍", "❤️", "😂", "😮", "😢", "👏", "✅", "❌", "👀", "👌"}
 
 
 def create_channel(
