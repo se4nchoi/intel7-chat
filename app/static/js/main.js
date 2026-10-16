@@ -38,7 +38,8 @@ import {
   handleLeaderboardInvalidated,
 } from './quiz.js';
 import { initPlayHubListeners } from './play_hub.js';
-import { initScreenShareUI, handleConversationSwitch, handleChannelSwitch, resetScreenShare } from './screenshare.js';
+import { initScreenShareUI, handleConversationSwitch, handleChannelSwitch, resetScreenShare, loadScreenshares } from './screenshare.js';
+import { initMessageScroll } from './message_scroll.js';
 import {
   openGlobalNotificationModal,
   closeGlobalNotificationModal,
@@ -595,7 +596,7 @@ function initApp() {
   // 4. Load older messages button
   const loadOlderBtn = document.getElementById('load-older-btn');
   if (loadOlderBtn) loadOlderBtn.addEventListener('click', loadOlderMessages);
-
+  initMessageScroll();
 
   const onLoginSuccess = async (user) => {
     const chatApp = document.getElementById('chat-app');
@@ -606,7 +607,10 @@ function initApp() {
     if (quizNavAdminBtn) quizNavAdminBtn.classList.toggle('hidden', user?.role !== 'admin');
     updateNickBadge();
     loadDrafts();
-    await loadChannels(switchConversation);
+    await Promise.all([
+      loadChannels(switchConversation),
+      loadScreenshares(),
+    ]);
     await switchConversation('channel', 1);
     initWebSocket({
       onSwitchConv: (convKey) => {

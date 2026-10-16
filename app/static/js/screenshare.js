@@ -807,6 +807,19 @@ export function syncAllActiveSessions(sessionsMap) {
   if (roomId && screenshareState.hasSession(roomId) && roomId !== presentingRoom) joinScreenShare(roomId);
 }
 
+export async function loadScreenshares() {
+  if (typeof fetch !== 'function') return;
+  try {
+    const res = await fetch('/api/screenshare/status', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.sessions) {
+        syncAllActiveSessions(data.sessions);
+      }
+    }
+  } catch { /* ignore */ }
+}
+
 export function onScreenshareDisconnected() {
   clearTimeout(screenshareState.joinTimer);
   clearTimeout(screenshareState.retryTimer);
@@ -880,7 +893,6 @@ export function updateUIForCurrentRoom() {
   const videoConnected = [...screenshareState.peerConnections.values()].some(pc =>
     pc.ss.role === 'viewer' && pc.ss.roomId === currentRoomId && pc.connectionState === 'connected');
   const isLive = Boolean(session);
-  updateScreenShareLayout(isLive || isPresentingHere, screenshareState.isCollapsed);
   if (connectionStatusEl) {
     const status = screenshareState.playbackState;
     const show = isLive && !isPresentingHere && status !== 'playing';
@@ -922,14 +934,19 @@ export function updateUIForCurrentRoom() {
   }
 
   // 2. Update Panel Container
-  if (!panelContainer) return;
+  const shouldShow = isLive || isPresentingHere;
+  if (!panelContainer) {
+    updateScreenShareLayout(shouldShow, screenshareState.isCollapsed);
+    return;
+  }
 
-  if (!isLive && !isPresentingHere) {
+  if (!shouldShow) {
     panelContainer.classList.add('hidden');
     resetPanZoom();
     updateStickyBar();
     const viewport = document.getElementById('ss-viewport');
     viewport?.classList.remove('ss-controls-hidden');
+    updateScreenShareLayout(false, screenshareState.isCollapsed);
     return;
   }
 
@@ -944,6 +961,7 @@ export function updateUIForCurrentRoom() {
   if (!screenshareState.isCollapsed) {
     showScreenControls();
   }
+  updateScreenShareLayout(true, screenshareState.isCollapsed);
 
   // Update Panel Header details
   const displayTitle = session?.title || `${state.currentUser?.display_name || state.currentUser?.username}님의 화면`;

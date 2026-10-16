@@ -6,7 +6,7 @@ import test from 'node:test';
 
 const source = await readFile(new URL('../app/static/js/screenshare_layout.js', import.meta.url), 'utf8');
 
-async function setup() {
+async function setup(customElements = {}) {
   function element() {
     const classes = new Set(), properties = new Map(), attrs = new Map(), events = new Map();
     return { events, attrs, properties,
@@ -26,8 +26,9 @@ async function setup() {
   const panel = { ...element(), closest: () => root,
     getBoundingClientRect: () => ({ height: parseInt(panel.properties.get('--ss-pane-height')) || 400 }) };
   const handle = element(), theatreButton = element(), documentEvents = new Map(), windowEvents = new Map();
+  const defaultElements = { 'screenshare-panel-container': panel, 'ss-resize-handle': handle, 'ss-btn-theatre': theatreButton };
   const document = { fullscreenElement: null,
-    getElementById: id => ({ 'screenshare-panel-container': panel, 'ss-resize-handle': handle, 'ss-btn-theatre': theatreButton })[id],
+    getElementById: id => (customElements[id] !== undefined ? customElements[id] : defaultElements[id]),
     addEventListener: (key, value) => documentEvents.set(key, value),
   };
   const context = vm.createContext({ document, window: { addEventListener: (key, value) => windowEvents.set(key, value) } });
@@ -98,4 +99,54 @@ test('stop or collapse restores chat and cancels an in-progress drag', async () 
   assert.equal(h.root.classList.contains('ss-theatre'), false);
   assert.equal(h.appBody.classList.contains('ss-theatre-active'), false);
   assert.equal(h.handle.classList.contains('hidden'), true);
+});
+
+test('theatre toggle preserves chat scroll to bottom when near latest', async () => {
+  const newMsgBtn = {
+    classList: {
+      classes: new Set(),
+      add(k) { this.classes.add(k); },
+      remove(k) { this.classes.delete(k); },
+      contains(k) { return this.classes.has(k); },
+    },
+  };
+  const list = {
+    scrollHeight: 1000,
+    clientHeight: 600,
+    scrollTop: 400,
+    querySelectorAll: () => [],
+  };
+  const h = await setup({ 'message-list': list, 'new-messages-btn': newMsgBtn });
+  assert.equal(list.scrollTop, 1000);
+
+  // In a real browser, applying .ss-theatre causes layout reflow, increasing scrollHeight
+  const origToggle = h.root.classList.toggle;
+  h.root.classList.toggle = (cls, active) => {
+    origToggle(cls, active);
+    if (cls === 'ss-theatre' && active) list.scrollHeight = 2400;
+  };
+
+  h.fire(h.theatreButton, 'click');
+
+  assert.equal(h.root.classList.contains('ss-theatre'), true);
+  assert.equal(list.scrollTop, 2400);
+  assert.equal(newMsgBtn.classList.contains('hidden'), true);
+});
+
+test('theatre toggle preserves visible message anchor when scrolled up in history', async () => {
+  const row1 = { offsetTop: 0, offsetHeight: 150 };
+  const row2 = { offsetTop: 150, offsetHeight: 200 };
+  const row3 = { offsetTop: 350, offsetHeight: 200 };
+  const list = {
+    scrollHeight: 2000,
+    clientHeight: 400,
+    scrollTop: 200,
+    querySelectorAll: () => [row1, row2, row3],
+  };
+  const h = await setup({ 'message-list': list });
+
+  h.fire(h.theatreButton, 'click');
+
+  assert.equal(h.root.classList.contains('ss-theatre'), true);
+  assert.equal(list.scrollTop, 200);
 });

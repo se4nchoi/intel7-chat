@@ -1,5 +1,6 @@
 // Keep live traffic from moving a reader away from older messages.
 let pending = 0;
+let wasNear = true;
 const initialized = new WeakSet();
 
 export function isNearLatest(list = document.getElementById('message-list')) {
@@ -15,6 +16,7 @@ export function resetNewMessages() {
 export function scrollToLatest() {
   const list = document.getElementById('message-list');
   if (list) list.scrollTop = list.scrollHeight;
+  wasNear = true;
   resetNewMessages();
 }
 
@@ -23,7 +25,20 @@ export function initMessageScroll() {
   const button = document.getElementById('new-messages-btn');
   if (list && !initialized.has(list)) {
     initialized.add(list);
-    list.addEventListener('scroll', () => { if (isNearLatest(list)) resetNewMessages(); }, { passive: true });
+    wasNear = isNearLatest(list);
+    list.addEventListener('scroll', () => {
+      wasNear = isNearLatest(list);
+      if (wasNear) resetNewMessages();
+    }, { passive: true });
+
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => {
+        if (wasNear) {
+          list.scrollTop = list.scrollHeight;
+          resetNewMessages();
+        }
+      }).observe(list);
+    }
   }
   if (button && !initialized.has(button)) {
     initialized.add(button);

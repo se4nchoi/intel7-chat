@@ -87,7 +87,7 @@ async function setup(customElements = {}) {
   const api = module.namespace;
   api.initScreenShareUI();
   const session = { channel_id: 1, user_id: 1, session_id: 'session', presenter_client_id: 'presenter-tab' };
-  return { api, state, sent, timers, video, status, message, retry, stream, track, session, offline: () => { online = false; } };
+  return { api, context, state, sent, timers, video, status, message, retry, stream, track, session, offline: () => { online = false; } };
 }
 
 test('late login joins an active share and ignores repeated sync joins', async () => {
@@ -324,4 +324,16 @@ test('screen controls autohide after inactivity and show on interaction or toolb
 
   h.api.showScreenControls();
   assert.equal(viewport.classList.contains('ss-controls-hidden'), false);
+});
+
+test('loadScreenshares fetches status and syncs active sessions before entering a room', async () => {
+  const h = await setup();
+  let fetchedUrl = null;
+  h.context.fetch = async (url) => {
+    fetchedUrl = url;
+    return { ok: true, json: async () => ({ sessions: { 1: h.session } }) };
+  };
+  await h.api.loadScreenshares();
+  assert.equal(fetchedUrl, '/api/screenshare/status');
+  assert.ok(h.api.screenshareState.hasSession('1'));
 });

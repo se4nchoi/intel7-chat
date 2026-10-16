@@ -17,6 +17,23 @@ function bounds() {
 
 function sync() {
   if (!root) return;
+  const list = document?.getElementById?.('message-list');
+  const wasNearBottom = list ? (list.scrollHeight - list.clientHeight - list.scrollTop <= 120) : false;
+  let anchor = null;
+  let anchorOffset = 0;
+  if (list && !wasNearBottom && typeof list.querySelectorAll === 'function') {
+    const rows = list.querySelectorAll('.msg-row');
+    if (rows && rows.length) {
+      for (const row of rows) {
+        if (row.offsetTop + row.offsetHeight > list.scrollTop) {
+          anchor = row;
+          anchorOffset = list.scrollTop - row.offsetTop;
+          break;
+        }
+      }
+    }
+  }
+
   const { min, max, height } = bounds();
   const pixels = Math.round(Math.max(min, Math.min(max, height * ratio)));
   panel.style.setProperty('--ss-pane-height', `${pixels}px`);
@@ -31,6 +48,24 @@ function sync() {
   theatreButton.setAttribute('aria-pressed', String(theatre));
   theatreButton.disabled = collapsed;
   theatreButton.textContent = theatre ? '기본 보기' : '집중 모드';
+
+  if (list) {
+    const restoreScroll = () => {
+      if (wasNearBottom) {
+        list.scrollTop = list.scrollHeight;
+        document?.getElementById?.('new-messages-btn')?.classList.add('hidden');
+      } else if (anchor) {
+        list.scrollTop = anchor.offsetTop + anchorOffset;
+      }
+    };
+    restoreScroll();
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(restoreScroll);
+    }
+    if (typeof setTimeout === 'function') {
+      setTimeout(restoreScroll, 50);
+    }
+  }
 }
 
 function resizeTo(pixels) {
