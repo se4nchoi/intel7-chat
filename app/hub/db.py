@@ -614,3 +614,109 @@ def open_dm(cohort_id: int, account_id: int, other_id: int) -> int:
 def dm_members(channel_id: int) -> set[int]:
     with connect() as conn:
         return {r["account_id"] for r in conn.execute("SELECT account_id FROM hub_dm_members WHERE channel_id=%s", (channel_id,))}
+
+
+# Classroom leases reserve one SFU for one channel, without coupling cohort identity
+# to its physical location. PostgreSQL uniqueness arbitrates concurrent instructors.
+def media_session(cohort_id: int, channel_id: int):
+    with connect() as conn:
+        return conn.execute("""SELECT id,cohort_id,channel_id,classroom_id,owner_id,expires_at,revision
+            FROM hub_media_sessions WHERE cohort_id=%s AND channel_id=%s AND expires_at>now()""",
+            (cohort_id, channel_id)).fetchone()
+
+
+def start_media_session(cohort_id: int, channel_id: int, classroom_id: str, owner_id: int, control: str):
+    with connect() as conn:
+        conn.execute("DELETE FROM hub_media_sessions WHERE expires_at<=now()")
+        return conn.execute("""INSERT INTO hub_media_sessions
+            (id,cohort_id,channel_id,classroom_id,owner_id,control_hash,expires_at)
+            VALUES (%s,%s,%s,%s,%s,%s,now()+interval '120 seconds')
+            RETURNING id,cohort_id,channel_id,classroom_id,owner_id,expires_at,revision""",
+            (secrets.token_hex(16), cohort_id, channel_id, classroom_id, owner_id, token_hash(control))).fetchone()
+
+
+def control_media_session(cohort_id: int, channel_id: int, session_id: str, owner_id: int, control: str, *, end=False):
+    with connect() as conn:
+        command = ("DELETE FROM hub_media_sessions" if end else
+                   "UPDATE hub_media_sessions SET expires_at=now()+interval '120 seconds'")
+        return conn.execute(command + """ WHERE cohort_id=%s AND channel_id=%s AND id=%s
+            AND owner_id=%s AND control_hash=%s AND expires_at>now() RETURNING id""",
+            (cohort_id, channel_id, session_id, owner_id, token_hash(control))).fetchone()
+
+
+def owns_media_session(session_id: str, owner_id: int, control: str) -> bool:
+    with connect() as conn:
+        return bool(conn.execute("""SELECT 1 FROM hub_media_sessions WHERE id=%s AND owner_id=%s
+            AND control_hash=%s AND expires_at>now()""", (session_id, owner_id, token_hash(control))).fetchone())
+
+
+def presentation_requests(session_id: str, account_id: int, *, manage=False):
+    with connect() as conn:
+        return conn.execute("""SELECT r.id,r.account_id,a.display_name,r.status,r.requested_at
+            FROM hub_presentation_requests r JOIN hub_accounts a ON a.id=r.account_id
+            WHERE r.session_id=%s AND (%s OR r.account_id=%s)
+            ORDER BY r.requested_at,r.id""", (session_id, manage, account_id)).fetchall()
+
+
+def presentation_action(cohort_id: int, channel_id: int, session_id: str, actor_id: int,
+                        action: str, secret: str, request_id: int | None = None):
+    """Serialize the queue and presenter switch with the owning session lease."""
+    with connect() as conn:
+        session = conn.execute("""SELECT * FROM hub_media_sessions WHERE id=%s AND cohort_id=%s
+            AND channel_id=%s AND expires_at>now() FOR UPDATE""", (session_id, cohort_id, channel_id)).fetchone()
+        if not session:
+            return None
+        if action == 'request':
+            previous = conn.execute("""SELECT id,status FROM hub_presentation_requests
+                WHERE session_id=%s AND account_id=%s""", (session_id, actor_id)).fetchone()
+            if previous and previous['status'] in {'pending','approved'}:
+                return None
+            if previous:
+                conn.execute('DELETE FROM hub_presentation_requests WHERE id=%s', (previous['id'],))
+            # A fresh identity prevents a delayed click on an old queue row from
+            # approving a new request/tab after a cancellation or denial.
+            return conn.execute("""INSERT INTO hub_presentation_requests (session_id,account_id,request_hash,status)
+                VALUES (%s,%s,%s,'pending') RETURNING id,status""",
+                (session_id, actor_id, token_hash(secret))).fetchone()
+        if action in {'approve', 'deny', 'revoke'}:
+            if session['owner_id'] != actor_id or session['control_hash'] != token_hash(secret):
+                return None
+            target = conn.execute("""SELECT * FROM hub_presentation_requests
+                WHERE id=%s AND session_id=%s""", (request_id, session_id)).fetchone()
+            expected = 'approved' if action == 'revoke' else 'pending'
+            if not target or target['status'] != expected:
+                return None
+            # Removed/disabled students cannot be approved from a stale queue.
+            if action == 'approve' and not conn.execute("""SELECT 1 FROM hub_accounts a
+                JOIN hub_memberships m ON m.account_id=a.id WHERE a.id=%s AND a.active
+                AND m.cohort_id=%s AND m.active AND m.role='student'""", (target['account_id'], cohort_id)).fetchone():
+                return None
+            if action == 'approve':
+                conn.execute("UPDATE hub_presentation_requests SET status='revoked' WHERE session_id=%s AND status='approved'", (session_id,))
+            status = {'approve':'approved', 'deny':'denied', 'revoke':'revoked'}[action]
+        elif action == 'cancel':
+            target = conn.execute("""SELECT * FROM hub_presentation_requests WHERE session_id=%s
+                AND account_id=%s AND request_hash=%s AND status IN ('pending','approved')""",
+                (session_id, actor_id, token_hash(secret))).fetchone()
+            if not target:
+                return None
+            request_id, status = target['id'], 'cancelled'
+        else:
+            raise ValueError('Unknown presentation action')
+        if action in {'approve','revoke'} or (action == 'cancel' and target['status'] == 'approved'):
+            conn.execute('UPDATE hub_media_sessions SET revision=revision+1 WHERE id=%s', (session_id,))
+        return conn.execute('UPDATE hub_presentation_requests SET status=%s WHERE id=%s RETURNING id,status',
+                            (status, request_id)).fetchone()
+
+
+def media_publish_state(session_id: str, account_id: int, control: str, request_secret: str):
+    with connect() as conn:
+        session = conn.execute("""SELECT revision,owner_id,control_hash FROM hub_media_sessions
+            WHERE id=%s AND expires_at>now() FOR SHARE""", (session_id,)).fetchone()
+        if not session:
+            return None
+        approved = conn.execute("""SELECT account_id,request_hash FROM hub_presentation_requests
+            WHERE session_id=%s AND status='approved'""", (session_id,)).fetchone()
+        return dict(revision=session['revision'],
+                    owner_publish=not approved and session['owner_id']==account_id and session['control_hash']==token_hash(control),
+                    student_publish=bool(approved and approved['account_id']==account_id and approved['request_hash']==token_hash(request_secret)))

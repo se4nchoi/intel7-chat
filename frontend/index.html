@@ -85,7 +85,7 @@
           <span id="chat-cohort" class="topic muted"></span>
           <div class="topbar-actions">
             <button id="pins-toggle" class="ghost" aria-pressed="false" aria-controls="pins-panel">📌<span class="label"> 고정</span><span id="pins-count" class="count-chip hidden"></span></button>
-            <button id="stage-toggle" class="ghost" aria-pressed="false" aria-controls="stage">🖥<span class="label"> 화면 공유</span></button>
+            <button id="stage-toggle" class="ghost" aria-pressed="false" aria-controls="stage">🖥<span class="label"> 화면 공유</span><span id="media-request-count" aria-live="polite"></span></button>
             <button id="members-toggle" class="ghost" aria-pressed="true" aria-controls="member-list">👥<span class="label"> 멤버</span></button>
           </div>
         </header>
@@ -96,11 +96,20 @@
               <div class="stage-bar">
                 <p id="media-status" class="muted">연결하면 공유 화면을 볼 수 있습니다.</p>
                 <div class="stage-actions">
+                  <label id="media-classroom-label" class="hidden">강의실 <select id="media-classroom" aria-label="화면 공유 강의실"><option value="">시청만 하기</option></select></label>
                   <button id="media-connect" class="primary">연결하기</button>
                   <button id="media-start" class="hidden">화면 공유하기</button>
+                  <button id="media-request" class="hidden">화면 공유 요청</button>
+                  <button id="media-cancel-request" class="hidden">요청 취소 / 발표 종료</button>
                   <button id="media-stop" class="danger hidden">공유 중지</button>
                 </div>
               </div>
+              <p id="media-request-status" role="status" aria-live="polite"></p>
+              <section id="media-requests" class="hidden" aria-label="학생 화면 공유 요청">
+                <h3>학생 화면 공유 요청</h3>
+                <p class="muted">한 번에 한 명만 발표합니다. 다른 학생을 허용하면 현재 발표가 종료됩니다.</p>
+                <ul id="media-request-list"></ul>
+              </section>
             </section>
             <section id="pins-panel" class="pins-panel hidden" aria-label="고정된 메시지">
               <h3>📌 고정된 메시지</h3>

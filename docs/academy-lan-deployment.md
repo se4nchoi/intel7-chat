@@ -21,7 +21,8 @@ Instructor ---- one video upload ----> LiveKit ----> 20–30 viewers per classro
 ```
 
 Each cohort/channel has its own media room and membership check. Instructors
-can publish screens; students subscribe. Each join gets its own participant
+can publish screens; students can request presentation permission in distributed
+classroom mode. The owning instructor approves one student presenter at a time. Each join gets its own participant
 identity, so a second tab/device does not evict the first viewer. STUN discovers addresses; LiveKit is
 the SFU forwarding the instructor's stream to the viewers. A separate public
 STUN server is unnecessary for this directly reachable LAN topology.
@@ -166,3 +167,10 @@ uses Playwright's installed browser instead of the default installed Chrome.
 These checks did **not** run PostgreSQL migrations against a real database,
 start Linux systemd/Caddy/LiveKit, or measure real 1080p forwarding to a class.
 Those remain deployment acceptance checks on the target host/network.
+
+## Distributed classroom media
+
+For an SFU on each instructor PC and cohorts that move between labs, use
+[classroom media routing](classroom-media.md). The hub stores stable cohort data;
+only a temporary media session selects a classroom. The global SFU setup above
+remains supported when no classroom registry is configured.

@@ -10,6 +10,7 @@ tests and a restarted launcher see the current environment.
 | MADI_DB_POOL_SIZE     | 10                            | Max pooled database connections          |
 | MADI_FILE_DIR         | <repo>/data_dev/hub-files     | Where uploaded file bytes are stored     |
 | MADI_SESSION_HOURS    | 12                            | Login session lifetime                   |
+| MADI_CLASSROOMS_FILE  | (unset: single SFU)            | Private JSON registry of classroom SFUs |
 | MADI_SFU_URL          | (none: screen sharing off)    | LiveKit WSS URL the browser connects to  |
 | LIVEKIT_API_KEY       | (none)                        | LiveKit key for media tokens             |
 | LIVEKIT_API_SECRET    | (none)                        | LiveKit secret for media tokens          |
@@ -24,6 +25,9 @@ MADI_TLS_CERT and MADI_TLS_KEY.
 from __future__ import annotations
 
 import os
+import json
+import re
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +35,44 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FILE_DIR = REPO_ROOT / "data_dev" / "hub-files"
 DEFAULT_LOG_FILE = REPO_ROOT / "data_dev" / "logs" / "madi.log"
 LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
+
+
+@dataclass(frozen=True)
+class Classroom:
+    id: str
+    name: str
+    url: str
+    api_key: str
+    api_secret: str
+
+
+def classrooms() -> dict[str, Classroom]:
+    """Operator-owned registry; never accept endpoints or signing keys from clients."""
+    path = os.environ.get("MADI_CLASSROOMS_FILE")
+    if not path:
+        return {}
+    try:
+        records = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(records, list) or not records:
+            raise ValueError()
+        result = {}
+        for record in records:
+            room = Classroom(**record)
+            if any(not isinstance(v, str) or not v.strip() for v in vars(room).values()):
+                raise ValueError()
+            url = urlsplit(room.url)
+            if (not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,39}", room.id) or room.id in result
+                    or url.scheme != "wss" or not url.hostname or url.username or url.password
+                    or url.query or url.fragment or any(c.isspace() for c in room.url)
+                    or not re.fullmatch(r"[a-zA-Z0-9.-]+", url.hostname)):
+                raise ValueError()
+            if url.port is not None and not 1 <= url.port <= 65535:
+                raise ValueError()
+            result[room.id] = room
+        return result
+    except (OSError, ValueError, TypeError):
+        # Never include file contents, which contain signing credentials.
+        raise RuntimeError("MADI_CLASSROOMS_FILE must contain a nonempty list of unique classrooms with id, name, valid wss url, api_key and api_secret") from None
 
 
 @dataclass(frozen=True)
@@ -47,7 +89,7 @@ class Settings:
 
     @property
     def sfu_configured(self) -> bool:
-        return bool(self.sfu_url and self.livekit_api_key and self.livekit_api_secret)
+        return bool(classrooms() or (self.sfu_url and self.livekit_api_key and self.livekit_api_secret))
 
 
 def _positive_int(name: str, default: int) -> int:

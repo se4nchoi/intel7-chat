@@ -34,7 +34,7 @@ function harness({ token, join, picker } = {}) {
   };
   const media = new ClassroomMedia({
     loadSdk: async () => sdk,
-    token: token || (async () => ({ url: 'wss://academy/media', token: 'private' })),
+    token: token || (async () => ({ url: 'wss://academy/media', token: 'private', can_publish: true })),
     onState: phase => phases.push(phase), onTrack: track => tracks.push(track),
   });
   return { media, rooms, phases, tracks, captures };
@@ -140,4 +140,29 @@ test('an old room disconnect cannot clear the current channel connection', async
   old.events.disconnected();
   assert.equal(h.media.room, h.rooms[1]);
   assert.equal(h.media.connected, true);
+});
+
+
+test('a viewing-only token cannot invoke the screen picker', async () => {
+  const h = harness({ token: async () => ({ url: 'wss://academy', token: 'viewer', can_publish: false }) });
+  await h.media.connect(1, 2);
+  await assert.rejects(h.media.start(), /공유할 수 없습니다/);
+  assert.equal(h.captures.length, 0);
+  await h.media.leave();
+});
+
+test('presenter handoff reconnects with provided token without reserving another classroom', async () => {
+  let tokenCalls = 0;
+  const h = harness({ token: async () => { tokenCalls++; return { can_publish: false }; } });
+  await h.media.connect(1, 2);
+  assert.equal(h.media.canPublish, false);
+  await h.media.leave();
+  await h.media.connect(1, 2, { url: 'wss://academy', token: 'approved-new-room', can_publish: true });
+  assert.equal(tokenCalls, 1);
+  await h.media.start();
+  assert.equal(h.media.sharing, true);
+  await h.media.leave();
+  await h.media.connect(1, 2, { url: 'wss://academy', token: 'revoked-new-room', can_publish: false });
+  await assert.rejects(h.media.start());
+  await h.media.leave();
 });

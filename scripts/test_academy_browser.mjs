@@ -21,7 +21,7 @@ os.environ['MADI_DATABASE_URL']='postgresql://unused@127.0.0.1/unused'
 os.environ['MADI_ALLOWED_HOSTS']='127.0.0.1'
 with tempfile.TemporaryDirectory(prefix='madi-browser-') as data:
     os.environ['MADI_FILE_DIR']=data
-    for key in ('MADI_SFU_URL','LIVEKIT_API_KEY','LIVEKIT_API_SECRET'):
+    for key in ('MADI_SFU_URL','LIVEKIT_API_KEY','LIVEKIT_API_SECRET','MADI_CLASSROOMS_FILE'):
         os.environ.pop(key,None)
     db.initialize_schema=lambda: None
     db.close_pools=lambda: None
@@ -60,9 +60,25 @@ try {
   const account = { id: 1, username: 'teacher', display_name: 'Teacher', is_admin: false };
   const cohort = { id: 1, slug: 'class-a', name: 'Class A', role: 'instructor', archived: false };
   let pendingToken, tokenCalls = 0;
+  const released = [];
+  const selectedLabs = [];
   await page.route('**/hub/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/classrooms')) return route.fulfill({ json: [{ id: 'lab-1', name: 'Lab 1' }, { id: 'lab-3', name: 'Lab 3' }] });
+    if (path.endsWith('/media-session')) {
+      if (route.request().method() === 'POST') {
+        selectedLabs.push(route.request().postDataJSON().classroom_id);
+        return route.fulfill({ json: { session: { id: 'session-' + selectedLabs.length }, control_token: 'tab-control' } });
+      }
+      return route.fulfill({ json: { distributed: true, session: null } });
+    }
+    if (route.request().method() === 'DELETE' && path.includes('/media-session/')) {
+      assert.equal(route.request().postDataJSON().control_token, 'tab-control');
+      released.push(path);
+      return route.fulfill({ status: 204 });
+    }
     if (path.endsWith('/media-token')) {
+      assert.equal(route.request().postDataJSON().control_token, 'tab-control');
       tokenCalls++;
       if (tokenCalls === 1) { pendingToken = route; return; }
       return route.fulfill({ status: 503, json: { detail: 'Media service unavailable' } });
@@ -75,17 +91,23 @@ try {
   await page.goto(base + '/hub/cohorts/class-a/chat');
   await page.waitForFunction(() => document.querySelector('#channel-heading').textContent.includes('General'));
   await page.click('#stage-toggle');
+  await page.waitForSelector('#media-classroom option[value="lab-1"]', { state: 'attached' });
+  await page.selectOption('#media-classroom', 'lab-1');
   await page.click('#media-connect');
   await page.waitForFunction(() => document.querySelector('#media-status').textContent.includes('연결하고'));
   assert.equal(await page.locator('#media-start').isDisabled(), true);
   await page.click('#media-connect');
   await page.waitForFunction(() => document.querySelector('#media-connect').textContent === '연결하기');
   await pendingToken.fulfill({ status: 503, json: { detail: 'cancelled' } });
+  await page.selectOption('#media-classroom', 'lab-3');
   await page.click('#media-connect');
   await page.waitForFunction(() => document.querySelector('#media-status').textContent.includes('연결하지 못'));
+  assert.deepEqual(selectedLabs, ['lab-1', 'lab-3']);
+  assert.ok(released.some(path => path.endsWith('/session-1')));
+  assert.ok(released.some(path => path.endsWith('/session-2')));
   assert.deepEqual(pageErrors, []);
   assert.deepEqual(cspErrors, []);
-  console.log('Academy browser smoke passed: boot/channel load, LiveKit chunk import, join cancellation, failure retry UI, no JS/CSP errors.');
+  console.log('Academy browser smoke passed: boot/channel load, classroom selection, reservation cleanup, LiveKit chunk import, join cancellation, failure retry UI, no JS/CSP errors.');
 } finally {
   await browser?.close();
   server.kill();

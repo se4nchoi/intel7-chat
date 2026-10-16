@@ -1,0 +1,16 @@
+[
+  {
+    "id": "lab-1",
+    "name": "1 강의실",
+    "url": "wss://CHANGE_ME_HUB_HOST/media/lab-1",
+    "api_key": "CHANGE_ME_LAB_1_KEY",
+    "api_secret": "CHANGE_ME_LAB_1_SECRET"
+  },
+  {
+    "id": "lab-3",
+    "name": "3 강의실",
+    "url": "wss://CHANGE_ME_HUB_HOST/media/lab-3",
+    "api_key": "CHANGE_ME_LAB_3_KEY",
+    "api_secret": "CHANGE_ME_LAB_3_SECRET"
+  }
+]

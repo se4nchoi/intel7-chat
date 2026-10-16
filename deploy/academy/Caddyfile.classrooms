@@ -1,0 +1,15 @@
+# Replace host and instructor-PC addresses; trust this CA on client machines.
+https://CHANGE_ME_HUB_HOST {
+    tls internal
+    encode zstd gzip
+
+    handle_path /media/lab-1/* {
+        reverse_proxy CHANGE_ME_LAB_1_IP:7880
+    }
+    handle_path /media/lab-3/* {
+        reverse_proxy CHANGE_ME_LAB_3_IP:7880
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8000
+    }
+}

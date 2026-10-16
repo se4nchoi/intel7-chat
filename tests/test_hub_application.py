@@ -140,3 +140,17 @@ def test_existing_admin_bootstrap_is_refused(academy, monkeypatch):
         db.bootstrap_admin("other", "Other", "password")
     assert "pg_advisory_xact_lock" in queries[0]
     assert not any("INSERT" in query for query in queries)
+
+
+def test_classroom_registry_origins_are_in_csp_without_credentials(academy, monkeypatch, tmp_path):
+    import json
+    registry = tmp_path / 'classrooms.json'
+    registry.write_text(json.dumps([dict(id='lab-1', name='Lab 1', url='wss://media.academy.local:8443/lab-1',
+                                         api_key='private-key', api_secret='private-secret')]))
+    monkeypatch.setenv('MADI_CLASSROOMS_FILE', str(registry))
+    monkeypatch.setenv('MADI_SFU_URL', 'unused-in-distributed-mode')
+    with TestClient(application.create_app(), base_url='https://10.10.1.2') as client:
+        csp = client.get('/health/live').headers['content-security-policy']
+        assert 'wss://media.academy.local:8443' in csp
+        assert 'https://media.academy.local:8443' in csp
+        assert 'private-secret' not in csp and 'private-key' not in csp

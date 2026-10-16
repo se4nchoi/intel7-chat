@@ -3,6 +3,7 @@ import { api, cohortSocket, fileDownloadUrl, uploadFile } from './api.js';
 import { readRoute, spaceUrl } from './navigation.js';
 import { renderRich } from './format.js';
 import { ClassroomMedia } from './media.js';
+import { ClassroomSession } from './classroom-session.js';
 
 const $ = id => document.getElementById(id);
 const ROLE_LABEL = { admin: '관리자', instructor: '강사', student: '수강생', member: '구성원' };
@@ -115,7 +116,14 @@ function updateControls() {
   }
   $('new-post-btn').disabled = !writable;
   $('media-connect').disabled = !writable || !state.channel;
-  $('media-start').disabled = !writable || !media.connected || media.publishing || media.sharing;
+  $('media-start').classList.toggle('hidden', !isManager() && !media.canPublish);
+  $('media-start').textContent = isManager() ? '화면 공유하기' : '화면 선택하고 공유';
+  const student = state.cohort?.role === 'student';
+  const ownRequest = presentationState.requests?.find(r => r.account_id === state.account?.id);
+  $('media-request').classList.toggle('hidden', !student || !classroomSession.active || media.canPublish);
+  $('media-request').disabled = !writable || !media.connected || ['pending', 'approved'].includes(ownRequest?.status);
+  $('media-cancel-request').classList.toggle('hidden', !student || !classroomSession.active?.requestToken || !['pending', 'approved'].includes(ownRequest?.status));
+  $('media-start').disabled = !writable || !media.connected || !media.canPublish || media.publishing || media.sharing;
 }
 function resetContent() {
   state.epoch++; state.channelEpoch++; state.questionEpoch++;
@@ -145,6 +153,7 @@ function showSpace() {
   $('cohort-status').classList.toggle('hidden', !cohort || !state.account?.is_admin);
   $('add-channel-btn').classList.toggle('hidden', !manage || !!cohort?.archived);
   $('media-start').classList.toggle('hidden', !manage);
+  $('media-classroom-label').classList.add('hidden');
   const instructorOption = $('membership-form').elements.role.querySelector('[value="instructor"]');
   instructorOption.disabled = instructorOption.hidden = !state.account?.is_admin;
   if (!state.account?.is_admin) $('membership-form').elements.role.value = 'student';
@@ -350,6 +359,7 @@ async function selectChannel(channel) {
         el('h3', { text: `#${channel.name}에 오신 것을 환영합니다` }),
         el('p', { class: 'muted', text: `${cohort.name}의 #${channel.name} 채널입니다. 최근 메시지 100개까지 표시됩니다.` })));
   renderChannelList(); updateControls();
+  if (!dm) void loadMediaClassrooms().catch(error => status(error.message, true));
   // Live messages for this channel are held while its history loads, then applied in order.
   const history = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages`);
   if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
@@ -381,6 +391,10 @@ function applyChannelEvent(event) {
   else if (event.type === 'message_pinned') { updateMessage(event.message); loadPins().catch(() => {}); }
 }
 function handleEvent(event) {
+  if (event.type === 'media_updated') {
+    if (event.channel_id === state.channel?.id && classroomSession.active) void classroomSession.check().catch(() => classroomSession.onLost());
+    return;
+  }
   if (event.type === 'presence') { state.online = new Set(event.online); renderMembers(); renderDMList(); return; }
   if (event.channel_id === state.channel?.id) {
     if (state.holding) state.holding.push(event);
@@ -661,6 +675,7 @@ $('members-toggle').addEventListener('click', event => {
   else { const hidden = $('member-list').classList.toggle('hidden'); event.currentTarget.setAttribute('aria-pressed', String(!hidden)); }
 });
 $('stage-toggle').addEventListener('click', event => {
+  void loadMediaClassrooms().catch(error => status(error.message, true));
   const hidden = $('stage').classList.toggle('hidden');
   event.currentTarget.setAttribute('aria-pressed', String(!hidden));
   $('messages').scrollTop = $('messages').scrollHeight;
@@ -1059,16 +1074,68 @@ $('management').addEventListener('close', () => { $('temp-password').classList.a
 const MEDIA_MESSAGES = {
   idle: '연결하면 공유 화면을 볼 수 있습니다.',
   connecting: '화면 공유 서버에 연결하고 있습니다…',
-  waiting: '연결되었습니다. 강사의 공유 화면을 기다리고 있습니다.',
+  waiting: '연결되었습니다. 발표자의 공유 화면을 기다리고 있습니다.',
   viewing: '공유 화면을 보고 있습니다. 원본이 지원하면 최대 1080p로 수신합니다.',
   sharing: '이 채널에 화면을 공유하고 있습니다.',
   reconnecting: '네트워크 연결을 복구하고 있습니다…',
   disconnected: '화면 공유 연결이 끊겼습니다. 다시 연결해 주세요.',
   failed: '화면 공유에 연결하지 못했습니다. 다시 연결해 주세요.',
 };
+let presentationState = { session: null, requests: [] };
+let pendingPresentationIds = new Set(), wasSharing = false;
+function renderPresentationRequests(data) {
+  presentationState = data;
+  const requests = data.requests || [];
+  const owner = !!classroomSession.active?.control;
+  const pending = requests.filter(r => r.status === 'pending');
+  const activeIds = new Set(pending.map(r => r.id));
+  if (owner && pending.some(r => !pendingPresentationIds.has(r.id))) status('학생의 화면 공유 요청이 도착했습니다. 화면 공유 패널에서 확인하세요.');
+  pendingPresentationIds = activeIds;
+  $('media-request-count').textContent = owner && pending.length ? ` (${pending.length})` : '';
+  $('media-requests').classList.toggle('hidden', !owner);
+  $('media-request-list').replaceChildren(...requests.filter(r => ['pending','approved'].includes(r.status)).map(request => {
+    const decide = action => async event => {
+      event.currentTarget.disabled = true;
+      try { await classroomSession.decidePresentation(request.id, action); }
+      catch (error) { status(error.message, true); event.currentTarget.disabled = false; }
+    };
+    return el('li', {}, el('span', { text: `${request.display_name} — ${request.status === 'approved' ? '발표 허용됨' : '대기 중'}` }),
+      ...(request.status === 'pending' ? [el('button', { text: '허용', onclick: decide('approve') }), el('button', { text: '거절', onclick: decide('deny') })]
+        : [el('button', { text: '발표 종료 / 강사로 전환', onclick: decide('revoke') })]));
+  }));
+  const own = requests.find(r => r.account_id === state.account?.id);
+  const messages = { pending: '강사의 허용을 기다리고 있습니다.', approved: '허용되었습니다. 연결 후 “화면 선택하고 공유”를 눌러 주세요.',
+    denied: '강사가 요청을 거절했습니다. 필요하면 다시 요청하세요.', revoked: '강사가 발표를 종료했습니다.', cancelled: '발표 요청을 취소했습니다.' };
+  $('media-request-status').textContent = !isManager() && own ? messages[own.status] || '' : '';
+  updateControls();
+}
+const classroomSession = new ClassroomSession({
+  api,
+  onUpdate: renderPresentationRequests,
+  onChanged: async active => {
+    const generation = classroomSession.generation;
+    const config = await classroomSession.token();
+    if (classroomSession.active !== active || classroomSession.generation !== generation) return;
+    await media.leave();
+    if (classroomSession.active === active && classroomSession.generation === generation) await media.connect(active.cohort, active.channel, config);
+  },
+  onLost: () => {
+    void leaveMedia().then(() => status('강의실 공유 세션이 종료되었거나 연결이 끊겼습니다. 다시 연결해 주세요.', true));
+  },
+});
+async function loadMediaClassrooms() {
+  const cohort = state.cohort;
+  if (!cohort || !isManager() || media.room || media.phase === 'connecting') return;
+  const channel = state.channel;
+  const labs = await api(`/cohorts/${cohort.id}/classrooms`);
+  if (state.cohort !== cohort || state.channel !== channel || media.room || media.phase === 'connecting') return;
+  $('media-classroom').replaceChildren(el('option', { value: '', text: '시청만 하기' }),
+    ...labs.map(lab => el('option', { value: lab.id, text: lab.name })));
+  $('media-classroom-label').classList.toggle('hidden', !labs.length);
+}
 const media = new ClassroomMedia({
   loadSdk: () => import('livekit-client'),
-  token: (cohort, channel) => api(`/cohorts/${cohort}/channels/${channel}/media-token`, { method: 'POST' }),
+  token: (cohort, channel) => classroomSession.join(cohort, channel, isManager() ? $('media-classroom').value : ''),
   onTrack: track => {
     const video = $('media-video');
     if (track) track.attach(video); else video.srcObject = null;
@@ -1079,11 +1146,18 @@ const media = new ClassroomMedia({
     $('media-status').setAttribute('role', 'status');
     $('media-connect').textContent = phase === 'connecting' ? '연결 취소' : media.room ? '연결 끊기' : '연결하기';
     $('media-stop').classList.toggle('hidden', !media.sharing);
+    const studentStopped = wasSharing && !media.sharing && phase === 'waiting' && state.cohort?.role === 'student';
+    wasSharing = media.sharing;
+    if (studentStopped) void classroomSession.cancelPresentation().catch(error => status(error.message, true));
+    $('media-classroom').disabled = !!media.room || phase === 'connecting';
+    if (phase === 'failed' || phase === 'disconnected') void classroomSession.leave();
     updateControls();
   },
 });
 async function leaveMedia() {
+  const leaving = classroomSession.leave();
   await media.leave();
+  await leaving;
 }
 
 $('media-connect').addEventListener('click', async () => {
@@ -1098,6 +1172,15 @@ $('media-start').addEventListener('click', async () => {
   try {
     await media.start();
   } catch (error) { status(error.message, true); }
+});
+
+$('media-request').addEventListener('click', async () => {
+  $('media-request').disabled = true;
+  try { await classroomSession.requestPresentation(); } catch (error) { status(error.message, true); }
+  finally { updateControls(); }
+});
+$('media-cancel-request').addEventListener('click', async () => {
+  try { await classroomSession.cancelPresentation(); } catch (error) { status(error.message, true); }
 });
 
 $('media-stop').addEventListener('click', async () => {

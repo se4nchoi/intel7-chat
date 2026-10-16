@@ -20,7 +20,7 @@ from psycopg.errors import UniqueViolation
 from app.auth import normalize_username, validate_password, validate_username
 from app.hub import db
 from app.hub.logs import log
-from app.hub.settings import settings
+from app.hub.settings import settings, classrooms
 
 router = APIRouter(prefix="/hub", tags=["madi"])
 COOKIE = "madi_session"
@@ -319,20 +319,149 @@ async def messages(cohort_id: int, channel_id: int, request: Request, after: int
     return await asyncio.to_thread(db.messages, channel_id, after)
 
 
-@router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/media-token")
-async def media_token(cohort_id: int, channel_id: int, request: Request):
-    _same_origin(request)
-    account, cohort = await _cohort(request, cohort_id)
+class MediaStart(BaseModel):
+    classroom_id: str = Field(min_length=1, max_length=40)
+
+
+class MediaControl(BaseModel):
+    control_token: str = Field(default="", max_length=200)
+    request_token: str = Field(default="", max_length=200)
+
+
+async def _media_channel(request, cohort_id, channel_id, *, manage=False):
+    account, cohort = await _cohort(request, cohort_id, manage=manage)
     channel = await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"])
     if not channel or channel["kind"] != "channel":
         raise HTTPException(404, "Channel not found")
+    return account, cohort
+
+
+def _public_media_session(session):
+    if not session:
+        return None
+    classroom = classrooms().get(session["classroom_id"])
+    if not classroom:
+        return None
+    return {**session, "classroom_name": classroom.name}
+
+
+@router.get("/api/cohorts/{cohort_id}/classrooms")
+async def media_classrooms(cohort_id: int, request: Request):
+    await _cohort(request, cohort_id, manage=True)
+    return [{"id": c.id, "name": c.name} for c in classrooms().values()]
+
+
+@router.get("/api/cohorts/{cohort_id}/channels/{channel_id}/media-session")
+async def get_media_session(cohort_id: int, channel_id: int, request: Request):
+    account, cohort = await _media_channel(request, cohort_id, channel_id)
+    registry = classrooms()
+    session = await asyncio.to_thread(db.media_session, cohort_id, channel_id) if registry else None
+    requests = await asyncio.to_thread(db.presentation_requests, session['id'], account['id'],
+                                      manage=cohort['role'] in {'admin','instructor'}) if session else []
+    return {"distributed": bool(registry), "session": _public_media_session(session), "requests": requests}
+
+
+@router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/media-session", status_code=201)
+async def start_media_session(cohort_id: int, channel_id: int, body: MediaStart, request: Request):
+    _same_origin(request)
+    account, _ = await _media_channel(request, cohort_id, channel_id, manage=True)
+    if body.classroom_id not in classrooms():
+        raise HTTPException(404, "Classroom is not configured")
+    control = secrets.token_urlsafe(32)
+    try:
+        session = await asyncio.to_thread(db.start_media_session, cohort_id, channel_id, body.classroom_id, account["id"], control)
+    except UniqueViolation:
+        raise HTTPException(409, "Classroom or channel already has an active media session") from None
+    log.info("media session started by=%s cohort=%s channel=%s classroom=%s session=%s",
+             account["id"], cohort_id, channel_id, body.classroom_id, session["id"])
+    return {"session": _public_media_session(session), "control_token": control}
+
+
+@router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/media-session/{session_id}/heartbeat")
+async def heartbeat_media_session(cohort_id: int, channel_id: int, session_id: str, body: MediaControl, request: Request):
+    _same_origin(request)
+    account, _ = await _media_channel(request, cohort_id, channel_id, manage=True)
+    if not await asyncio.to_thread(db.control_media_session, cohort_id, channel_id, session_id, account["id"], body.control_token):
+        raise HTTPException(409, "Media session expired or is controlled by another tab")
+    return {"ok": True}
+
+
+@router.delete("/api/cohorts/{cohort_id}/channels/{channel_id}/media-session/{session_id}", status_code=204)
+async def end_media_session(cohort_id: int, channel_id: int, session_id: str, body: MediaControl, request: Request):
+    _same_origin(request)
+    account, _ = await _media_channel(request, cohort_id, channel_id, manage=True)
+    if not await asyncio.to_thread(db.control_media_session, cohort_id, channel_id, session_id, account["id"], body.control_token, end=True):
+        raise HTTPException(409, "Media session expired or is controlled by another tab")
+    log.info("media session ended by=%s session=%s", account["id"], session_id)
+
+
+class PresentationDecision(MediaControl):
+    action: str = Field(pattern=r"^(approve|deny|revoke)$")
+
+
+@router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/media-session/{session_id}/requests", status_code=201)
+async def request_presentation(cohort_id: int, channel_id: int, session_id: str, request: Request):
+    _same_origin(request)
+    account, cohort = await _media_channel(request, cohort_id, channel_id)
+    if cohort['role'] != 'student':
+        raise HTTPException(403, "Only students request presentation permission")
+    secret = secrets.token_urlsafe(32)
+    result = await asyncio.to_thread(db.presentation_action, cohort_id, channel_id, session_id, account['id'], 'request', secret)
+    if not result:
+        raise HTTPException(409, "Session expired or a presentation request is already active")
+    await _broadcast(cohort_id, {"type": "media_updated", "channel_id": channel_id})
+    return {"request": result, "request_token": secret}
+
+
+@router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/media-session/{session_id}/requests/{request_id}")
+async def decide_presentation(cohort_id: int, channel_id: int, session_id: str, request_id: int,
+                              body: PresentationDecision, request: Request):
+    _same_origin(request)
+    account, _ = await _media_channel(request, cohort_id, channel_id, manage=True)
+    result = await asyncio.to_thread(db.presentation_action, cohort_id, channel_id, session_id, account['id'],
+                                   body.action, body.control_token, request_id)
+    if not result:
+        raise HTTPException(409, "Request changed or this tab does not control the session")
+    await _broadcast(cohort_id, {"type": "media_updated", "channel_id": channel_id})
+    return result
+
+
+@router.delete("/api/cohorts/{cohort_id}/channels/{channel_id}/media-session/{session_id}/requests", status_code=204)
+async def cancel_presentation(cohort_id: int, channel_id: int, session_id: str, body: MediaControl, request: Request):
+    _same_origin(request)
+    account, _ = await _media_channel(request, cohort_id, channel_id)
+    if not await asyncio.to_thread(db.presentation_action, cohort_id, channel_id, session_id, account['id'], 'cancel', body.request_token):
+        raise HTTPException(409, "Presentation request is no longer active")
+    await _broadcast(cohort_id, {"type": "media_updated", "channel_id": channel_id})
+
+
+@router.post("/api/cohorts/{cohort_id}/channels/{channel_id}/media-token")
+async def media_token(cohort_id: int, channel_id: int, request: Request, body: MediaControl | None = None):
+    _same_origin(request)
+    account, cohort = await _media_channel(request, cohort_id, channel_id)
     config = settings()
-    url, api_key, api_secret = config.sfu_url, config.livekit_api_key, config.livekit_api_secret
-    if not config.sfu_configured:
-        raise HTTPException(503, "Local SFU is not configured")
-    now = datetime.now(timezone.utc)
-    room = f"hub-{cohort_id}-{channel_id}"
+    registry = classrooms()
+    session = None
     can_publish = cohort["role"] in {"admin", "instructor"}
+    if registry:
+        session = await asyncio.to_thread(db.media_session, cohort_id, channel_id)
+        classroom = registry.get(session["classroom_id"]) if session else None
+        if not classroom:
+            raise HTTPException(409, "No active classroom session; ask your instructor to select a lab")
+        url, api_key, api_secret = classroom.url, classroom.api_key, classroom.api_secret
+        state = await asyncio.to_thread(db.media_publish_state, session['id'], account['id'],
+                                        body.control_token if body else '', body.request_token if body else '')
+        if state is None:
+            raise HTTPException(409, "Media session expired or is controlled by another tab")
+        can_publish = (can_publish and state['owner_publish']) or (cohort['role']=='student' and state['student_publish'])
+        session['revision'] = state['revision']
+        room = f"hub-{cohort_id}-{channel_id}-{session['id']}-r{state['revision']}"
+    else:
+        url, api_key, api_secret = config.sfu_url, config.livekit_api_key, config.livekit_api_secret
+        if not config.sfu_configured:
+            raise HTTPException(503, "Local SFU is not configured")
+        room = f"hub-{cohort_id}-{channel_id}"
+    now = datetime.now(timezone.utc)
     grants = {
         "roomJoin": True, "room": room, "canSubscribe": True,
         "canPublish": can_publish, "canPublishData": False,
@@ -347,7 +476,7 @@ async def media_token(cohort_id: int, channel_id: int, request: Request):
         "exp": int((now + timedelta(minutes=5)).timestamp()), "video": grants,
     }
     log.info("media token user=%r id=%s room=%s publish=%s", account["username"], account["id"], room, can_publish)
-    return {"url": url, "room": room, "can_publish": can_publish,
+    return {"url": url, "room": room, "can_publish": can_publish, "session": _public_media_session(session),
             "token": jwt.encode(payload, api_secret, algorithm="HS256")}
 
 

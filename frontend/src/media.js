@@ -9,6 +9,7 @@ export class ClassroomMedia {
     this.sharing = false;
     this.publishing = false;
     this.phase = 'idle';
+    this.canPublish = false;
   }
 
   report(phase) { this.phase = phase; this.onState(phase); }
@@ -18,6 +19,7 @@ export class ClassroomMedia {
     const room = this.room;
     this.room = null;
     this.connected = false;
+    this.canPublish = false;
     this.sharing = false;
     this.publishing = false;
     this.track?.detach();
@@ -27,14 +29,14 @@ export class ClassroomMedia {
     if (room) await room.disconnect();
   }
 
-  async connect(cohortId, channelId) {
+  async connect(cohortId, channelId, providedConfig = null) {
     if (this.phase === 'connecting' || this.room) return;
     const generation = ++this.generation;
     this.report('connecting');
     let room;
     const current = () => this.generation === generation;
     try {
-      const [sdk, config] = await Promise.all([this.loadSdk(), this.token(cohortId, channelId)]);
+      const [sdk, config] = await Promise.all([this.loadSdk(), providedConfig || this.token(cohortId, channelId)]);
       if (!current()) return;
       room = new sdk.Room({
         // Layout size must not select a blurry layer for slides.
@@ -79,6 +81,7 @@ export class ClassroomMedia {
       await room.connect(config.url, config.token);
       if (!current()) { await room.disconnect(); return; }
       this.connected = true;
+      this.canPublish = config.can_publish === true;
       this.report(this.track ? 'viewing' : 'waiting');
     } catch (error) {
       if (current()) { await this.leave(); this.report('failed'); throw error; }
@@ -88,6 +91,7 @@ export class ClassroomMedia {
 
   async start() {
     if (!this.connected || !this.room) throw new Error('먼저 화면 공유에 연결하세요');
+    if (!this.canPublish) throw new Error('이 세션에서는 화면을 공유할 수 없습니다');
     if (this.publishing || this.sharing) return;
     const generation = this.generation, room = this.room;
     this.publishing = true;
