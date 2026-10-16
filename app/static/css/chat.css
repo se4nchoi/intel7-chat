@@ -93,6 +93,18 @@
 }
 
 /* 메시지 목록 */
+.new-messages-btn {
+  align-self: center;
+  flex-shrink: 0;
+  margin: 4px 12px;
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+}
+
 .message-list {
   flex: 1;
   min-height: 0;

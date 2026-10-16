@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def shared_application_loop(monkeypatch):
     """Concurrent test sockets must use one app loop, as they do in Uvicorn."""
     import anyio

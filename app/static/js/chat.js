@@ -9,6 +9,7 @@ import { toggleMessagePin } from './pins.js';
 import { displayNickname, userDirectory } from './dm.js';
 import { channelsDirectory } from './channels.js';
 import { refreshStorageWarning } from './auth.js';
+import { scrollToLatest } from './message_scroll.js';
 
 export const replyTargets = new Map();
 export const pendingAttachments = new Map();
@@ -698,9 +699,7 @@ export function renderMessages(messages = []) {
 
 
 export function scrollBottom() {
-  const messageListEl = document.getElementById('message-list');
-  if (!messageListEl) return;
-  messageListEl.scrollTop = messageListEl.scrollHeight;
+  scrollToLatest();
 }
 
 export function isImageFile(file, filename) {

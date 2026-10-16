@@ -1,6 +1,7 @@
 """FastAPI server for a persistent authenticated classroom LAN chat."""
 from __future__ import annotations
 import asyncio
+import anyio
 import hashlib
 import ipaddress
 import json
@@ -60,6 +61,8 @@ from app.janggi_manager import janggi_manager
 from app.omok_manager import omok_manager
 from app.othello_manager import othello_manager
 from app.screenshare import screenshare_manager, normalize_room_id
+from app.asyncio_errors import install_disconnect_handler
+from app.realtime import ManagedSocket
 
 CONFIG = load_config()
 configure_storage(CONFIG.data_path, CONFIG.database_limit_bytes)
@@ -69,7 +72,7 @@ MAX_ATTACHMENTS_PER_MESSAGE = 5
 MAX_REPLY_CONTENT_LEN = 180
 MAX_RAW_MESSAGE_LEN = 65536
 MAX_CONNECTIONS_TOTAL = 50
-MAX_CONNECTIONS_PER_IP = 4
+# This trusted LAN permits multiple people/tabs behind the same IP.
 RATE_LIMIT_MESSAGES = 30
 RATE_LIMIT_WINDOW_SECONDS = 10
 # One presenter sends offers and several ICE candidates to every viewer.
@@ -83,6 +86,7 @@ UPLOAD_RATE_LIMIT = 8
 UPLOAD_RATE_WINDOW_SECONDS = 60
 LOGIN_RATE_LIMIT = 12
 LOGIN_RATE_WINDOW_SECONDS = 300
+RATE_LIMIT_CLEANUP_INTERVAL = 60
 MAX_AUTH_BODY_BYTES = 16 * 1024
 PUBLIC_HISTORY_PAGE_SIZE = 50
 DM_HISTORY_PAGE_SIZE = 30
@@ -94,6 +98,26 @@ BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = CONFIG.data_path / "uploads"
 QUIZ_SOURCES_DIR = CONFIG.data_path / "quiz_sources"
 QUIZ_IMAGES_DIR = CONFIG.data_path / "quiz_images"
+
+
+def compute_asset_version() -> str:
+    """Content fingerprint of the frontend, computed once per server start.
+
+    Sent to clients on WebSocket connect; a client that sees a different value
+    after reconnecting (i.e. after a restart with updated files) reloads itself.
+    """
+    digest = hashlib.sha1()
+    for root in (BASE_DIR / "static", BASE_DIR / "templates"):
+        for path in sorted(p for p in root.rglob("*") if p.is_file()):
+            try:
+                digest.update(str(path.relative_to(BASE_DIR)).encode())
+                digest.update(path.read_bytes())
+            except OSError:
+                continue
+    return digest.hexdigest()[:12]
+
+
+ASSET_VERSION = compute_asset_version()
 EXPLICIT_ALLOWED_HOSTS = {h.strip().casefold() for h in
     os.getenv("CLASSROOM_ALLOWED_HOSTS", "").split(",") if h.strip()}
 BLOCKED_UPLOAD_SUFFIXES = {".app",".bat",".cmd",".com",".cpl",".dll",".dmg",".exe",".hta",
@@ -103,6 +127,21 @@ BLOCKED_UPLOAD_SUFFIXES = {".app",".bat",".cmd",".com",".cpl",".dll",".dmg",".ex
 DUMMY_LOGIN_HASH = hash_secret("bamboochat-dummy-login-value")
 logger = logging.getLogger("bamboochat")
 upload_lock = asyncio.Lock()
+# Queue expensive password work instead of rejecting a classroom login burst.
+password_work_slots = asyncio.Semaphore(4)
+
+
+async def run_password_work(function, *args):
+    async with password_work_slots:
+        work = asyncio.create_task(asyncio.to_thread(function, *args))
+        try:
+            return await asyncio.shield(work)
+        except asyncio.CancelledError:
+            # A canceled request cannot stop the native hash operation. Keep its
+            # slot occupied until the thread finishes, including ASGI teardown.
+            with anyio.CancelScope(shield=True):
+                await asyncio.gather(work, return_exceptions=True)
+            raise
 
 @dataclass(frozen=True)
 class ClientInfo:
@@ -167,6 +206,31 @@ def sliding_window_allowed(registry: Dict[str,Deque[float]], key: str, limit: in
         return False
     values.append(current)
     return True
+
+
+def prune_rate_limits(now: Optional[float] = None) -> int:
+    """Drop expired timestamps and empty keys without resetting active budgets."""
+    current = time.monotonic() if now is None else now
+    removed = 0
+    for registry, window in (
+        (message_timestamps, RATE_LIMIT_WINDOW_SECONDS),
+        (screenshare_timestamps, RATE_LIMIT_WINDOW_SECONDS),
+        (upload_timestamps, UPLOAD_RATE_WINDOW_SECONDS),
+        (login_timestamps, LOGIN_RATE_WINDOW_SECONDS),
+    ):
+        for key, values in list(registry.items()):
+            while values and values[0] <= current - window:
+                values.popleft()
+            if not values:
+                del registry[key]
+                removed += 1
+    return removed
+
+
+async def maintain_rate_limits():
+    while True:
+        await asyncio.sleep(RATE_LIMIT_CLEANUP_INTERVAL)
+        prune_rate_limits()
 
 def clean_reply(value) -> Optional[dict]:
     if not isinstance(value, dict):
@@ -319,6 +383,7 @@ def account_public(user: dict) -> dict:
             "current_ip": current_user_ip(user["id"])}
 
 async def disconnect_user(user_id: int, reason: str) -> None:
+    await ManagedSocket.disconnect(user_id=user_id, reason=reason)
     targets = [ws for ws, info in connected_clients.items() if info.user_id == user_id]
     for ws in targets:
         try:
@@ -333,8 +398,6 @@ def set_session_cookie(response: Response, raw_token: str, request: Request) -> 
 def connection_limit_reason(ip: str) -> str:
     if len(connected_clients)>=MAX_CONNECTIONS_TOTAL:
         return "서버의 최대 접속 인원에 도달했습니다."
-    if sum(info.ip==ip for info in connected_clients.values())>=MAX_CONNECTIONS_PER_IP:
-        return "같은 기기에서 너무 많은 연결이 열려 있습니다."
     return ""
 
 async def broadcast(payload: dict) -> None:
@@ -418,7 +481,16 @@ async def lifespan(app: FastAPI):
     QUIZ_IMAGES_DIR.mkdir(parents=True,exist_ok=True)
     prune_expired_sessions()
     logger.info("Persistent storage initialized at %s", CONFIG.data_path)
-    yield
+    loop = asyncio.get_running_loop()
+    previous_handler = install_disconnect_handler(loop)
+    maintenance = asyncio.create_task(maintain_rate_limits(), name="rate-limit-cleanup")
+    try:
+        yield
+    finally:
+        maintenance.cancel()
+        await asyncio.gather(maintenance, return_exceptions=True)
+        await asyncio.gather(*(socket.shutdown() for socket in list(ManagedSocket.active)))
+        loop.set_exception_handler(previous_handler)
 
 app=FastAPI(title=SERVICE_NAME,lifespan=lifespan,docs_url=None,redoc_url=None,openapi_url=None)
 
@@ -482,6 +554,7 @@ async def websocket_endpoint(ws: WebSocket):
     if reason:
         await ws.close(code=1013,reason=reason); return
     await ws.accept()
+    ws = ManagedSocket(ws, token_hash(ws.cookies.get(SESSION_COOKIE, "")), user["id"], get_session_user)
     info=ClientInfo(user["id"],user["username"],user["role"],ip)
     connected_clients[ws]=info; user_registry[info.username].add(ws)
     logger.info("Connected user=%s ip=%s",info.user_id,ip)
@@ -491,7 +564,7 @@ async def websocket_endpoint(ws: WebSocket):
         public_candidates = get_recent_messages(PUBLIC_HISTORY_PAGE_SIZE + 1)
         public_history = public_candidates[-PUBLIC_HISTORY_PAGE_SIZE:]
         for message in public_history:
-            await ws.send_text(json.dumps(
+            await ws.send_initial_text(json.dumps(
                 {"type":"chat", "history":True, **with_mentions(message, users)}, ensure_ascii=False
             ))
         dm_candidates = get_recent_direct_messages(info.user_id, DM_HISTORY_PAGE_SIZE + 1)
@@ -507,7 +580,7 @@ async def websocket_endpoint(ws: WebSocket):
         dm_history = [message for message in dm_candidates
                       if message["message_id"] in selected_dm_ids]
         for message in dm_history:
-            await ws.send_text(json.dumps({"type":"dm", "history":True, **message}, ensure_ascii=False))
+            await ws.send_initial_text(json.dumps({"type":"dm", "history":True, **message}, ensure_ascii=False))
         states = get_user_conversation_states(info.user_id)
         unread_counts = get_user_unread_counts(info.user_id)
         ss_sessions = await screenshare_manager.get_all_sessions(for_username=info.username)
@@ -521,6 +594,7 @@ async def websocket_endpoint(ws: WebSocket):
             "screenshare": ss_sessions,
             "screenshares": ss_sessions,
             "client_id": info.client_id,
+            "asset_version": ASSET_VERSION,
         },ensure_ascii=False))
         while True:
             raw=await ws.receive_text()
@@ -764,46 +838,48 @@ async def websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        _remove_client(ws)
-        owned_rooms = [rid for rid, session in screenshare_manager.sessions.items()
-                       if session.get("presenter_client_id") == info.client_id]
-        for rid in owned_rooms:
-            for session in await screenshare_manager.stop_session(rid, info.user_id):
-                await notify_screenshare_event(rid, {
-                    "type": "screenshare_stopped", "channel_id": rid,
-                    "user_id": info.user_id, "session_id": session["session_id"],
-                })
-        viewed_rooms = [rid for rid, clients in screenshare_manager.viewer_clients.items()
-                        if info.client_id in clients]
-        for rid in viewed_rooms:
-            count = await screenshare_manager.remove_viewer(rid, info.user_id, info.client_id)
-            session = screenshare_manager.sessions.get(rid)
-            if session:
-                await send_to_screenshare_client(session["user_id"], session.get("presenter_client_id"), {
-                    "type": "screenshare_viewer_left", "channel_id": rid,
-                    "viewer_user_id": info.user_id, "viewer_client_id": info.client_id,
-                })
-                await notify_screenshare_event(rid, {
-                    "type": "screenshare_viewers_update", "channel_id": rid, "viewer_count": count,
-                })
-        user_has_other_sockets = any(c.user_id == info.user_id for c in connected_clients.values())
-        if not user_has_other_sockets:
-            stopped_list = await screenshare_manager.stop_session(user_id=info.user_id)
-            for s in stopped_list:
-                await notify_screenshare_event(s["channel_id"], {
-                    "type": "screenshare_stopped",
-                    "channel_id": s["channel_id"],
-                    "user_id": s["user_id"],
-                })
-            affected = await screenshare_manager.remove_viewer_from_all(info.user_id)
-            for cid, count in affected.items():
-                await notify_screenshare_event(cid, {
-                    "type": "screenshare_viewers_update",
-                    "channel_id": cid,
-                    "viewer_count": count,
-                })
-        await broadcast_presence(); await broadcast_users()
-        logger.info("Disconnected user=%s ip=%s",info.user_id,ip)
+        with anyio.CancelScope(shield=True):
+            await ws.shutdown()
+            _remove_client(ws)
+            owned_rooms = [rid for rid, session in screenshare_manager.sessions.items()
+                           if session.get("presenter_client_id") == info.client_id]
+            for rid in owned_rooms:
+                for session in await screenshare_manager.stop_session(rid, info.user_id):
+                    await notify_screenshare_event(rid, {
+                        "type": "screenshare_stopped", "channel_id": rid,
+                        "user_id": info.user_id, "session_id": session["session_id"],
+                    })
+            viewed_rooms = [rid for rid, clients in screenshare_manager.viewer_clients.items()
+                            if info.client_id in clients]
+            for rid in viewed_rooms:
+                count = await screenshare_manager.remove_viewer(rid, info.user_id, info.client_id)
+                session = screenshare_manager.sessions.get(rid)
+                if session:
+                    await send_to_screenshare_client(session["user_id"], session.get("presenter_client_id"), {
+                        "type": "screenshare_viewer_left", "channel_id": rid,
+                        "viewer_user_id": info.user_id, "viewer_client_id": info.client_id,
+                    })
+                    await notify_screenshare_event(rid, {
+                        "type": "screenshare_viewers_update", "channel_id": rid, "viewer_count": count,
+                    })
+            user_has_other_sockets = any(c.user_id == info.user_id for c in connected_clients.values())
+            if not user_has_other_sockets:
+                stopped_list = await screenshare_manager.stop_session(user_id=info.user_id)
+                for s in stopped_list:
+                    await notify_screenshare_event(s["channel_id"], {
+                        "type": "screenshare_stopped",
+                        "channel_id": s["channel_id"],
+                        "user_id": s["user_id"],
+                    })
+                affected = await screenshare_manager.remove_viewer_from_all(info.user_id)
+                for cid, count in affected.items():
+                    await notify_screenshare_event(cid, {
+                        "type": "screenshare_viewers_update",
+                        "channel_id": cid,
+                        "viewer_count": count,
+                    })
+            await broadcast_presence(); await broadcast_users()
+            logger.info("Disconnected user=%s ip=%s",info.user_id,ip)
 
 @app.websocket("/ws/chess")
 async def chess_websocket_endpoint(ws: WebSocket):
@@ -816,11 +892,11 @@ async def chess_websocket_endpoint(ws: WebSocket):
         await ws.close(code=1008, reason="로그인이 필요합니다.")
         return
     await ws.accept()
+    ws = ManagedSocket(ws, token_hash(ws.cookies.get(SESSION_COOKIE, "")), user["id"], get_session_user)
     chess_manager.register_client(ws, user)
     chess_manager.start_clock_monitor()
-    await ws.send_text(json.dumps({"type": "lobby_update", "rooms": chess_manager.get_lobby_summary()}, ensure_ascii=False))
-
     try:
+        await ws.send_text(json.dumps({"type": "lobby_update", "rooms": chess_manager.get_lobby_summary()}, ensure_ascii=False))
         while True:
             raw = await ws.receive_text()
             if len(raw) > MAX_RAW_MESSAGE_LEN:
@@ -871,7 +947,9 @@ async def chess_websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        await chess_manager.unregister_client(ws)
+        with anyio.CancelScope(shield=True):
+            await ws.shutdown()
+            await chess_manager.unregister_client(ws)
 
 
 @app.websocket("/ws/janggi")
@@ -885,11 +963,11 @@ async def janggi_websocket_endpoint(ws: WebSocket):
         await ws.close(code=1008, reason="로그인이 필요합니다.")
         return
     await ws.accept()
+    ws = ManagedSocket(ws, token_hash(ws.cookies.get(SESSION_COOKIE, "")), user["id"], get_session_user)
     janggi_manager.register_client(ws, user)
     janggi_manager.start_clock_monitor()
-    await ws.send_text(json.dumps({"type": "lobby_update", "rooms": janggi_manager.get_lobby_summary()}, ensure_ascii=False))
-
     try:
+        await ws.send_text(json.dumps({"type": "lobby_update", "rooms": janggi_manager.get_lobby_summary()}, ensure_ascii=False))
         while True:
             raw = await ws.receive_text()
             if len(raw) > MAX_RAW_MESSAGE_LEN:
@@ -938,7 +1016,9 @@ async def janggi_websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        await janggi_manager.unregister_client(ws)
+        with anyio.CancelScope(shield=True):
+            await ws.shutdown()
+            await janggi_manager.unregister_client(ws)
 
 
 @app.websocket("/ws/omok")
@@ -952,11 +1032,11 @@ async def omok_websocket_endpoint(ws: WebSocket):
         await ws.close(code=1008, reason="로그인이 필요합니다.")
         return
     await ws.accept()
+    ws = ManagedSocket(ws, token_hash(ws.cookies.get(SESSION_COOKIE, "")), user["id"], get_session_user)
     omok_manager.register_client(ws, user)
     omok_manager.start_clock_monitor()
-    await ws.send_text(json.dumps({"type": "lobby_update", "rooms": omok_manager.get_lobby_summary()}, ensure_ascii=False))
-
     try:
+        await ws.send_text(json.dumps({"type": "lobby_update", "rooms": omok_manager.get_lobby_summary()}, ensure_ascii=False))
         while True:
             raw = await ws.receive_text()
             if len(raw) > MAX_RAW_MESSAGE_LEN:
@@ -999,7 +1079,9 @@ async def omok_websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        await omok_manager.unregister_client(ws)
+        with anyio.CancelScope(shield=True):
+            await ws.shutdown()
+            await omok_manager.unregister_client(ws)
 
 
 @app.websocket("/ws/othello")
@@ -1013,11 +1095,11 @@ async def othello_websocket_endpoint(ws: WebSocket):
         await ws.close(code=1008, reason="로그인이 필요합니다.")
         return
     await ws.accept()
+    ws = ManagedSocket(ws, token_hash(ws.cookies.get(SESSION_COOKIE, "")), user["id"], get_session_user)
     othello_manager.register_client(ws, user)
     othello_manager.start_clock_monitor()
-    await ws.send_text(json.dumps({"type": "lobby_update", "rooms": othello_manager.get_lobby_summary()}, ensure_ascii=False))
-
     try:
+        await ws.send_text(json.dumps({"type": "lobby_update", "rooms": othello_manager.get_lobby_summary()}, ensure_ascii=False))
         while True:
             raw = await ws.receive_text()
             if len(raw) > MAX_RAW_MESSAGE_LEN:
@@ -1062,6 +1144,8 @@ async def othello_websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        await othello_manager.unregister_client(ws)
+        with anyio.CancelScope(shield=True):
+            await ws.shutdown()
+            await othello_manager.unregister_client(ws)
 
 

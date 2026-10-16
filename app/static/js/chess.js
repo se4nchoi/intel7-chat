@@ -268,6 +268,7 @@ export function closeChessModal() {
 let reconnectTimer = null;
 
 function ensureChessWs() {
+  if (!state.currentUser) return;
   if (chessWs && (chessWs.readyState === WebSocket.OPEN || chessWs.readyState === WebSocket.CONNECTING)) {
     return;
   }
@@ -275,7 +276,10 @@ function ensureChessWs() {
   const url = `${protocol}//${window.location.host}/ws/chess`;
   chessWs = new WebSocket(url);
 
+  const socket = chessWs;
+
   chessWs.onopen = () => {
+    if (chessWs !== socket || !state.currentUser) return;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -299,6 +303,7 @@ function ensureChessWs() {
   };
 
   chessWs.onmessage = (e) => {
+    if (chessWs !== socket || !state.currentUser) return;
     try {
       const data = JSON.parse(e.data);
       handleWsMessage(data);
@@ -307,8 +312,10 @@ function ensureChessWs() {
     }
   };
 
-  chessWs.onclose = () => {
+  chessWs.onclose = (event) => {
+    if (chessWs !== socket) return;
     if (clockInterval) clearInterval(clockInterval);
+    if (event.code === 1008 || !state.currentUser) return;
     const modal = $('chess-modal');
     if (modal && !modal.classList.contains('hidden')) {
       if (!reconnectTimer) {

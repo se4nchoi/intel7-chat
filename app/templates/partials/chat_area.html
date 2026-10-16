@@ -71,6 +71,11 @@
       <div id="ss-canvas-container" class="ss-canvas-container">
         <video id="screenshare-video" autoplay playsinline></video>
       </div>
+      <div id="ss-connection-status" class="ss-connection-status hidden" role="status" aria-live="polite" aria-atomic="true">
+        <span class="ss-connection-spinner" aria-hidden="true"></span>
+        <span id="ss-connection-message">화면 공유에 연결하고 있습니다…</span>
+        <button id="ss-connection-retry" class="ss-action-btn hidden" type="button">다시 연결</button>
+      </div>
       <!-- 플로팅 줌 / PiP 도구 모음 -->
       <div class="ss-floating-toolbar">
         <button id="ss-btn-zoom-out" class="ss-tool-btn" type="button" title="축소 (−)">−</button>
@@ -109,6 +114,7 @@
   <main id="message-list" class="message-list" role="log" aria-live="polite" aria-relevant="additions">
     <button id="load-older-btn" class="load-older-btn hidden" type="button">↑ 이전 메시지 더 불러오기</button>
   </main>
+  <button id="new-messages-btn" class="new-messages-btn hidden" type="button">↓ 새 메시지 · 최신으로 이동</button>
   <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true"><div>파일 첨부</div></div>
   {% include 'partials/composer.html' %}
 </section>

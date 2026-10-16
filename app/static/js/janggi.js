@@ -147,17 +147,22 @@ export function initJanggiListeners() {
 }
 
 function ensureJanggiConnected() {
+  if (!state.currentUser) return;
   if (jgWs && (jgWs.readyState === WebSocket.OPEN || jgWs.readyState === WebSocket.CONNECTING)) {
     return;
   }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   jgWs = new WebSocket(`${protocol}//${window.location.host}/ws/janggi`);
 
+  const socket = jgWs;
+
   jgWs.onopen = () => {
+    if (jgWs !== socket || !state.currentUser) return;
     fetchJanggiRooms();
   };
 
   jgWs.onmessage = (event) => {
+    if (jgWs !== socket || !state.currentUser) return;
     try {
       const msg = JSON.parse(event.data);
       handleJgMessage(msg);
@@ -166,8 +171,9 @@ function ensureJanggiConnected() {
     }
   };
 
-  jgWs.onclose = () => {
-    setTimeout(ensureJanggiConnected, 3000);
+  jgWs.onclose = (event) => {
+    if (jgWs !== socket) return;
+    if (event.code !== 1008 && state.currentUser) setTimeout(ensureJanggiConnected, 3000);
   };
 }
 

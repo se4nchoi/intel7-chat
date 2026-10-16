@@ -134,17 +134,22 @@ export function initOmokListeners() {
 }
 
 function ensureOmokConnected() {
+  if (!state.currentUser) return;
   if (omWs && (omWs.readyState === WebSocket.OPEN || omWs.readyState === WebSocket.CONNECTING)) {
     return;
   }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   omWs = new WebSocket(`${protocol}//${window.location.host}/ws/omok`);
 
+  const socket = omWs;
+
   omWs.onopen = () => {
+    if (omWs !== socket || !state.currentUser) return;
     fetchOmokRooms();
   };
 
   omWs.onmessage = (event) => {
+    if (omWs !== socket || !state.currentUser) return;
     try {
       const msg = JSON.parse(event.data);
       handleOmMessage(msg);
@@ -153,8 +158,9 @@ function ensureOmokConnected() {
     }
   };
 
-  omWs.onclose = () => {
-    setTimeout(ensureOmokConnected, 3000);
+  omWs.onclose = (event) => {
+    if (omWs !== socket) return;
+    if (event.code !== 1008 && state.currentUser) setTimeout(ensureOmokConnected, 3000);
   };
 }
 

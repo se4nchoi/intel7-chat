@@ -18,6 +18,12 @@ jobs:
       - name: Check JavaScript syntax
         run: node scripts/check_js_syntax.mjs
 
+      - name: Test screen-sharing connection lifecycle
+        run: node --experimental-vm-modules scripts/test_screenshare.mjs
+
+      - name: Test chat reconnect and reading position
+        run: node --experimental-vm-modules scripts/test_chat_reliability.mjs
+
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true

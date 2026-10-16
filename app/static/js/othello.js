@@ -115,17 +115,22 @@ export function initOthelloListeners() {
 }
 
 function ensureOthelloConnected() {
+  if (!state.currentUser) return;
   if (othWs && (othWs.readyState === WebSocket.OPEN || othWs.readyState === WebSocket.CONNECTING)) {
     return;
   }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   othWs = new WebSocket(`${protocol}//${window.location.host}/ws/othello`);
 
+  const socket = othWs;
+
   othWs.onopen = () => {
+    if (othWs !== socket || !state.currentUser) return;
     fetchOthelloRooms();
   };
 
   othWs.onmessage = (event) => {
+    if (othWs !== socket || !state.currentUser) return;
     try {
       const msg = JSON.parse(event.data);
       handleOthMessage(msg);
@@ -134,7 +139,8 @@ function ensureOthelloConnected() {
     }
   };
 
-  othWs.onclose = () => {
+  othWs.onclose = (event) => {
+    if (othWs !== socket) return;
     othWs = null;
   };
 }

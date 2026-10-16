@@ -28,6 +28,7 @@ import {
   clearAllPendingAttachments,
 } from './chat.js';
 import { initWebSocket, sendWebSocketMessage, applyServerUnreadCounts } from './ws.js';
+import { isNearLatest } from './message_scroll.js';
 import { initSearchListeners, showSearchHint } from './search.js';
 import { fetchActivePinnedMessages, initPinsListeners } from './pins.js';
 import {
@@ -154,7 +155,7 @@ async function acknowledgeConversation(type, id, lastReadMessageId) {
 }
 
 function checkAndAckActiveConversation() {
-  if (!isChatActiveAndFocused() || !state.activeRoom.id) return;
+  if (!isChatActiveAndFocused() || !state.activeRoom.id || !isNearLatest()) return;
   const msgList = document.getElementById('message-list');
   if (!msgList) return;
   const msgRows = msgList.querySelectorAll('.msg-row[data-message-id]');
@@ -358,6 +359,8 @@ async function loadOlderMessages() {
 // --- App Bootstrap ---
 function initApp() {
   initTouchableViewport();
+  document.getElementById('message-list')?.addEventListener('scroll', checkAndAckActiveConversation, { passive: true });
+  document.getElementById('new-messages-btn')?.addEventListener('click', checkAndAckActiveConversation);
   const sidebarToggle = document.getElementById('sidebar-toggle');
 
   const sidebar = document.getElementById('sidebar');
@@ -638,7 +641,7 @@ function initApp() {
           ? state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(message.channel_id)
           : state.activeRoom.type === 'dm'
             && [message.from_nick, message.to_nick].includes(String(state.activeRoom.id));
-        if (isActive && isChatActiveAndFocused()) {
+        if (isActive && isChatActiveAndFocused() && isNearLatest()) {
           acknowledgeConversation(state.activeRoom.type, state.activeRoom.id, message.message_id);
         }
       },

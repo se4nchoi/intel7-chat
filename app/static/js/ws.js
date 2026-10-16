@@ -11,6 +11,7 @@ import { displayNickname, renderOnlineList, getOrCreateDm, userDirectory } from 
 
 import { getOrCreateChannel, channelsDirectory, updateChannelLastNotification } from './channels.js';
 import { appendMessageNode, setMentionUsers, refreshRenderedAuthorNames } from './chat.js';
+import { appendWithScroll, initMessageScroll, isNearLatest } from './message_scroll.js';
 import {
   onScreenshareStarted,
   onScreenshareStopped,
@@ -21,11 +22,54 @@ import {
   syncAllActiveSessions,
   onScreenshareDisconnected,
   handleScreenshareError,
+  screenshareState,
 } from './screenshare.js';
 
 const RECONNECT_DELAY = 3000;
 let reconnectTimer = null;
 let activeCallbacks = {};
+
+// --- Auto-reload on redeploy ---
+// The server sends a fingerprint of its frontend files on every connect.
+// First value seen = the code this page is running. A different value after a
+// reconnect means the server restarted with new files -> reload to pick them up.
+let loadedAssetVersion = null;
+let assetReloadTimer = null;
+let assetReloadNotified = false;
+
+function isUserBusy() {
+  // Don't throw away a half-typed message or kill an active screen share.
+  const el = document.activeElement;
+  if (el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|)$/i.test(el.type || '')))
+      && String(el.value || '').trim()) return true;
+  if (String(document.getElementById('msg-input')?.value || '').trim()) return true;
+  return Boolean(screenshareState.presentingChannelId);
+}
+
+function scheduleAssetReload() {
+  if (assetReloadTimer) return;
+  const attempt = () => {
+    if (isUserBusy()) {
+      if (!assetReloadNotified) {
+        assetReloadNotified = true;
+        showToast(screenshareState.presentingChannelId
+          ? '새 버전이 배포되었습니다. 화면 공유를 종료하면 자동으로 새로고침합니다.'
+          : '새 버전이 배포되었습니다. 입력을 마치면 자동으로 새로고침합니다.', 'info');
+      }
+      assetReloadTimer = setTimeout(attempt, 5000);
+      return;
+    }
+    location.reload();
+  };
+  // Spread reloads over a few seconds so the whole class doesn't hit the server at once.
+  assetReloadTimer = setTimeout(attempt, 1000 + Math.random() * 4000);
+}
+
+function checkAssetVersion(version) {
+  if (!version) return;
+  if (loadedAssetVersion === null) { loadedAssetVersion = version; return; }
+  if (version !== loadedAssetVersion) scheduleAssetReload();
+}
 
 export function setConnected(connected) {
   state.isWsConnected = connected === true;
@@ -65,7 +109,7 @@ export function applyServerUnreadCounts(unreadCounts) {
     }
   });
 
-  if (isChatActiveAndFocused() && state.activeRoom.id) {
+  if (isChatActiveAndFocused() && state.activeRoom.id && isNearLatest()) {
     if (state.activeRoom.type === 'channel') {
       const currentChanCount = state.unreadCounts.channels[state.activeRoom.id] || 0;
       if (currentChanCount > 0) {
@@ -89,6 +133,9 @@ export function applyServerUnreadCounts(unreadCounts) {
 }
 
 export function initWebSocket(callbacks = {}) {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  initMessageScroll();
   activeCallbacks = callbacks;
   if (state.socket) {
     state.socket.onclose = null;
@@ -109,6 +156,7 @@ export function initWebSocket(callbacks = {}) {
   };
 
   ws.onmessage = (event) => {
+    if (state.socket !== ws) return;
     let data = {};
     try {
       data = JSON.parse(event.data);
@@ -147,9 +195,10 @@ export function initWebSocket(callbacks = {}) {
         if (state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(chanId)) {
           const existing = document.querySelector(`.msg-row[data-message-id="${chatMessage.message_id}"]`);
           if (!existing) {
-            appendMessageNode(chatMessage, null);
-            const msgList = document.getElementById('message-list');
-            if (msgList) msgList.scrollTop = msgList.scrollHeight;
+            appendWithScroll(() => appendMessageNode(chatMessage, null), {
+              own: Number(data.author_id) === myUserId || data.nickname === myNick,
+              history: Boolean(data.history),
+            });
           }
         }
 
@@ -227,9 +276,10 @@ export function initWebSocket(callbacks = {}) {
         if (state.activeRoom.type === 'dm' && (state.activeRoom.id === partner || state.activeRoom.id === data.from_nick)) {
           const existing = document.querySelector(`.msg-row[data-message-id="${dmMessage.message_id}"]`);
           if (!existing) {
-            appendMessageNode(dmMessage, null);
-            const msgList = document.getElementById('message-list');
-            if (msgList) msgList.scrollTop = msgList.scrollHeight;
+            appendWithScroll(() => appendMessageNode(dmMessage, null), {
+              own: Number(data.from_user_id) === myUserId || data.from_nick === myNick,
+              history: Boolean(data.history),
+            });
           }
         }
 
@@ -322,6 +372,7 @@ export function initWebSocket(callbacks = {}) {
       }
 
       case 'history_ready': {
+        checkAssetVersion(data.asset_version);
         const dmHasOlder = data.dm_has_older && typeof data.dm_has_older === 'object' ? data.dm_has_older : {};
         Object.entries(dmHasOlder).forEach(([partner, hasOlder]) => {
           getOrCreateDm(partner).hasOlder = Boolean(hasOlder);
@@ -493,13 +544,19 @@ function scheduleReconnect(callbacks) {
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     if (state.currentUser) initWebSocket(reconnectCallbacks);
-  }, RECONNECT_DELAY);
+  }, Math.min(30000, RECONNECT_DELAY * (2 ** Math.min(state.reconnectAttempts || 0, 4))) * (0.8 + Math.random() * 0.4));
+  state.reconnectAttempts = (state.reconnectAttempts || 0) + 1;
 }
 
 export function sendWebSocketMessage(payload) {
   if (state.socket && state.socket.readyState === WebSocket.OPEN) {
-    state.socket.send(JSON.stringify(payload));
-    return true;
+    try {
+      state.socket.send(JSON.stringify(payload));
+      return true;
+    } catch (err) {
+      console.warn('WebSocket send failed:', err);
+      setConnected(false);
+    }
   }
   showToast('서버와 연결이 끊겨 있습니다. 재연결을 시도합니다.', 'warning');
   if (state.currentUser && !reconnectTimer) scheduleReconnect(activeCallbacks);

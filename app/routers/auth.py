@@ -1,6 +1,5 @@
 """Authentication and user session routes."""
 from __future__ import annotations
-import asyncio
 from datetime import datetime, timedelta, timezone
 import sqlite3
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -37,9 +36,9 @@ async def register(request: Request):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     enrollment = str(data.get("enrollment_code", ""))
-    if not await asyncio.to_thread(verify_secret, main.CONFIG.enrollment_code_hash, enrollment):
+    if not await main.run_password_work(verify_secret, main.CONFIG.enrollment_code_hash, enrollment):
         raise HTTPException(403, "가입 코드가 올바르지 않습니다.")
-    password_hash = await asyncio.to_thread(hash_secret, password)
+    password_hash = await main.run_password_work(hash_secret, password)
     try:
         user = create_user(username, password_hash)
     except sqlite3.IntegrityError as exc:
@@ -67,14 +66,14 @@ async def login(request: Request):
         raise HTTPException(429, "로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.")
     user = get_user_by_username(username)
     candidate_hash = user["password_hash"] if user else main.DUMMY_LOGIN_HASH
-    password_ok = await asyncio.to_thread(verify_secret, candidate_hash, password)
+    password_ok = await main.run_password_work(verify_secret, candidate_hash, password)
     if user and password_ok and not user["active"]:
         raise HTTPException(401, "이 아이디는 비활성화되어 있습니다. 관리자에게 문의하세요.")
     valid = bool(user and user["active"] and password_ok)
     if not valid:
         raise HTTPException(401, "아이디 또는 비밀번호가 올바르지 않습니다.")
     if secret_needs_rehash(user["password_hash"]):
-        update_password_hash(user["id"], await asyncio.to_thread(hash_secret, password))
+        update_password_hash(user["id"], await main.run_password_work(hash_secret, password))
     raw = new_session_token()
     expiry = (datetime.now(timezone.utc) + timedelta(hours=main.CONFIG.session_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
     create_session(token_hash(raw), user["id"], expiry, client_ip=ip)
@@ -91,6 +90,7 @@ async def logout(request: Request):
     raw = request.cookies.get(main.SESSION_COOKIE, "")
     if raw:
         delete_session(token_hash(raw))
+        await main.ManagedSocket.disconnect(session_hash=token_hash(raw), reason="Logged out")
     response = Response(status_code=204)
     response.delete_cookie(main.SESSION_COOKIE, path="/", samesite="strict")
     return response

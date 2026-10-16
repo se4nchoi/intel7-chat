@@ -1,6 +1,5 @@
 """System administration and user management routes."""
 from __future__ import annotations
-import asyncio
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.auth import hash_secret, validate_display_name, validate_password
@@ -52,7 +51,7 @@ async def admin_enrollment_code(request: Request):
         validate_password(code)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    main.CONFIG.enrollment_code_hash = await asyncio.to_thread(hash_secret, code)
+    main.CONFIG.enrollment_code_hash = await main.run_password_work(hash_secret, code)
     save_config(main.CONFIG)
     return Response(status_code=204)
 
@@ -97,7 +96,7 @@ async def admin_update_user(user_id: int, request: Request):
     if requested_active != bool(target["active"]):
         set_user_active(user_id, requested_active)
     if password_changed:
-        update_password_hash(user_id, await asyncio.to_thread(hash_secret, str(new_password)))
+        update_password_hash(user_id, await main.run_password_work(hash_secret, str(new_password)))
         delete_user_sessions(user_id)
 
     new_display_name = data.get("display_name")

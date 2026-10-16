@@ -34,6 +34,52 @@ export function getCurrentRoomId() {
   return null;
 }
 
+// --- Encoding Budget ---
+// Mesh topology: the presenter uploads one separately-encoded copy per viewer,
+// so total upload = per-viewer bitrate x viewer count. Keep the TOTAL bounded
+// so a full classroom does not saturate the presenter's uplink / shared Wi-Fi.
+const SS_TOTAL_UPLOAD_BUDGET = 20_000_000; // bits/s across all viewers
+const SS_MAX_PER_VIEWER = 1_500_000;
+const SS_MIN_PER_VIEWER = 400_000;
+const SS_MAX_FPS = 15;
+
+function perViewerBitrate(viewerCount) {
+  const n = Math.max(1, viewerCount);
+  return Math.round(Math.min(SS_MAX_PER_VIEWER,
+    Math.max(SS_MIN_PER_VIEWER, SS_TOTAL_UPLOAD_BUDGET / n)));
+}
+
+// Prefer H.264 so the presenter can use the GPU's hardware encoder instead of
+// running one software VP8 encoder per viewer. Codecs are only REORDERED (never
+// removed), so peers without H.264 still negotiate VP8/VP9 as before, and
+// Chrome falls back to software H.264 if the hardware encoder can't open.
+// Set to false to restore the browser default codec order.
+const SS_PREFER_H264 = true;
+
+function preferH264(pc) {
+  if (!SS_PREFER_H264) return;
+  try {
+    const caps = globalThis.RTCRtpSender?.getCapabilities?.('video');
+    if (!caps?.codecs?.length) return;
+    const rank = (c) => {
+      if (c.mimeType.toLowerCase() !== 'video/h264') return 2;
+      const fmtp = c.sdpFmtpLine || '';
+      // packetization-mode=1 + constrained baseline: broadest HW encoder support
+      if (fmtp.includes('packetization-mode=1') && fmtp.includes('profile-level-id=42e0')) return 0;
+      return 1;
+    };
+    const ordered = [...caps.codecs].sort((a, b) => rank(a) - rank(b));
+    if (rank(ordered[0]) === 2) return; // browser has no H.264 at all
+    for (const t of pc.getTransceivers?.() || []) {
+      if (t.sender?.track?.kind === 'video' && typeof t.setCodecPreferences === 'function') {
+        t.setCodecPreferences(ordered);
+      }
+    }
+  } catch (err) {
+    console.debug('Screen-share codec preference unavailable:', err);
+  }
+}
+
 // --- State ---
 export const screenshareState = {
   // Map of normalized roomId (string: e.g. "1", "2", "dm:alice:bob") -> Session object
@@ -50,6 +96,7 @@ export const screenshareState = {
   joinTimer: null,
   retryTimer: null,
   joinAttempts: 0,
+  playbackState: 'idle',
   presentingTitle: '',
   // Pan & Zoom state
   zoom: 1.0,
@@ -88,6 +135,14 @@ let stickyGotoBtn = null;
 let stickyStopBtn = null;
 let helpModal = null;
 let headerToggleBtn = null;
+let connectionStatusEl = null;
+let connectionMessageEl = null;
+let connectionRetryBtn = null;
+
+function setPlaybackState(value) {
+  screenshareState.playbackState = value;
+  updateUIForCurrentRoom();
+}
 
 // --- Initialization ---
 export function initScreenShareUI() {
@@ -108,6 +163,24 @@ export function initScreenShareUI() {
   stickyStopBtn = document.getElementById('ss-sticky-stop-btn');
   helpModal = document.getElementById('screenshare-help-modal');
   headerToggleBtn = document.getElementById('screenshare-toggle-btn');
+  connectionStatusEl = document.getElementById('ss-connection-status');
+  connectionMessageEl = document.getElementById('ss-connection-message');
+  connectionRetryBtn = document.getElementById('ss-connection-retry');
+  connectionRetryBtn?.addEventListener('click', () => {
+    if (screenshareState.playbackState === 'blocked') {
+      videoEl?.play().catch(() => setPlaybackState('blocked'));
+      return;
+    }
+    const roomId = getCurrentRoomId();
+    if (roomId) joinScreenShare(roomId, { force: true });
+  });
+  videoEl?.addEventListener('playing', () => {
+    if (!screenshareState.viewingChannelId || !videoEl.srcObject) return;
+    clearTimeout(screenshareState.joinTimer);
+    clearTimeout(screenshareState.retryTimer);
+    screenshareState.joinAttempts = 0;
+    setPlaybackState('playing');
+  });
 
   // Header button: click to start or focus screenshare in current room
   if (headerToggleBtn) {
@@ -203,10 +276,14 @@ export async function startScreenShare(roomId, customTitle = '') {
   }
 
   try {
+    // 1080p for crisp slide text; 15fps (not 30) halves encoder work per
+    // viewer while still animating GIFs/transitions smoothly.
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: {
         cursor: 'always',
-        frameRate: { ideal: 30, max: 60 }
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
+        frameRate: { ideal: SS_MAX_FPS, max: SS_MAX_FPS }
       },
       audio: false,
     });
@@ -219,6 +296,9 @@ export async function startScreenShare(roomId, customTitle = '') {
     // Handle user stopping stream via browser native bar ("Stop sharing")
     const track = stream.getVideoTracks()[0];
     if (track) {
+      // Default screen-capture handling ('detail') freezes motion under load,
+      // which made slide GIFs appear static for viewers.
+      try { if ('contentHint' in track) track.contentHint = 'motion'; } catch {}
       track.onended = () => {
         stopScreenShare(normId);
       };
@@ -300,20 +380,28 @@ export function joinScreenShare(roomId, { force = false } = {}) {
   if (!normId || !screenshareState.hasSession(normId) ||
       normalizeRoomKey(screenshareState.presentingChannelId) === normId) return;
   if (!force && screenshareState.viewingChannelId === normId) return;
-  if (!force) screenshareState.joinAttempts = 0;
+  if (!force || screenshareState.playbackState === 'failed') screenshareState.joinAttempts = 0;
   if (screenshareState.viewingChannelId && screenshareState.viewingChannelId !== normId) {
     leaveScreenShare(screenshareState.viewingChannelId);
   }
   closePeerConnections('viewer', normId);
+  clearTimeout(screenshareState.joinTimer);
+  clearTimeout(screenshareState.retryTimer);
+  if (videoEl) videoEl.srcObject = null;
 
   const isDm = String(normId).startsWith('dm:');
   const sent = sendWebSocketMessage({
     type: 'screenshare_join',
     channel_id: isDm ? normId : Number(normId),
   });
-  if (!sent) return;
+  if (!sent) {
+    screenshareState.viewingChannelId = null;
+    setPlaybackState('offline');
+    return;
+  }
   screenshareState.viewingChannelId = normId;
   screenshareState.isCollapsed = false;
+  screenshareState.playbackState = force ? 'reconnecting' : 'connecting';
   clearTimeout(screenshareState.joinTimer);
   screenshareState.joinTimer = setTimeout(() => retryViewing(normId), 12000);
 
@@ -332,6 +420,7 @@ export function leaveScreenShare(roomId) {
     clearTimeout(screenshareState.joinTimer);
     clearTimeout(screenshareState.retryTimer);
     screenshareState.joinAttempts = 0;
+    screenshareState.playbackState = 'idle';
     closePeerConnections('viewer', normId);
     if (videoEl) {
       videoEl.srcObject = null;
@@ -377,10 +466,13 @@ function retryViewing(roomId) {
     showToast('화면 연결에 실패했습니다. 화면 공유 버튼을 눌러 다시 연결해 주세요.', 'warning');
     screenshareState.viewingChannelId = null;
     closePeerConnections('viewer', roomId);
+    if (videoEl) videoEl.srcObject = null;
+    screenshareState.playbackState = 'failed';
     updateUIForCurrentRoom();
     return;
   }
   screenshareState.joinAttempts++;
+  setPlaybackState('reconnecting');
   screenshareState.retryTimer = setTimeout(() => joinScreenShare(roomId, { force: true }), 2000);
 }
 
@@ -405,6 +497,8 @@ function createPeer(role, roomId, userId, clientId, sessionId, connectionId) {
     old.onconnectionstatechange = null;
     old.close();
   }
+  // Keep the original connectivity fallback: host candidates alone are not
+  // sufficient on every classroom browser/network configuration.
   const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
   pc.ss = { key, role, roomId, userId, clientId, sessionId, connectionId, timer: null };
   screenshareState.peerConnections.set(key, pc);
@@ -417,12 +511,17 @@ function createPeer(role, roomId, userId, clientId, sessionId, connectionId) {
     if (pc.connectionState === 'connected') {
       clearTimeout(pc.ss.timer);
       if (role === 'viewer') {
-        clearTimeout(screenshareState.joinTimer);
-        clearTimeout(screenshareState.retryTimer);
-        screenshareState.joinAttempts = 0;
+        // Transport connectivity does not guarantee a decoded/playing frame.
+        // Keep the join watchdog until the video element reports playback.
+        if (videoEl?.readyState >= 2 && !videoEl.paused && videoEl.srcObject) {
+          clearTimeout(screenshareState.joinTimer);
+          clearTimeout(screenshareState.retryTimer);
+          setPlaybackState('playing');
+        } else if (screenshareState.playbackState !== 'playing') setPlaybackState('waiting');
       }
       updateUIForCurrentRoom();
     } else if (['failed', 'disconnected'].includes(pc.connectionState)) {
+      if (role === 'viewer') setPlaybackState('reconnecting');
       clearTimeout(pc.ss.timer);
       pc.ss.timer = setTimeout(() => {
         if (role === 'viewer') retryViewing(roomId);
@@ -457,6 +556,9 @@ export async function handleViewerJoined({ channel_id, viewer_user_id, viewer_cl
   });
 
   try {
+    preferH264(pc);
+    // Re-split the upload budget across all viewers (including this new one).
+    await tunePresenterSenders(normId);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     sendPeerSignal(pc, { type: 'offer', sdp: offer.sdp });
@@ -478,7 +580,35 @@ export function handleViewerLeft({ channel_id, viewer_user_id, viewer_client_id 
     pc.onconnectionstatechange = null;
     screenshareState.peerConnections.delete(key);
     screenshareState.pendingCandidates.delete(key);
+    // Fewer viewers -> give the remaining ones more bitrate.
+    tunePresenterSenders(normId).catch(() => {});
   }
+}
+
+async function tunePresenterSenders(roomId) {
+  const peers = [...screenshareState.peerConnections.values()]
+    .filter(pc => pc.ss.role === 'presenter' && pc.ss.roomId === roomId);
+  const bitrate = perViewerBitrate(peers.length);
+  for (const pc of peers) {
+    for (const sender of pc.getSenders?.() || []) {
+      if (sender.track?.kind !== 'video') continue;
+      try {
+        const parameters = sender.getParameters();
+        if (!parameters.encodings?.length) parameters.encodings = [{}];
+        parameters.encodings.forEach(encoding => {
+          encoding.maxBitrate = bitrate;
+          encoding.maxFramerate = SS_MAX_FPS;
+        });
+        // 'balanced' lets the encoder trade a little sharpness AND some fps
+        // under congestion instead of stalling on one axis.
+        parameters.degradationPreference = 'balanced';
+        await sender.setParameters(parameters);
+      } catch (err) {
+        console.debug('Screen-share sender tuning unavailable:', err);
+      }
+    }
+  }
+  console.info('Screen-share bitrate per viewer', { roomId, viewers: peers.length, bitrate });
 }
 
 export function handleSignal(data) {
@@ -512,9 +642,17 @@ async function processSignal({ channel_id, from_user_id, from_client_id, session
     pc.ontrack = (event) => {
       if (screenshareState.peerConnections.get(key) === pc && getCurrentRoomId() === roomId && videoEl && event.streams && event.streams[0]) {
         videoEl.srcObject = event.streams[0];
+        // Optional browser hint: favor interactive latency over a deep buffer.
+        try {
+          if (event.receiver && 'jitterBufferTarget' in event.receiver) event.receiver.jitterBufferTarget = 50;
+        } catch (err) { console.debug('Screen-share buffer tuning unavailable:', err); }
+        setPlaybackState('waiting');
         videoEl.muted = true;
         videoEl.play().catch(err => {
           console.warn('Screen-share playback blocked:', err);
+          if (screenshareState.peerConnections.get(key) !== pc) return;
+          clearTimeout(screenshareState.joinTimer);
+          setPlaybackState('blocked');
           showToast('화면 재생이 차단되었습니다. 화면 공유 버튼을 다시 눌러 주세요.', 'warning');
         });
       }
@@ -685,7 +823,9 @@ export function onScreenshareDisconnected() {
   closeAllPeerConnections();
   screenshareState.viewingChannelId = null;
   screenshareState.joinAttempts = 0;
+  screenshareState.playbackState = 'offline';
   if (!screenshareState.localStream && videoEl) videoEl.srcObject = null;
+  updateUIForCurrentRoom();
 }
 
 export function resetScreenShare() {
@@ -695,6 +835,7 @@ export function resetScreenShare() {
   screenshareState.presentingChannelId = null;
   screenshareState.presentingTitle = '';
   screenshareState.activeSessions.clear();
+  screenshareState.playbackState = 'idle';
   if (videoEl) videoEl.srcObject = null;
   updateUIForCurrentRoom();
 }
@@ -747,6 +888,24 @@ export function updateUIForCurrentRoom() {
   const videoConnected = [...screenshareState.peerConnections.values()].some(pc =>
     pc.ss.role === 'viewer' && pc.ss.roomId === currentRoomId && pc.connectionState === 'connected');
   const isLive = Boolean(session);
+  if (connectionStatusEl) {
+    const status = screenshareState.playbackState;
+    const show = isLive && !isPresentingHere && status !== 'playing';
+    connectionStatusEl.classList.toggle('hidden', !show);
+    connectionStatusEl.classList.toggle('is-pending', ['connecting', 'waiting', 'reconnecting'].includes(status));
+    if (connectionMessageEl) connectionMessageEl.textContent = ({
+      connecting: '화면 공유에 연결하고 있습니다…',
+      waiting: '연결되었습니다. 첫 화면을 기다리고 있습니다…',
+      reconnecting: '연결이 지연되어 다시 연결하고 있습니다…',
+      failed: '화면을 연결하지 못했습니다. 같은 네트워크와 방화벽 설정을 확인한 후 다시 시도해 주세요.',
+      blocked: '화면 재생을 시작하려면 아래 버튼을 눌러 주세요.',
+      offline: '서버 연결이 끊겼습니다. 다시 연결되면 화면 공유를 복구합니다.',
+    })[status] || '화면 공유를 준비하고 있습니다…';
+    if (connectionRetryBtn) {
+      connectionRetryBtn.classList.toggle('hidden', !['failed', 'blocked'].includes(status));
+      connectionRetryBtn.textContent = status === 'blocked' ? '화면 재생' : '다시 연결';
+    }
+  }
 
   // 1. Update Header Button
   if (headerToggleBtn) {

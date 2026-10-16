@@ -312,6 +312,38 @@
 }
 
 /* --- Viewport & Interactive Pan / Zoom Canvas --- */
+.ss-connection-status {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(6, 9, 17, 0.94);
+  color: #e5e7eb;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.ss-connection-status.hidden { display: none; }
+.ss-connection-spinner { display: none; }
+.is-pending .ss-connection-spinner {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border: 3px solid #374151;
+  border-top-color: #93c5fd;
+  border-radius: 50%;
+  animation: ss-connecting 1s linear infinite;
+}
+@keyframes ss-connecting { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .is-pending .ss-connection-spinner { animation: none; }
+}
+
 .ss-viewport {
   position: relative;
   flex: 1;
