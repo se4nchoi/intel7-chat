@@ -340,7 +340,9 @@ async def media_token(cohort_id: int, channel_id: int, request: Request):
     if can_publish:
         grants["canPublishSources"] = ["screen_share"]
     payload = {
-        "iss": api_key, "sub": f"hub-user-{account['id']}", "name": account["display_name"],
+        # LiveKit replaces a participant if another connection joins with the
+        # same identity. Different tabs/devices must be independent viewers.
+        "iss": api_key, "sub": f"hub-user-{account['id']}-{secrets.token_urlsafe(12)}", "name": account["display_name"],
         "iat": int(now.timestamp()), "nbf": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=5)).timestamp()), "video": grants,
     }

@@ -373,6 +373,20 @@ def create_account(username: str, display_name: str, password: str):
         ).fetchone()
 
 
+def bootstrap_admin(username: str, display_name: str, password: str):
+    """Create only the first admin; concurrent bootstrap commands serialize."""
+    password_hash = hash_secret(password)
+    with connect() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(%s)", (MIGRATION_LOCK,))
+        if conn.execute("SELECT 1 FROM hub_accounts WHERE is_admin LIMIT 1").fetchone():
+            raise RuntimeError("An administrator already exists; use account management instead")
+        return conn.execute(
+            """INSERT INTO hub_accounts (username,normalized_username,display_name,password_hash,is_admin)
+               VALUES (%s,%s,%s,%s,TRUE) RETURNING id,username,display_name""",
+            (username, normalize_username(username), display_name, password_hash),
+        ).fetchone()
+
+
 def add_membership(cohort_id: int, username: str, role: str):
     with connect() as conn:
         return conn.execute(

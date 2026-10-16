@@ -1,0 +1,29 @@
+[Unit]
+Description=Madi academy chat and learning hub
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=madi
+Group=madi
+WorkingDirectory=/opt/madi
+EnvironmentFile=/etc/madi/madi.env
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/opt/madi/.venv/bin/python /opt/madi/madi_run.py --check
+ExecStart=/opt/madi/.venv/bin/python /opt/madi/madi_run.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+StateDirectory=madi
+LogsDirectory=madi
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/madi /var/log/madi
+
+[Install]
+WantedBy=multi-user.target

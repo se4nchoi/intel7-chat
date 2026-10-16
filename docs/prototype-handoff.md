@@ -1,5 +1,16 @@
 # Prototype handoff (2026-09-23)
 
+## Current deployment target (2026-10-16)
+
+Work continues on `edu/discord-piazza-ui`. The confirmed target is **academy
+LAN only**, one ordinary always-on Linux PC, and LiveKit as a separate service
+on that same PC initially. Plan for 20–30 viewers per class; concurrent-class
+capacity requires measurement. The media service can move to another host later.
+Use [the academy deployment guide](academy-lan-deployment.md) and `madi_run.py`
+for this target. The prototype setup and earlier home-access plans below are
+historical and do not override these requirements. No academy deployment has
+been performed; the final IP and network ACLs are still unknown.
+
 Start here when continuing 마디 (Madi), the hub that replaces BambooChat
 (대나무챗), on another PC or in another Codex task. The legacy `/` app keeps
 the BambooChat name until it is retired.

@@ -1,0 +1,15 @@
+# Copy to /etc/madi/livekit.yaml, mode 0640, readable by the livekit user.
+port: 7880
+# Signalling is protected by Caddy/TLS. Restrict 7880 to loopback in the host firewall.
+bind_addresses:
+  - 0.0.0.0
+rtc:
+  # Replace with this PC's academy-reachable reserved IPv4 address.
+  node_ip: CHANGE_ME_ACADEMY_IP
+  use_external_ip: false
+  tcp_port: 7881
+  udp_port: 55000
+keys:
+  CHANGE_ME_MEDIA_KEY: CHANGE_ME_MEDIA_SECRET
+logging:
+  level: info

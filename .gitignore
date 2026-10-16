@@ -31,3 +31,6 @@ Thumbs.db
 # Local reverse-proxy runtime and bundled executables
 traefik/
 *.exe
+
+# Local TLS keys and certificates carried over from the community checkout
+certs/

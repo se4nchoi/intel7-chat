@@ -2,6 +2,7 @@ import { errorMessage, installKoreanValidation } from './korean.js';
 import { api, cohortSocket, fileDownloadUrl, uploadFile } from './api.js';
 import { readRoute, spaceUrl } from './navigation.js';
 import { renderRich } from './format.js';
+import { ClassroomMedia } from './media.js';
 
 const $ = id => document.getElementById(id);
 const ROLE_LABEL = { admin: '관리자', instructor: '강사', student: '수강생', member: '구성원' };
@@ -10,8 +11,8 @@ const GROUP_GAP_MS = 5 * 60 * 1000;
 
 let cohortRequest = 0;
 const state = {
-  account: null, cohorts: [], cohort: null, channel: null, socket: null, mediaRoom: null,
-  space: readRoute(location.pathname).space, epoch: 0, channelEpoch: 0, questionEpoch: 0, mediaEpoch: 0,
+  account: null, cohorts: [], cohort: null, channel: null, socket: null,
+  space: readRoute(location.pathname).space, epoch: 0, channelEpoch: 0, questionEpoch: 0,
   channels: new Map(), lastMessage: null, lastSeenId: 0, reconnectTimer: null, reconnectNow: null,
   channelList: [], unread: new Map(), online: new Set(), members: [], holding: null, historyLoaded: false, ackTimer: null,
   messageMap: new Map(), pins: [], dms: [], newBelow: 0,
@@ -114,7 +115,7 @@ function updateControls() {
   }
   $('new-post-btn').disabled = !writable;
   $('media-connect').disabled = !writable || !state.channel;
-  $('media-start').disabled = !writable || !state.mediaRoom;
+  $('media-start').disabled = !writable || !media.connected || media.publishing || media.sharing;
 }
 function resetContent() {
   state.epoch++; state.channelEpoch++; state.questionEpoch++;
@@ -1055,56 +1056,53 @@ $('management-close').addEventListener('click', () => $('management').close());
 $('management').addEventListener('close', () => { $('temp-password').classList.add('hidden'); $('temp-password').textContent = ''; });
 
 /* ---------- screen share (LiveKit SFU) ---------- */
+const MEDIA_MESSAGES = {
+  idle: '연결하면 공유 화면을 볼 수 있습니다.',
+  connecting: '화면 공유 서버에 연결하고 있습니다…',
+  waiting: '연결되었습니다. 강사의 공유 화면을 기다리고 있습니다.',
+  viewing: '공유 화면을 보고 있습니다. 원본이 지원하면 최대 1080p로 수신합니다.',
+  sharing: '이 채널에 화면을 공유하고 있습니다.',
+  reconnecting: '네트워크 연결을 복구하고 있습니다…',
+  disconnected: '화면 공유 연결이 끊겼습니다. 다시 연결해 주세요.',
+  failed: '화면 공유에 연결하지 못했습니다. 다시 연결해 주세요.',
+};
+const media = new ClassroomMedia({
+  loadSdk: () => import('livekit-client'),
+  token: (cohort, channel) => api(`/cohorts/${cohort}/channels/${channel}/media-token`, { method: 'POST' }),
+  onTrack: track => {
+    const video = $('media-video');
+    if (track) track.attach(video); else video.srcObject = null;
+    video.classList.toggle('connected', !!track);
+  },
+  onState: phase => {
+    $('media-status').textContent = MEDIA_MESSAGES[phase];
+    $('media-status').setAttribute('role', 'status');
+    $('media-connect').textContent = phase === 'connecting' ? '연결 취소' : media.room ? '연결 끊기' : '연결하기';
+    $('media-stop').classList.toggle('hidden', !media.sharing);
+    updateControls();
+  },
+});
 async function leaveMedia() {
-  state.mediaEpoch++;
-  const room = state.mediaRoom;
-  state.mediaRoom = null;
-  $('media-video').srcObject = null;
-  $('media-video').classList.remove('connected');
-  $('media-status').textContent = '연결하면 공유 화면을 볼 수 있습니다.';
-  $('media-stop').classList.add('hidden');
-  $('media-connect').textContent = '연결하기';
-  updateControls();
-  if (room) await room.disconnect();
+  await media.leave();
 }
 
 $('media-connect').addEventListener('click', async () => {
   try {
-    if (state.mediaRoom) { await leaveMedia(); return; }
+    if (media.room || media.phase === 'connecting') { await leaveMedia(); return; }
     if (!state.cohort || !state.channel) throw new Error('채널을 선택하세요');
-    const epoch = state.epoch, mediaEpoch = state.mediaEpoch, cohort = state.cohort, channel = state.channel;
-    const { Room, RoomEvent, Track } = await import('livekit-client');
-    const config = await api(`/cohorts/${cohort.id}/channels/${channel.id}/media-token`, { method: 'POST' });
-    if (epoch !== state.epoch || mediaEpoch !== state.mediaEpoch) return;
-    const room = new Room({ adaptiveStream: true, dynacast: true });
-    room.on(RoomEvent.TrackSubscribed, track => {
-      if (state.mediaRoom === room && track.kind === Track.Kind.Video) { track.attach($('media-video')); $('media-video').classList.add('connected'); }
-    });
-    room.on(RoomEvent.TrackUnsubscribed, track => track.detach());
-    room.on(RoomEvent.Disconnected, () => { if (state.mediaRoom === room) { state.mediaRoom = null; $('media-status').textContent = '화면 공유 연결이 끊겼습니다.'; $('media-connect').textContent = '연결하기'; updateControls(); } });
-    state.mediaRoom = room;
-    try { await room.connect(config.url, config.token); } catch (error) { if (state.mediaRoom === room) await leaveMedia(); else await room.disconnect(); throw error; }
-    if (epoch !== state.epoch || mediaEpoch !== state.mediaEpoch) { await room.disconnect(); return; }
-    $('media-status').textContent = '연결되었습니다. 공유 화면을 기다리고 있습니다.';
-    $('media-connect').textContent = '연결 끊기';
-    updateControls();
+    await media.connect(state.cohort.id, state.channel.id);
   } catch (error) { status(error.message, true); }
 });
 
 $('media-start').addEventListener('click', async () => {
   try {
-    if (!state.mediaRoom) throw new Error('먼저 화면 공유에 연결하세요');
-    await state.mediaRoom.localParticipant.setScreenShareEnabled(true, { audio: false });
-    $('media-status').textContent = '이 채널에 화면을 공유하고 있습니다.';
-    $('media-stop').classList.remove('hidden');
+    await media.start();
   } catch (error) { status(error.message, true); }
 });
 
 $('media-stop').addEventListener('click', async () => {
   try {
-    await state.mediaRoom?.localParticipant.setScreenShareEnabled(false);
-    $('media-stop').classList.add('hidden');
-    $('media-status').textContent = '화면 공유를 중지했습니다. 다른 사람의 공유 화면은 계속 볼 수 있습니다.';
+    await media.stop();
   } catch (error) { status(error.message, true); }
 });
 

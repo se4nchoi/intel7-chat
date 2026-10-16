@@ -1,0 +1,13 @@
+# Replace with the reserved academy IPv4 address or internal DNS name.
+# Clients must trust this Caddy instance's internal root CA before screen capture works.
+https://CHANGE_ME_ACADEMY_IP_OR_DNS {
+    tls internal
+    encode zstd gzip
+
+    handle_path /media/* {
+        reverse_proxy 127.0.0.1:7880
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8000
+    }
+}

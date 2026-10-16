@@ -4,8 +4,10 @@ A classroom LAN chat and learning application with persistent conversations, fil
 
 BambooChat brings classroom communication and practice activities into one browser interface. Students can use channels and direct messages, share course files, and revisit conversation history. Administrators manage accounts, registration, moderation, and quiz content.
 
-The `edu/prototype` branch contains the central-hub rework. For a new machine
-or Codex task, start with the [prototype handoff](docs/prototype-handoff.md).
+The `edu/discord-piazza-ui` branch contains the Madi academy hub rework
+(PostgreSQL, a built frontend, and LiveKit screen sharing). For the single-PC,
+LAN-only deployment, start with the [academy setup guide](docs/academy-lan-deployment.md).
+The [prototype handoff](docs/prototype-handoff.md) preserves earlier development context.
 
 **Stack:** Python · FastAPI · WebSockets · SQLite · Jinja2 · JavaScript · uv
 
