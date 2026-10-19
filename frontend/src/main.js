@@ -3,6 +3,8 @@ import { api, cohortSocket, fileDownloadUrl, uploadFile } from './api.js';
 import { readRoute, spaceUrl } from './navigation.js';
 import { renderRich } from './format.js';
 import { DraftStore } from './drafts.js';
+import { parseRoster, credentialsCsv } from './roster.js';
+import { notificationUrl } from './notification-links.js';
 import { ClassroomMedia } from './media.js';
 import { ClassroomSession } from './classroom-session.js';
 
@@ -15,6 +17,9 @@ let tabStorage; try { tabStorage = sessionStorage; } catch { /* tab storage unav
 const drafts = new DraftStore(tabStorage);
 const pendingForms = new Set();
 let cohortRequest = 0, boardRefreshTimer, questionRequest = 0, fileRequest = 0;
+let notificationPoll, notificationDebounce, notificationRequest = 0;
+let followMutation = null, questionFollowRequest = 0;
+const inbox = { owner: null, items: [], cursor: null, unread: 0, total: 0, loading: false, more: false };
 const state = {
   account: null, cohorts: [], cohort: null, channel: null, socket: null,
   space: readRoute(location.pathname).space, epoch: 0, channelEpoch: 0, questionEpoch: 0,
@@ -146,9 +151,13 @@ $('theme-btn').addEventListener('click', () => {
 
 /* ---------- shell ---------- */
 function showAccount() {
+  const onboarding = !!state.account?.must_change_password;
   $('boot-card').classList.add('hidden');
   $('login-card').classList.toggle('hidden', !!state.account);
-  $('hub-app').classList.toggle('hidden', !state.account);
+  $('hub-app').classList.toggle('hidden', !state.account || onboarding);
+  $('first-login-card').classList.toggle('hidden', !onboarding);
+  if (!onboarding) { $('first-login-form').reset(); regionState('first-login-status'); }
+  if (onboarding) { $('first-login-form').elements.username.value = state.account.username; $('first-login-form').elements.current_password.focus(); }
   const name = state.account?.display_name || state.account?.username || '';
   $('account-name').textContent = name;
   $('account-label').textContent = state.account ? `@${state.account.username}` : '';
@@ -156,6 +165,7 @@ function showAccount() {
   $('user-avatar').style.setProperty('--hue', hue(state.account?.username || ''));
   $('admin-card').classList.toggle('hidden', !state.account?.is_admin);
   $('accounts-card').classList.toggle('hidden', !state.account?.is_admin);
+  syncNotificationSession();
 }
 function renderRail() {
   $('cohort-rail').replaceChildren(...state.cohorts.map(cohort => el('button', {
@@ -165,7 +175,7 @@ function renderRail() {
   })));
 }
 function updateControls() {
-  const writable = !!state.account && !!state.cohort && !state.cohort.archived;
+  const writable = !!state.account && !state.account.must_change_password && !!state.cohort && !state.cohort.archived;
   for (const id of FORM_IDS) {
     const enabled = writable && !pendingForms.has(id) && (id !== 'message-form' || (!!state.channel && state.historyLoaded)) && (id !== 'answer-form' || !!state.question);
     for (const control of $(id).elements) control.disabled = !enabled;
@@ -262,6 +272,7 @@ async function boot() {
     return;
   }
   showAccount();
+  if (state.account.must_change_password) return;
   void loadMediaAvailability();
   try { await loadCohorts(); } catch (error) { status(error.message, true); }
 }
@@ -455,7 +466,8 @@ async function selectChannel(channel, historyMode = 'push') {
   $('history-latest').classList.add('hidden');
   $('message-input').value = drafts.get(draftKey('message', channel.id)); $('message-input').style.height = '';
   const channelUrl = new URL(spaceUrl(cohort.slug, 'chat'), location.origin); channelUrl.searchParams.set('channel', channel.id);
-  if (location.pathname + location.search !== channelUrl.pathname + channelUrl.search) history[historyMode === 'replace' ? 'replaceState' : 'pushState'](null, '', channelUrl.pathname + channelUrl.search);
+  if (historyMode === 'replace' && /^#message-\d+$/.test(location.hash)) channelUrl.hash = location.hash;
+  if (location.pathname + location.search + location.hash !== channelUrl.pathname + channelUrl.search + channelUrl.hash) history[historyMode === 'replace' ? 'replaceState' : 'pushState'](null, '', channelUrl.pathname + channelUrl.search + channelUrl.hash);
   regionState('chat-state', 'loading', '대화를 불러오고 있습니다…');
   state.channels.set(cohort.id, channel.id); state.lastMessage = null; state.lastSeenId = 0;
   state.historyLoaded = false; state.holding = []; state.messageMap = new Map(); state.pins = []; renderPins();
@@ -491,6 +503,12 @@ async function selectChannel(channel, historyMode = 'push') {
   state.historyLoaded = true; regionState('chat-state'); $('history-more').classList.toggle('hidden', messages.length < 100); updateControls();
   state.pins = messages.filter(m => m.pinned_at); renderPins(); loadPins().catch(() => {});
   flushHolding();
+  const linkedMessage = Number((location.hash.match(/^#message-(\d+)$/) || [])[1]);
+  if (linkedMessage) {
+    state.historyLoaded = false; updateControls(); await jumpTo(linkedMessage);
+    if (channelEpoch !== state.channelEpoch) return;
+    state.historyLoaded = true; updateControls();
+  }
   ackRead(true);
 }
 function receive(message) { state.lastSeenId = Math.max(state.lastSeenId, message.id); appendMessage(message); }
@@ -507,6 +525,8 @@ function applyChannelEvent(event) {
   else if (event.type === 'message_pinned') { updateMessage(event.message); loadPins().catch(() => {}); }
 }
 function handleEvent(event) {
+  if (['message', 'message_deleted', 'board_changed', 'membership_changed', 'notifications_changed'].includes(event.type)) queueNotificationRefresh();
+  if (event.type === 'notifications_changed') return;
   if (event.type === 'board_changed' || event.type === 'files_changed') {
     if (state.space === 'board') { clearTimeout(boardRefreshTimer); boardRefreshTimer = setTimeout(() => refreshBoard().catch(() => regionState('board-update', 'error', '새 내용을 불러오지 못했습니다.', refreshBoard)), 150); }
     return;
@@ -579,6 +599,7 @@ function connectChat(cohort, retry = 0) {
   socket.onmessage = event => { if (state.socket === socket) handleEvent(JSON.parse(event.data)); };
   socket.onopen = async () => {
     opened = true;
+    queueNotificationRefresh();
     try {
       await Promise.all([state.space === 'board' ? (retry ? refreshBoard() : Promise.resolve()) : catchUp(), loadUnread()]);
       if (retry && state.socket === socket) status('채팅에 다시 연결되었습니다.');
@@ -755,7 +776,7 @@ async function jumpTo(messageId) {
   row.scrollIntoView({ block: 'center', behavior: 'instant' }); row.focus({ preventScroll: true });
   row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 1600);
 }
-$('history-latest').addEventListener('click', () => selectChannel(state.channel, 'replace'));
+$('history-latest').addEventListener('click', () => { history.replaceState(null, '', location.pathname + location.search); void selectChannel(state.channel, 'replace'); });
 $('history-more').addEventListener('click', async () => {
   const channel = state.channel, cohort = state.cohort, epoch = state.channelEpoch;
   const before = Math.min(...state.messageMap.keys());
@@ -991,6 +1012,8 @@ async function selectQuestion(question, updateUrl = true, { quiet = false } = {}
   const epoch = state.epoch, questionEpoch = ++state.questionEpoch, cohort = state.cohort;
   saveDrafts();
   state.question = question;
+  if (!quiet) { state.following = null; $('post-follow').textContent = '알림 설정 불러오는 중'; $('post-follow').disabled = true; }
+  void loadQuestionFollow(question.id, questionEpoch);
   $('answer-form').elements.body.value = drafts.get(draftKey('answer', question.id));
   if (!quiet) showBoardView('post', { navigate: false });
   if (updateUrl) writeBoardUrl('post', question.id);
@@ -1014,6 +1037,38 @@ async function selectQuestion(question, updateUrl = true, { quiet = false } = {}
   if (epoch !== state.epoch || questionEpoch !== state.questionEpoch) return;
   renderAnswers(answers);
 }
+function renderQuestionFollow() {
+  const button = $('post-follow');
+  button.textContent = state.following === null ? '알림 설정 다시 불러오기' : state.following ? '팔로우 중 · 해제' : '질문 팔로우';
+  button.setAttribute('aria-pressed', String(!!state.following));
+  button.setAttribute('aria-label', state.following ? '질문 팔로우 해제' : '이 질문의 새 답변 알림 받기');
+  button.disabled = !state.question || !!state.cohort?.archived || !!followMutation;
+  button.title = state.cohort?.archived ? '종료된 수강반의 알림 설정은 변경할 수 없습니다.' : '팔로우하면 다른 사람이 답변할 때 내 알림으로 알려드립니다.';
+}
+async function loadQuestionFollow(id, questionEpoch = state.questionEpoch) {
+  const cohort = state.cohort, account = state.account;
+  if (followMutation?.questionId === id && followMutation.cohortId === cohort.id) return;
+  const request = ++questionFollowRequest;
+  try {
+    const data = await api(`/cohorts/${cohort.id}/questions/${id}/follow`);
+    if (account !== state.account || request !== questionFollowRequest || questionEpoch !== state.questionEpoch || state.question?.id !== id) return;
+    state.following = !!data.following; renderQuestionFollow();
+  } catch {
+    if (account === state.account && request === questionFollowRequest && questionEpoch === state.questionEpoch && state.question?.id === id) { state.following = null; renderQuestionFollow(); }
+  }
+}
+$('post-follow').addEventListener('click', async () => {
+  if (!state.question || state.cohort.archived || followMutation) return;
+  const question = state.question, cohort = state.cohort, account = state.account;
+  $('post-follow').disabled = true;
+  if (state.following === null) { await loadQuestionFollow(question.id); return; }
+  questionFollowRequest++; followMutation = { questionId: question.id, cohortId: cohort.id };
+  try {
+    const data = await api(`/cohorts/${cohort.id}/questions/${question.id}/follow`, { method: 'PUT', json: { following: !state.following } });
+    if (account === state.account && state.question?.id === question.id && state.cohort?.id === cohort.id) { state.following = data.following; status(data.following ? '이 질문의 새 답변 알림을 받습니다.' : '이 질문의 새 답변 알림을 해제했습니다.'); }
+  } catch (error) { if (account === state.account && state.question?.id === question.id) status(error.message, true); }
+  finally { followMutation = null; if (account === state.account && state.question) renderQuestionFollow(); }
+});
 function renderAnswers(answers) {
   const byInstructor = a => a.role === 'instructor' || a.role === 'admin';
   const canEndorse = isManager() && !state.cohort.archived;
@@ -1173,8 +1228,8 @@ function handleForm(id, action) {
     const epoch = state.epoch;
     try {
       await action(form);
-      if (!['message-form', 'answer-form', 'question-form'].includes(id) && (epoch === state.epoch || id === 'login-form')) form.reset();
-    } catch (error) { if (account === state.account || id === 'login-form') status(error.message, true); }
+      if (!['message-form', 'answer-form', 'question-form', 'roster-form'].includes(id) && (epoch === state.epoch || id === 'login-form')) form.reset();
+    } catch (error) { if (id === 'first-login-form') regionState('first-login-status', 'error', error.message); else if (account === state.account || id === 'login-form') status(error.message, true); }
     finally { pendingForms.delete(id); form.removeAttribute('aria-busy'); if (button) button.disabled = false; updateControls(); }
   });
 }
@@ -1184,9 +1239,19 @@ handleForm('login-form', async form => {
   state.account = await api('/me');
   status(''); $('login-message').classList.add('hidden');
   showAccount();
+  if (state.account.must_change_password) { $('first-login-form').elements.current_password.value = form.elements.password.value; $('first-login-form').elements.new_password.focus(); return; }
   void loadMediaAvailability();
   await loadCohorts();
 });
+
+handleForm('first-login-form', async form => {
+  if (form.elements.new_password.value !== form.elements.confirm_password.value) throw new Error('새 비밀번호와 확인 값이 일치하지 않습니다.');
+  await api('/me/password', { method: 'POST', json: { current_password: form.elements.current_password.value, new_password: form.elements.new_password.value } });
+  state.account = await api('/me');
+  form.reset(); regionState('first-login-status'); showAccount();
+  void loadMediaAvailability(); await loadCohorts();
+});
+$('first-login-logout').addEventListener('click', () => $('logout-btn').click());
 
 $('logout-btn').addEventListener('click', async () => {
   saveDrafts(); closeChat();
@@ -1400,6 +1465,7 @@ function setManagementTab(tab) {
   const admin = !!state.account?.is_admin, manager = !!state.cohort && isManager();
   if ((tab === 'academy' && !admin) || (tab === 'class' && !manager)) tab = 'personal';
   state.managementTab = tab;
+  syncRosterCohorts();
   $('management-cohort').textContent = state.cohort ? `관리 중인 수강반: ${state.cohort.name}` : '';
   $('self-card').classList.toggle('hidden', tab !== 'personal');
   $('admin-card').classList.toggle('hidden', tab !== 'academy' || !admin);
@@ -1442,7 +1508,191 @@ $('class-manage-btn').addEventListener('click', () => openManagement('class'));
 $('academy-manage-btn').addEventListener('click', () => openManagement('academy'));
 $('add-channel-btn').addEventListener('click', async () => { await openManagement('class'); $('channel-form').elements.slug.focus(); });
 $('management-close').addEventListener('click', () => $('management').close());
-$('management').addEventListener('close', () => { $('temp-password').classList.add('hidden'); $('temp-password').textContent = ''; });
+$('management').addEventListener('close', () => { $('temp-password').classList.add('hidden'); $('temp-password').textContent = ''; clearRosterCredentials(); });
+
+/* ---------- academy roster onboarding ---------- */
+let rosterPlan = null, rosterCredentials = [], rosterApplying = false;
+function clearRosterCredentials() {
+  rosterCredentials = []; $('roster-credentials').value = ''; $('roster-result').classList.add('hidden');
+}
+function invalidateRoster() {
+  rosterPlan = null; $('roster-preview').replaceChildren(); $('roster-preview').classList.add('hidden'); $('roster-apply').classList.add('hidden');
+}
+function syncRosterCohorts() {
+  const select = $('roster-cohort'), previous = select.value;
+  select.replaceChildren(el('option', { value: '', text: '수강반 선택' }), ...state.cohorts.filter(c => !c.archived).map(c => el('option', { value: c.id, text: c.name })));
+  select.value = [...select.options].some(o => o.value === previous) && previous ? previous : state.cohort && !state.cohort.archived ? String(state.cohort.id) : '';
+  if (select.value !== previous) invalidateRoster();
+  $('roster-preview-btn').disabled = !state.account?.is_admin || !select.value;
+}
+$('roster-form').addEventListener('input', invalidateRoster);
+$('roster-cohort').addEventListener('change', () => { invalidateRoster(); $('roster-preview-btn').disabled = !$('roster-cohort').value; });
+$('roster-file').addEventListener('change', async event => {
+  invalidateRoster(); const file = event.target.files[0];
+  if (!file) return;
+  try { if (file.size > 100000) throw new Error('명단 파일은 100KB 이하로 선택해 주세요.'); $('roster-source').value = await file.text(); }
+  catch (error) { status(error.message, true); }
+});
+handleForm('roster-form', async () => {
+  const source = $('roster-source').value, cohortId = $('roster-cohort').value, account = state.account;
+  invalidateRoster();
+  const rows = parseRoster(source), plan = await api('/accounts/import/preview', { method: 'POST', json: { cohort_id: Number(cohortId), rows } });
+  if (account !== state.account || $('roster-source').value !== source || $('roster-cohort').value !== cohortId) return;
+  rosterPlan = { ...plan, input: rows, source };
+  const action = { create: '신규 생성·배정', enroll: '기존 계정 배정', unchanged: '이미 배정됨' };
+  $('roster-preview').replaceChildren(
+    el('p', { text: `${plan.cohort.name} · 신규 ${plan.counts.create}명 / 기존 계정 배정 ${plan.counts.enroll}명 / 이미 배정 ${plan.counts.unchanged}명` }),
+    el('p', { text: plan.valid ? '아래 내용을 확인하고 적용하세요. 기존 계정의 표시 이름과 비밀번호는 바꾸지 않습니다.' : '표시된 오류를 수정한 뒤 다시 미리 확인하세요.' }),
+    el('p', { class: 'muted small', text: '표가 잘리면 좌우로 움직여 전체 내용을 확인하세요.' }),
+    el('div', { class: 'roster-table-wrap', tabindex: '0', role: 'region', 'aria-label': '명단 미리보기' },
+      el('table', {}, el('thead', {}, el('tr', {}, ...['행', '아이디', '이름', '역할', '처리'].map(text => el('th', { scope: 'col', text })))),
+        el('tbody', {}, ...plan.rows.map(row => el('tr', { class: row.errors.length ? 'roster-error' : '' },
+          ...[row.row, row.username, row.display_name, ROLE_LABEL[row.role] || row.role, row.errors.length ? row.errors.join(' ') : action[row.action]].map(text => el('td', { text: String(text) }))))))));
+  $('roster-preview').classList.remove('hidden'); $('roster-apply').classList.toggle('hidden', !plan.valid);
+});
+$('roster-apply').addEventListener('click', async () => {
+  if (!rosterPlan?.valid || rosterApplying) return;
+  const plan = rosterPlan, account = state.account;
+  rosterApplying = true; status(''); clearRosterCredentials();
+  const controls = [...$('roster-form').elements, $('roster-apply'), $('management-close'), ...document.querySelectorAll('[data-management-tab]')];
+  controls.forEach(c => { c.disabled = true; }); $('roster-card').setAttribute('aria-busy', 'true');
+  try {
+    const result = await api('/accounts/import', { method: 'POST', json: { cohort_id: plan.cohort.id, rows: plan.input, revision: plan.revision } });
+    if (account !== state.account) return;
+    invalidateRoster(); rosterCredentials = result.credentials;
+    $('roster-result-summary').textContent = `${result.cohort.name} · 신규 ${result.counts.create}명, 기존 계정 배정 ${result.counts.enroll}명, 이미 배정 ${result.counts.unchanged}명`;
+    $('roster-credentials').value = result.credentials.length ? credentialsCsv(result.credentials, { spreadsheetSafe: false }).replace(/^\uFEFF/, '') : '';
+    for (const id of ['roster-credentials-notice', 'roster-credentials-label', 'roster-download', 'roster-clear']) $(id).classList.toggle('hidden', !result.credentials.length);
+    $('roster-result').classList.remove('hidden'); $('roster-result-title').setAttribute('tabindex', '-1'); $('roster-result-title').focus();
+    try { await refreshManagement(); if (state.space === 'chat' && state.cohort) await loadMembers(); }
+    catch { status('명단 적용은 완료했습니다. 관리 목록을 다시 열어 확인해 주세요.', true); }
+  } catch (error) { invalidateRoster(); status(error.message, true); }
+  finally { rosterApplying = false; controls.forEach(c => { c.disabled = false; }); $('roster-card').removeAttribute('aria-busy'); }
+});
+$('management').addEventListener('cancel', event => { if (rosterApplying) event.preventDefault(); });
+$('roster-clear').addEventListener('click', clearRosterCredentials);
+$('roster-download').addEventListener('click', () => {
+  if (!rosterCredentials.length) return;
+  const url = URL.createObjectURL(new Blob([credentialsCsv(rosterCredentials)], { type: 'text/csv;charset=utf-8' }));
+  const link = el('a', { href: url, download: 'madi-new-accounts.csv' }); document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+/* ---------- personal notification inbox ---------- */
+function renderNotificationBadge() {
+  $('notifications-count').textContent = inbox.unread > 99 ? '99+' : String(inbox.unread);
+  $('notifications-count').classList.toggle('hidden', !inbox.unread);
+  $('notifications-btn').setAttribute('aria-label', `내 알림${inbox.unread ? `, 안 읽은 알림 ${inbox.unread}개` : ''}`);
+  document.querySelectorAll('.menu-btn').forEach(button => {
+    button.classList.toggle('has-notifications', inbox.unread > 0);
+    button.setAttribute('aria-label', inbox.unread ? `메뉴 열기, 안 읽은 알림 ${inbox.unread}개` : '메뉴 열기');
+  });
+}
+function syncNotificationSession() {
+  const owner = state.account && !state.account.must_change_password ? state.account.id : null;
+  if (inbox.owner === owner) return;
+  clearInterval(notificationPoll); clearTimeout(notificationDebounce); notificationRequest++;
+  Object.assign(inbox, { owner, items: [], cursor: null, unread: 0, total: 0, loading: false, more: false });
+  $('notifications-list').replaceChildren(); $('notifications-total').textContent = ''; renderNotificationBadge();
+  if (!owner) { $('notifications-dialog').close(); return; }
+  void refreshNotificationCount();
+  notificationPoll = setInterval(() => { if (document.visibilityState === 'visible') void refreshNotificationCount(); }, 30000);
+}
+async function refreshNotificationCount(quiet = false) {
+  const account = state.account;
+  if (!inbox.owner || !account || account.must_change_password) return;
+  try {
+    const data = await api('/notifications/unread');
+    if (account !== state.account) return;
+    const count = Number(data.unread_total || 0);
+    if (!quiet && $('notifications-dialog').open && count !== inbox.unread) regionState('notifications-update', '', '알림 목록이 변경되었습니다. 새 목록을 확인하세요.', () => loadNotifications());
+    inbox.unread = count; renderNotificationBadge(); $('notifications-btn').title = '내 알림';
+  } catch {
+    if (account === state.account) $('notifications-btn').title = '알림을 갱신하지 못했습니다. 열어서 다시 시도하세요.';
+  }
+}
+function queueNotificationRefresh() {
+  clearTimeout(notificationDebounce);
+  notificationDebounce = setTimeout(() => void refreshNotificationCount(), 250);
+}
+addEventListener('focus', queueNotificationRefresh);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') queueNotificationRefresh(); });
+function renderNotifications() {
+  const list = $('notifications-list');
+  list.replaceChildren(...inbox.items.map(item => {
+    const text = item.kind === 'answer' ? `${item.actor_name}님이 답변했습니다` : `${item.actor_name}님이 나를 멘션했습니다`;
+    const target = item.kind === 'answer' ? item.question_title : item.channel_kind === 'dm' ? '다이렉트 메시지' : `# ${item.channel_name}`;
+    const link = el('a', { class: 'notification-link', href: notificationUrl(item), onclick: event => {
+      if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault(); const currentLink = event.currentTarget;
+      if (currentLink.getAttribute('aria-busy') === 'true') return;
+      currentLink.setAttribute('aria-busy', 'true');
+      void openNotification(item).catch(error => { status(error.message, true); if ($('notifications-dialog').open) void loadNotifications(); }).finally(() => currentLink.removeAttribute('aria-busy'));
+    } }, el('strong', { text }), el('span', { class: 'notification-target', text: target }),
+      el('span', { class: 'notification-excerpt', text: item.excerpt }), el('small', { text: `${item.cohort_name} · ${stamp(item.created_at)}` }));
+    const readButton = el('button', { class: 'ghost notification-read', type: 'button', text: item.read_at ? '안 읽음으로' : '읽음으로', onclick: async () => {
+      readButton.disabled = true; const account = state.account;
+      try {
+        await api(`/notifications/${item.id}/read`, { method: 'POST', json: { read: !item.read_at } });
+        if (account !== state.account) return;
+        item.read_at = item.read_at ? null : new Date().toISOString();
+        if ($('notifications-unread').checked && item.read_at) { inbox.items = inbox.items.filter(n => n.id !== item.id); inbox.total--; }
+        renderNotifications(); await refreshNotificationCount(true); regionState('notifications-update');
+      } catch (error) { status(error.message, true); readButton.disabled = false; }
+    } });
+    return el('li', { class: item.read_at ? 'notification read' : 'notification unread', dataset: { notificationId: item.id } }, link, readButton);
+  }));
+  if (!inbox.items.length) list.append(el('li', { class: 'notification-empty muted', text: $('notifications-unread').checked ? '안 읽은 알림이 없습니다.' : '아직 알림이 없습니다. 질문을 팔로우하면 새 답변을 여기에서 확인할 수 있습니다.' }));
+  $('notifications-total').textContent = `${inbox.total}개 중 ${inbox.items.length}개 표시`;
+  $('notifications-more').classList.toggle('hidden', !inbox.more);
+  $('notifications-read-all').disabled = !inbox.items.some(n => !n.read_at);
+}
+async function loadNotifications(reset = true) {
+  if (!inbox.owner || (inbox.loading && !reset)) return;
+  inbox.loading = true; const request = ++notificationRequest, account = state.account;
+  const params = new URLSearchParams({ unread_only: $('notifications-unread').checked });
+  if (!reset && inbox.cursor) params.set('before', inbox.cursor);
+  regionState('notifications-state', 'loading', '알림을 불러오고 있습니다…');
+  $('notifications-more').disabled = true; $('notifications-unread').disabled = true;
+  try {
+    const data = await api(`/notifications?${params}`);
+    if (account !== state.account || request !== notificationRequest) return;
+    const rows = data.items || [];
+    inbox.items = reset ? rows : [...new Map([...inbox.items, ...rows].map(n => [n.id, n])).values()];
+    inbox.cursor = data.next_before; inbox.total = Number(data.total || 0); inbox.unread = Number(data.unread_total || 0); inbox.more = !!data.has_more;
+    regionState('notifications-state'); regionState('notifications-update'); renderNotifications(); renderNotificationBadge();
+  } catch (error) { if (account === state.account && request === notificationRequest) regionState('notifications-state', 'error', error.message, () => loadNotifications(reset)); }
+  finally { if (request === notificationRequest) { inbox.loading = false; $('notifications-more').disabled = false; $('notifications-unread').disabled = false; } }
+}
+async function openNotification(item) {
+  const account = state.account, url = notificationUrl(item);
+  // Validate the target before changing screens or marking the alert read.
+  if (item.kind === 'answer') await api(`/cohorts/${item.cohort_id}/questions/${item.question_id}`);
+  else {
+    const rows = await api(`/cohorts/${item.cohort_id}/channels/${item.channel_id}/messages?around=${item.message_id}`);
+    if (!rows.some(m => m.id === item.message_id)) throw new Error('메시지가 삭제되었거나 더 이상 접근할 수 없습니다.');
+  }
+  if (account !== state.account) return;
+  $('notifications-dialog').close(); saveDrafts(); history.pushState(null, '', url); await loadCohorts(item.cohort_id);
+  const arrived = item.kind === 'answer' ? state.question?.id === item.question_id : state.channel?.id === item.channel_id && state.messageMap.has(item.message_id);
+  if (!arrived || account !== state.account) throw new Error('알림의 대상을 불러오지 못했습니다. 다시 시도해 주세요.');
+  await api(`/notifications/${item.id}/read`, { method: 'POST', json: { read: true } });
+  await refreshNotificationCount(true);
+}
+$('notifications-btn').addEventListener('click', () => { closeNav(); $('notifications-dialog').showModal(); void loadNotifications(); });
+$('notifications-close').addEventListener('click', () => $('notifications-dialog').close());
+$('notifications-dialog').addEventListener('close', () => { notificationRequest++; inbox.loading = false; inbox.items = []; inbox.cursor = null; $('notifications-list').replaceChildren(); regionState('notifications-state'); regionState('notifications-update'); $('notifications-unread').disabled = false; });
+$('notifications-unread').addEventListener('change', () => void loadNotifications());
+$('notifications-more').addEventListener('click', () => void loadNotifications(false));
+$('notifications-read-all').addEventListener('click', async () => {
+  const through = Math.max(0, ...inbox.items.map(n => n.id)), account = state.account;
+  if (!through) return;
+  $('notifications-read-all').disabled = true;
+  try {
+    await api('/notifications/read-all', { method: 'POST', json: { through_id: through } });
+    if (account !== state.account) return;
+    await loadNotifications();
+  } catch (error) { status(error.message, true); renderNotifications(); }
+});
 
 /* ---------- screen share (LiveKit SFU) ---------- */
 async function loadMediaAvailability() {

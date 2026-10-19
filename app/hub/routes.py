@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from psycopg.errors import UniqueViolation
 
 from app.auth import normalize_username, validate_password, validate_username
-from app.hub import db
+from app.hub import db, onboarding, notifications
 from app.hub.logs import log
 from app.hub.settings import settings, classrooms
 
@@ -73,6 +73,8 @@ async def _account(request: Request) -> dict:
     account = await asyncio.to_thread(db.session_account, request.cookies.get(COOKIE, ""))
     if not account:
         raise HTTPException(401, "Log in to the prototype hub")
+    if account.get('must_change_password') and request.url.path not in ('/hub/api/me', '/hub/api/me/password'):
+        raise HTTPException(403, 'Change your temporary password first')
     return account
 
 
@@ -135,6 +137,18 @@ class Membership(BaseModel):
     role: str = Field(pattern=r"^(instructor|student)$")
 
 
+class RosterRow(BaseModel):
+    username: str = Field(max_length=100)
+    display_name: str = Field(max_length=200)
+    role: str = Field(default='student', max_length=30)
+
+
+class RosterImport(BaseModel):
+    cohort_id: int = Field(ge=1)
+    rows: list[RosterRow] = Field(min_length=1, max_length=100)
+    revision: str = Field(default='', max_length=64)
+
+
 class AccountUpdate(BaseModel):
     active: bool
 
@@ -142,6 +156,18 @@ class AccountUpdate(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
+
+
+class FollowQuestion(BaseModel):
+    following: bool
+
+
+class NotificationRead(BaseModel):
+    read: bool = True
+
+
+class NotificationsReadAll(BaseModel):
+    through_id: int = Field(ge=1)
 
 
 class CohortUpdate(BaseModel):
@@ -225,7 +251,7 @@ async def _close_session_sockets(raw: str) -> int:
 
 def _socket_allowed(raw: str, cohort_id: int) -> bool:
     account = db.session_account(raw)
-    return bool(account and db.access(account, cohort_id))
+    return bool(account and not account.get('must_change_password') and db.access(account, cohort_id))
 
 
 async def _require_admin(request: Request) -> dict:
@@ -244,6 +270,38 @@ async def me(request: Request):
 @router.get("/api/cohorts")
 async def list_cohorts(request: Request):
     return await asyncio.to_thread(db.cohorts_for, await _account(request))
+
+
+@router.get('/api/notifications')
+async def list_notifications(request: Request, unread_only: bool = False, before: int | None = Query(None, ge=1)):
+    return await asyncio.to_thread(notifications.page, await _account(request), unread_only, before)
+
+
+@router.get('/api/notifications/unread')
+async def notification_count(request: Request):
+    return await asyncio.to_thread(notifications.unread_count, await _account(request))
+
+
+async def _notification_read_changed(account_id):
+    for cohort_id in list(connections):
+        await _broadcast(cohort_id, {'type': 'notifications_changed'}, {account_id})
+
+
+@router.post('/api/notifications/read-all', status_code=204)
+async def read_all_notifications(body: NotificationsReadAll, request: Request):
+    _same_origin(request)
+    account = await _account(request)
+    await asyncio.to_thread(notifications.mark_all_read, account, body.through_id)
+    await _notification_read_changed(account['id'])
+
+
+@router.post('/api/notifications/{notification_id}/read', status_code=204)
+async def read_notification(notification_id: int, body: NotificationRead, request: Request):
+    _same_origin(request)
+    account = await _account(request)
+    if not await asyncio.to_thread(notifications.mark_read, account, notification_id, body.read):
+        raise HTTPException(404, 'Notification is no longer available')
+    await _notification_read_changed(account['id'])
 
 
 @router.post("/api/cohorts", status_code=201)
@@ -273,6 +331,37 @@ async def create_account(body: NewAccount, request: Request):
         raise HTTPException(409, "Username already exists")
     log.info("account created by=%r account=%s user=%r", admin["username"], created["id"], created["username"])
     return created
+
+
+@router.post('/api/accounts/import/preview')
+async def preview_roster(body: RosterImport, request: Request, response: Response):
+    _same_origin(request)
+    await _require_admin(request)
+    response.headers['Cache-Control'] = 'no-store'
+    try:
+        return await asyncio.to_thread(onboarding.preview, body.cohort_id, [r.model_dump() for r in body.rows])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post('/api/accounts/import', status_code=201)
+async def import_roster(body: RosterImport, request: Request, response: Response):
+    _same_origin(request)
+    admin = await _require_admin(request)
+    response.headers['Cache-Control'] = 'no-store'
+    try:
+        result = await asyncio.to_thread(onboarding.apply, admin['id'], body.cohort_id,
+                                         [r.model_dump() for r in body.rows], body.revision)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except (onboarding.StaleImport, UniqueViolation) as exc:
+        raise HTTPException(409, '계정 정보가 변경되었습니다. 다시 미리 확인해 주세요.') from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    log.info('roster imported by=%r cohort=%s created=%s enrolled=%s', admin['username'], body.cohort_id,
+             result['counts']['create'], result['counts']['enroll'])
+    await _broadcast(body.cohort_id, {'type': 'membership_changed'})
+    return result
 
 
 @router.post("/api/cohorts/{cohort_id}/memberships", status_code=201)
@@ -555,7 +644,7 @@ async def cohort_socket(ws: WebSocket, cohort_id: int):
         return
     raw = ws.cookies.get(COOKIE, "")
     account = await asyncio.to_thread(db.session_account, raw)
-    if not account or not await asyncio.to_thread(db.access, account, cohort_id):
+    if not account or account.get('must_change_password') or not await asyncio.to_thread(db.access, account, cohort_id):
         await ws.close(code=1008)
         return
     await ws.accept()
@@ -611,6 +700,23 @@ async def question_detail(cohort_id: int, question_id: int, request: Request):
     if not record:
         raise HTTPException(404, "Question not found")
     return record
+
+
+@router.get('/api/cohorts/{cohort_id}/questions/{question_id}/follow')
+async def question_follow(cohort_id: int, question_id: int, request: Request):
+    account, _ = await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.question, cohort_id, question_id):
+        raise HTTPException(404, 'Question not found')
+    return await asyncio.to_thread(notifications.following, question_id, account['id'])
+
+
+@router.put('/api/cohorts/{cohort_id}/questions/{question_id}/follow')
+async def follow_question(cohort_id: int, question_id: int, body: FollowQuestion, request: Request):
+    _same_origin(request)
+    account, _ = await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.question, cohort_id, question_id):
+        raise HTTPException(404, 'Question not found')
+    return await asyncio.to_thread(notifications.set_following, question_id, account['id'], body.following)
 
 
 @router.get("/api/cohorts/{cohort_id}/questions")
@@ -811,11 +917,13 @@ async def change_own_password(body: PasswordChange, request: Request):
     if not await asyncio.to_thread(db.password_matches, account["id"], body.current_password):
         log.warning("password change failed user=%r id=%s ip=%s", account["username"], account["id"], ip)
         raise HTTPException(400, "Current password is incorrect")
+    if account.get('must_change_password') and body.new_password == body.current_password:
+        raise HTTPException(400, 'Choose a different password from your temporary password')
     try:
         validate_password(body.new_password)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    await asyncio.to_thread(db.set_password, account["id"], body.new_password, request.cookies.get(COOKIE, ""))
+    await asyncio.to_thread(db.set_password, account["id"], body.new_password, request.cookies.get(COOKIE, ""), False)
     closed = await _prune_sockets()
     log.info("password changed user=%r id=%s other_sockets_closed=%s ip=%s", account["username"], account["id"], closed, ip)
 

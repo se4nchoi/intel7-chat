@@ -25,6 +25,22 @@
     </div>
   </section>
 
+  <section id="first-login-card" class="login hidden" aria-labelledby="first-login-title">
+    <div class="login-box">
+      <h1 id="first-login-title">마디에 오신 것을 환영합니다</h1>
+      <p class="muted">수업에 참여하기 전에 임시 비밀번호를 나만의 비밀번호로 바꿔 주세요.</p>
+      <div id="first-login-status" class="region-state hidden" role="alert"></div>
+      <form id="first-login-form">
+        <label>아이디<input name="username" autocomplete="username" readonly></label>
+        <label>임시 비밀번호<input name="current_password" type="password" autocomplete="current-password" required></label>
+        <label>새 비밀번호<input name="new_password" type="password" autocomplete="new-password" minlength="5" required></label>
+        <label>새 비밀번호 확인<input name="confirm_password" type="password" autocomplete="new-password" minlength="5" required></label>
+        <button class="primary">비밀번호 변경하고 시작하기</button>
+      </form>
+      <button id="first-login-logout" class="ghost" type="button">다른 계정으로 로그인</button>
+    </div>
+  </section>
+
   <div id="hub-app" class="app hidden">
     <nav class="rail" aria-label="수강반">
       <a class="rail-home" href="/hub" title="마디" aria-label="마디 홈"><svg class="madi-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect x="22" y="6" width="16" height="23" rx="5" fill="currentColor"/><rect x="22" y="33" width="16" height="25" rx="5" fill="currentColor"/><path d="M39 31c6-9 15-12 21-11-3 7-11 13-21 11z" fill="currentColor"/></svg></a>
@@ -42,6 +58,7 @@
         <a id="board-link" href="/hub">Q&amp;A 게시판</a>
       </nav>
 
+      <nav class="task-nav notification-nav" aria-label="내 알림"><button id="notifications-btn" type="button" aria-haspopup="dialog" aria-controls="notifications-dialog">알림 <span id="notifications-count" class="count mention hidden"></span></button></nav>
       <div id="chat-side" class="side-scroll">
         <div class="side-section"><span>채팅 채널</span><button id="add-channel-btn" class="icon-btn hidden" title="채널 만들기" aria-label="채널 만들기">+</button></div>
         <div id="channel-list" class="channel-list"></div>
@@ -167,6 +184,7 @@
             <header class="post-head">
               <p id="post-meta" class="post-meta"></p>
               <div class="post-tools">
+                <button id="post-follow" class="ghost" type="button" aria-pressed="false" disabled>알림 설정 불러오는 중</button>
                 <button id="post-resolve" class="ghost hidden" type="button">해결됨으로 표시</button>
                 <button id="post-edit" class="ghost hidden" type="button">질문 수정</button>
                 <button id="post-delete" class="ghost danger-text hidden" type="button">질문 삭제</button>
@@ -235,6 +253,15 @@
       </div>
     </dialog>
 
+    <dialog id="notifications-dialog" class="dialog notifications-dialog" aria-labelledby="notifications-title">
+      <header class="dialog-head"><h2 id="notifications-title">내 알림</h2><button id="notifications-close" class="icon-btn" aria-label="알림 닫기">✕</button></header>
+      <div class="notification-controls"><label class="check-label"><input id="notifications-unread" type="checkbox">안 읽은 알림만</label><button id="notifications-read-all" class="ghost" type="button" disabled>모두 읽음</button></div>
+      <p class="muted notification-help">내 질문과 팔로우한 질문의 새 답변, 나를 부른 채팅 멘션을 모아 봅니다.</p>
+      <div id="notifications-state" class="region-state hidden" role="status"></div>
+      <div id="notifications-update" class="region-state hidden" role="status"></div>
+      <div class="notifications-body"><ul id="notifications-list" aria-label="알림 목록"></ul><p id="notifications-total" class="muted"></p><button id="notifications-more" class="ghost hidden" type="button">이전 알림 더 보기</button></div>
+    </dialog>
+
     <dialog id="management" class="dialog" aria-labelledby="management-title">
       <header class="dialog-head"><h2 id="management-title">계정 및 관리</h2><button id="management-close" class="icon-btn" aria-label="닫기">✕</button></header>
       <nav class="management-tabs" aria-label="설정 구분">
@@ -252,6 +279,27 @@
           <p class="muted">관리자는 계정과 수강반을 만들고, 강사는 담당 수강반의 구성원과 채널을 관리합니다.</p>
           <form id="account-form"><h3>새 계정</h3><input name="username" aria-label="아이디" placeholder="아이디" required><input name="display_name" aria-label="표시 이름" placeholder="표시 이름" required><input name="password" type="password" aria-label="임시 비밀번호" autocomplete="new-password" placeholder="임시 비밀번호" minlength="5" required><label class="check-label"><input id="enroll-new-account" type="checkbox">현재 수강반에도 추가</label><label id="new-account-role-label">수강반 역할<select id="new-account-role"><option value="student">수강생</option><option value="instructor">강사</option></select></label><button>계정 만들기</button></form>
           <form id="cohort-form"><h3>새 수강반</h3><input name="slug" aria-label="수강반 주소 ID (영문 소문자·숫자·하이픈)" placeholder="수강반 주소 ID (영문 소문자·숫자·하이픈)" required><input name="name" aria-label="수강반 이름" placeholder="수강반 이름" required><button>수강반 만들기</button></form>
+          <section id="roster-card" class="roster-card" aria-labelledby="roster-title">
+            <h3 id="roster-title">명단으로 계정 가져오기</h3>
+            <p class="muted">CSV 파일을 선택하거나 Excel·스프레드시트에서 제목 행과 함께 복사해 붙여 넣으세요. 한 번에 최대 100명입니다.</p>
+            <p class="muted">신규 계정은 첫 로그인 때 비밀번호를 변경합니다. 기존 계정의 이름·비밀번호·기존 역할은 유지됩니다.</p>
+            <form id="roster-form">
+              <label>배정할 수강반<select id="roster-cohort" required aria-label="명단 배정 수강반"></select></label>
+              <label>CSV 파일 (UTF-8)<input id="roster-file" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values"></label>
+              <label>가져올 명단<textarea id="roster-source" rows="6" placeholder="username,display_name,role&#10;stu01,김학생,student&#10;inst01,박강사,instructor" required spellcheck="false"></textarea></label>
+              <small class="muted">role: student(수강생) 또는 instructor(강사). role 열을 생략하면 수강생으로 배정됩니다.</small>
+              <button id="roster-preview-btn">1. 가져올 내용 미리 확인</button>
+            </form>
+            <div id="roster-preview" class="hidden" aria-live="polite"></div>
+            <button id="roster-apply" class="primary hidden" type="button">2. 확인한 명단 적용</button>
+            <section id="roster-result" class="hidden" aria-labelledby="roster-result-title">
+              <h4 id="roster-result-title">명단 적용 완료</h4><p id="roster-result-summary"></p>
+              <p id="roster-credentials-notice" class="notice">신규 계정의 임시 비밀번호는 이 화면에서만 확인할 수 있습니다. 닫기 전에 내려받아 각 사용자에게 전달하세요.</p>
+              <label id="roster-credentials-label">신규 계정 로그인 정보<textarea id="roster-credentials" rows="5" readonly spellcheck="false"></textarea></label>
+              <button id="roster-download" type="button">로그인 정보 CSV 내려받기</button>
+              <button id="roster-clear" class="ghost" type="button">로그인 정보 지우기</button>
+            </section>
+          </section>
         </section>
         <section id="manage-card" class="hidden">
           <div id="cohort-status" class="hidden"><h3>현재 수강반</h3><p id="cohort-status-text" class="muted"></p><button id="archive-btn" type="button"></button></div>

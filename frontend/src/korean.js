@@ -1,4 +1,7 @@
 const messages = {
+  'Notification is no longer available': '알림이 삭제되었거나 더 이상 접근할 수 없습니다.',
+  'Change your temporary password first': '먼저 임시 비밀번호를 변경해 주세요.',
+  'Choose a different password from your temporary password': '임시 비밀번호와 다른 새 비밀번호를 입력해 주세요.',
   'Only an administrator can change instructor roles': '강사의 역할을 변경하는 것은 관리자만 할 수 있습니다.',
   'Invalid file cursor': '자료 목록이 변경되었습니다. 목록을 새로 불러와 주세요.',
   'Use one message cursor at a time': '대화 위치를 확인하고 다시 시도하세요.',

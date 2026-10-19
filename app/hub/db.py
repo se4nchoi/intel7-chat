@@ -173,7 +173,7 @@ def session_account(raw: str):
         return None
     with connect() as conn:
         return conn.execute(
-            """SELECT a.id, a.username, a.display_name, a.is_admin FROM hub_sessions s
+            """SELECT a.id, a.username, a.display_name, a.is_admin, a.must_change_password FROM hub_sessions s
                JOIN hub_accounts a ON a.id=s.account_id
                WHERE s.token_hash=%s AND s.expires_at>now() AND a.active""",
             (token_hash(raw),),
@@ -260,8 +260,9 @@ def messages(channel_id: int, after: int | None = None, before: int | None = Non
 
 
 def add_message(channel_id: int, account_id: int, body: str):
+    from app.hub import notifications
     with connect() as conn:
-        return conn.execute(
+        message = conn.execute(
             f"""WITH new_message AS (
                  INSERT INTO hub_messages (channel_id, author_id, body) VALUES (%s,%s,%s)
                  RETURNING id, channel_id, author_id, body, created_at, edited_at)
@@ -271,6 +272,8 @@ def add_message(channel_id: int, account_id: int, body: str):
                LEFT JOIN hub_memberships mb ON mb.account_id=a.id AND mb.cohort_id=c.cohort_id AND mb.active""",
             (channel_id, account_id, body),
         ).fetchone()
+        notifications.message_created(conn, message['id'], channel_id, account_id, body)
+        return message
 
 
 def members(cohort_id: int):
@@ -358,6 +361,7 @@ def add_question(cohort_id: int, account_id: int, title: str, body: str, attachm
                            (cohort_id, account_id, title, body)).fetchone()["id"]
         for file_id in ids:
             conn.execute("INSERT INTO hub_question_files (question_id,file_id) VALUES (%s,%s)", (qid, file_id))
+        conn.execute('INSERT INTO hub_question_follows(question_id,account_id) VALUES(%s,%s)', (qid, account_id))
         return qid
 
 
@@ -398,9 +402,12 @@ def set_endorsed(question_id: int, answer_id: int, endorsed: bool):
 
 
 def add_answer(question_id: int, account_id: int, body: str):
+    from app.hub import notifications
     with connect() as conn:
-        return conn.execute("INSERT INTO hub_answers (question_id,author_id,body) VALUES (%s,%s,%s) RETURNING id",
+        answer_id = conn.execute("INSERT INTO hub_answers (question_id,author_id,body) VALUES (%s,%s,%s) RETURNING id",
                             (question_id, account_id, body)).fetchone()["id"]
+        notifications.answer_created(conn, answer_id, question_id, account_id)
+        return answer_id
 
 
 def files(cohort_id: int):
@@ -543,12 +550,12 @@ def set_account_active(account_id: int, active: bool):
         return row
 
 
-def set_password(account_id: int, password: str, keep_session: str | None = None) -> bool:
+def set_password(account_id: int, password: str, keep_session: str | None = None, require_change: bool | None = None) -> bool:
     """Replace a password and end every session except keep_session (the caller's own)."""
     password_hash = hash_secret(password)
     with connect() as conn:
-        if not conn.execute("UPDATE hub_accounts SET password_hash=%s WHERE id=%s RETURNING id",
-                            (password_hash, account_id)).fetchone():
+        if not conn.execute("UPDATE hub_accounts SET password_hash=%s,must_change_password=coalesce(%s,must_change_password) WHERE id=%s RETURNING id",
+                            (password_hash, require_change, account_id)).fetchone():
             return False
         conn.execute("DELETE FROM hub_sessions WHERE account_id=%s AND token_hash<>%s",
                      (account_id, token_hash(keep_session) if keep_session else ""))
