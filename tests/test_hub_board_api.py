@@ -302,3 +302,158 @@ def test_configure_writes_rotating_file(tmp_path):
             handler.close()
         log.propagate = True
         log.setLevel(logging.NOTSET)
+
+
+def test_question_resolution_author_instructor_and_scope(hub):
+    from app.hub import db
+    app, cohort_id, _ = hub
+    student, teacher = login(app, 'student'), login(app, 'teacher')
+    base = f'/hub/api/cohorts/{cohort_id}/questions'
+    qid = student.post(base, json={'title': 'Help', 'body': 'Question'}, headers=ORIGIN).json()['id']
+    db.create_account('peer', 'Peer', PASSWORD)
+    db.add_membership(cohort_id, 'peer', 'student')
+    endpoint = f'{base}/{qid}/resolution'
+    assert login(app, 'peer').post(endpoint, json={'resolved': True}, headers=ORIGIN).status_code == 403
+    assert student.post(endpoint, json={'resolved': True}, headers=ORIGIN).json() == {'id': qid, 'resolved': True}
+    assert student.get(base).json()[0]['resolved'] is True
+    assert teacher.post(endpoint, json={'resolved': False}, headers=ORIGIN).json()['resolved'] is False
+    other = db.create_cohort('other-lab', 'Other lab')
+    assert teacher.post(f'/hub/api/cohorts/{other["id"]}/questions/{qid}/resolution', json={'resolved': True}, headers=ORIGIN).status_code == 403
+    assert student.post(endpoint, json={'resolved': True}, headers={'origin': 'https://wrong.test'}).status_code == 403
+    with db.connect() as conn:
+        conn.execute('UPDATE hub_cohorts SET archived=TRUE WHERE id=%s', (cohort_id,))
+    assert student.post(endpoint, json={'resolved': True}, headers=ORIGIN).status_code == 403
+
+
+def test_question_attachments_validate_owner_cohort_and_count(hub, monkeypatch, tmp_path):
+    from app.hub import db
+    app, cohort_id, _ = hub
+    monkeypatch.setenv('MADI_FILE_DIR', str(tmp_path))
+    student, teacher = login(app, 'student'), login(app, 'teacher')
+    files_url = f'/hub/api/cohorts/{cohort_id}/files'
+    base = f'/hub/api/cohorts/{cohort_id}/questions'
+    uploaded = student.post(files_url, files={'upload': ('error.txt', b'Example error', 'text/plain')}, headers=ORIGIN)
+    assert uploaded.status_code == 201
+    fid = uploaded.json()['id']
+    data = {'title': 'Help with error', 'body': 'See attached', 'attachments': [fid]}
+    qid = student.post(base, json=data, headers=ORIGIN).json()['id']
+    summary = student.get(base).json()[0]
+    assert summary['attachments'] == [{'id': fid, 'name': 'error.txt'}]
+    assert teacher.get(files_url + '/' + fid).content == b'Example error'
+    assert teacher.post(base, json=data, headers=ORIGIN).status_code == 400
+    other = db.create_cohort('other-class', 'Other')
+    db.add_membership(other['id'], 'student', 'student')
+    other_url = f'/hub/api/cohorts/{other["id"]}/questions'
+    assert student.post(other_url, json=data, headers=ORIGIN).status_code == 400
+    assert student.post(base, json={**data, 'attachments': ['missing']}, headers=ORIGIN).status_code == 400
+    assert student.post(base, json={**data, 'attachments': [fid] * 6}, headers=ORIGIN).status_code == 422
+    assert len(student.get(base).json()) == 1  # invalid attachments never leave a partial question
+    assert teacher.delete(f'{base}/{qid}', headers=ORIGIN).status_code == 204
+    assert student.get(base).json() == []
+
+
+def test_instructors_cannot_demote_themselves_or_other_instructors(hub):
+    from app.hub import db
+    app, cid, _ = hub
+    teacher, admin = login(app, 'teacher'), login(app, 'admin_user')
+    db.create_account('second_teacher', 'Second', PASSWORD)
+    db.add_membership(cid, 'second_teacher', 'instructor')
+    endpoint = f'/hub/api/cohorts/{cid}/memberships'
+    for username in ('teacher', 'second_teacher'):
+        assert teacher.post(endpoint, json={'username': username, 'role': 'student'}, headers=ORIGIN).status_code == 403
+    roles = {m['username']: m['role'] for m in db.members(cid)}
+    assert roles['teacher'] == roles['second_teacher'] == 'instructor'
+    assert admin.post(endpoint, json={'username': 'second_teacher', 'role': 'student'}, headers=ORIGIN).status_code == 201
+    assert db.membership(cid, db.authenticate('second_teacher', PASSWORD)['id'])['role'] == 'student'
+
+
+def test_questions_page_search_totals_and_old_direct_links(hub):
+    from app.hub import db
+    app, cid, _ = hub
+    student = login(app, 'student')
+    with db.connect() as conn:
+        aid = conn.execute("SELECT id FROM hub_accounts WHERE username='student'").fetchone()['id']
+        ids = [r['id'] for r in conn.execute("""INSERT INTO hub_questions(cohort_id,author_id,title,body)
+            SELECT %s,%s,'Question ' || n,'Body' FROM generate_series(1,105) n RETURNING id""", (cid, aid))]
+    base = f'/hub/api/cohorts/{cid}/questions'
+    page = student.get(base + '/page').json()
+    assert page['total'] == page['stats']['total'] == 105
+    assert page['stats']['unanswered'] == 105
+    seen = []
+    while True:
+        seen += [q['id'] for q in page['items']]
+        if not page['has_more']:
+            break
+        page = student.get(base + '/page', params={'before': page['next_before']}).json()
+    assert len(seen) == len(set(seen)) == 105
+    assert student.get(base + f'/{ids[0]}').json()['title'] == 'Question 1'
+    found = student.get(base + '/page', params={'search': 'Question 1'}).json()
+    assert any(q['id'] == ids[0] for q in found['items'])
+    assert student.get(base + '/page', params={'filter': 'resolved'}).json()['total'] == 0
+    other = db.create_cohort('private-audit', 'Private')
+    assert student.get(f'/hub/api/cohorts/{other["id"]}/questions/{ids[0]}').status_code == 403
+    assert student.get(base + '/page', params={'filter': 'unknown'}).status_code == 422
+
+
+def test_file_cursor_covers_equal_timestamps_without_duplicates(hub):
+    from app.hub import db
+    app, cid, _ = hub
+    student = login(app, 'student')
+    with db.connect() as conn:
+        aid = conn.execute("SELECT id FROM hub_accounts WHERE username='student'").fetchone()['id']
+        for n in range(105):
+            conn.execute("INSERT INTO hub_files(id,cohort_id,uploader_id,original_name,content_type,size_bytes)VALUES(%s,%s,%s,%s,'text/plain',1)", (f'{n:032x}', cid, aid, f'file-{n}.txt'))
+    url = f'/hub/api/cohorts/{cid}/files/page'
+    page, seen = student.get(url).json(), []
+    assert page['total'] == 105
+    while True:
+        seen += [f['id'] for f in page['items']]
+        if not page['has_more']:
+            break
+        page = student.get(url, params={'before': page['next_before']}).json()
+    assert len(seen) == len(set(seen)) == 105
+    assert student.get(url, params={'search': 'file-104.txt'}).json()['total'] == 1
+    assert student.get(url, params={'before': 'f' * 32}).status_code == 400
+
+
+def test_message_history_before_and_pin_context_preserve_channel_scope(hub):
+    from app.hub import db
+    app, cid, channel = hub
+    student = login(app, 'student')
+    with db.connect() as conn:
+        aid = conn.execute("SELECT id FROM hub_accounts WHERE username='student'").fetchone()['id']
+        ids = [r['id'] for r in conn.execute("INSERT INTO hub_messages(channel_id,author_id,body) SELECT %s,%s,n::text FROM generate_series(1,151)n RETURNING id", (channel, aid))]
+    url = f'/hub/api/cohorts/{cid}/channels/{channel}/messages'
+    latest = student.get(url).json()
+    older = student.get(url, params={'before': latest[0]['id']}).json()
+    assert len(latest) == 100 and len(older) == 51
+    context = student.get(url, params={'around': ids[0]}).json()
+    assert context[0]['id'] == ids[0]
+    assert all(m['channel_id'] == channel for m in context)
+    assert student.get(url, params={'after': 0, 'before': ids[0]}).status_code == 400
+
+
+def test_membership_search_is_manager_only_and_scoped(hub):
+    from app.hub import db
+    app, cid, _ = hub
+    teacher, student = login(app, 'teacher'), login(app, 'student')
+    db.create_account('waiting_student', 'Waiting learner', PASSWORD)
+    db.create_account('other_student', 'Other learner', PASSWORD)
+    other = db.create_cohort('other-audit', 'Other')
+    db.add_membership(other['id'], 'other_student', 'student')
+    endpoint = f'/hub/api/cohorts/{cid}/members/candidates'
+    assert student.get(endpoint, params={'q': 'student'}).status_code == 403
+    candidates = teacher.get(endpoint, params={'q': 'student'}).json()
+    assert {a['username'] for a in candidates} == {'student', 'waiting_student'}
+    assert teacher.get(endpoint).json() == []
+
+
+def test_board_changes_reach_cohort_socket(hub):
+    app, cid, _ = hub
+    student, teacher = login(app, 'student'), login(app, 'teacher')
+    with open_socket(student, cid) as socket:
+        assert socket.receive_json()['type'] == 'presence'
+        created = teacher.post(f'/hub/api/cohorts/{cid}/questions', json={'title': 'Live', 'body': 'Question'}, headers=ORIGIN).json()
+        assert socket.receive_json() == {'type': 'board_changed', 'question_id': created['id']}
+        teacher.post(f'/hub/api/cohorts/{cid}/questions/{created["id"]}/answers', json={'body': 'Live answer'}, headers=ORIGIN)
+        assert socket.receive_json()['type'] == 'board_changed'

@@ -243,12 +243,18 @@ MESSAGE_SELECT = f"""SELECT m.id, m.channel_id, m.body, m.created_at, m.edited_a
 CATCH_UP_LIMIT = 500
 
 
-def messages(channel_id: int, after: int | None = None):
+def messages(channel_id: int, after: int | None = None, before: int | None = None, around: int | None = None):
     """The latest 100 messages, or (after=id) up to 500 newer ones for a reconnecting client."""
     with connect() as conn:
         if after is not None:
             return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.id>%s AND m.deleted_at IS NULL ORDER BY m.id LIMIT %s",
                                 (channel_id, after, CATCH_UP_LIMIT)).fetchall()
+        if around is not None:
+            older = conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.id<=%s AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 50", (channel_id, around)).fetchall()
+            newer = conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.id>%s AND m.deleted_at IS NULL ORDER BY m.id LIMIT 50", (channel_id, around)).fetchall()
+            return older[::-1] + newer
+        if before is not None:
+            return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.id<%s AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 100", (channel_id, before)).fetchall()[::-1]
         return conn.execute(f"{MESSAGE_SELECT} WHERE m.channel_id=%s AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 100",
                             (channel_id,)).fetchall()[::-1]
 
@@ -278,10 +284,10 @@ def members(cohort_id: int):
         ).fetchall()
 
 
-def questions(cohort_id: int):
-    with connect() as conn:
-        return conn.execute(
-            f"""SELECT q.id,q.title,q.body,q.created_at,q.edited_at,a.username,a.display_name,{AUTHOR_ROLE} AS role,
+QUESTION_SELECT = f"""SELECT q.id,q.title,q.body,q.created_at,q.edited_at,a.username,a.display_name,{AUTHOR_ROLE} AS role,
+                      (q.resolved_at IS NOT NULL) AS resolved,
+                      (SELECT coalesce(json_agg(json_build_object('id', f.id, 'name', f.original_name) ORDER BY f.created_at), '[]')
+                       FROM hub_question_files qf JOIN hub_files f ON f.id=qf.file_id WHERE qf.question_id=q.id) AS attachments,
                       count(x.id) AS answer_count,
                       coalesce(bool_or(xm.role='instructor' OR xa.is_admin), FALSE) AS instructor_answered,
                       coalesce(bool_or(x.endorsed), FALSE) AS endorsed,
@@ -291,17 +297,78 @@ def questions(cohort_id: int):
                LEFT JOIN hub_answers x ON x.question_id=q.id AND x.deleted_at IS NULL
                LEFT JOIN hub_accounts xa ON xa.id=x.author_id
                LEFT JOIN hub_memberships xm ON xm.account_id=x.author_id AND xm.cohort_id=q.cohort_id AND xm.active
-               WHERE q.cohort_id=%s AND q.deleted_at IS NULL
-               GROUP BY q.id, a.id, mb.role
-               ORDER BY q.id DESC LIMIT 100""", (cohort_id,),
-        ).fetchall()
+"""
+QUESTION_GROUP = " GROUP BY q.id, a.id, mb.role "
+INSTRUCTOR_ANSWER = """EXISTS (SELECT 1 FROM hub_answers ax JOIN hub_accounts aa ON aa.id=ax.author_id
+    LEFT JOIN hub_memberships am ON am.account_id=aa.id AND am.cohort_id=q.cohort_id AND am.active
+    WHERE ax.question_id=q.id AND ax.deleted_at IS NULL AND (aa.is_admin OR am.role='instructor'))"""
+NO_ANSWER = "NOT EXISTS (SELECT 1 FROM hub_answers ax WHERE ax.question_id=q.id AND ax.deleted_at IS NULL)"
 
 
-def add_question(cohort_id: int, account_id: int, title: str, body: str):
+def questions(cohort_id: int):
     with connect() as conn:
-        return conn.execute("""INSERT INTO hub_questions (cohort_id,author_id,title,body)
-                               VALUES (%s,%s,%s,%s) RETURNING id""",
-                            (cohort_id, account_id, title, body)).fetchone()["id"]
+        return conn.execute(QUESTION_SELECT + " WHERE q.cohort_id=%s AND q.deleted_at IS NULL " + QUESTION_GROUP + " ORDER BY q.id DESC LIMIT 100", (cohort_id,)).fetchall()
+
+
+def question_detail(cohort_id: int, question_id: int):
+    with connect() as conn:
+        return conn.execute(QUESTION_SELECT + " WHERE q.cohort_id=%s AND q.id=%s AND q.deleted_at IS NULL " + QUESTION_GROUP, (cohort_id, question_id)).fetchone()
+
+
+def questions_page(cohort_id: int, account_id: int, search: str = '', filter_name: str = 'all', before: int | None = None, limit: int = 30):
+    where = " q.cohort_id=%s AND q.deleted_at IS NULL "
+    params = [cohort_id]
+    filters = {'all': 'TRUE', 'mine': 'q.author_id=%s', 'resolved': 'q.resolved_at IS NOT NULL',
+               'unanswered': f'q.resolved_at IS NULL AND {NO_ANSWER}',
+               'no-instructor': f'q.resolved_at IS NULL AND NOT {INSTRUCTOR_ANSWER}'}
+    where += ' AND (' + filters[filter_name] + ')'
+    if filter_name == 'mine':
+        params.append(account_id)
+    if search:
+        pattern = '%' + _like_literal(search) + '%'
+        where += " AND (q.title ILIKE %s OR q.body ILIKE %s OR a.display_name ILIKE %s)"
+        params.extend([pattern] * 3)
+    with connect() as conn:
+        total = conn.execute("SELECT count(*) AS n FROM hub_questions q JOIN hub_accounts a ON a.id=q.author_id WHERE " + where, params).fetchone()['n']
+        stats = conn.execute(f"""SELECT count(*) AS total,
+            count(*) FILTER (WHERE q.resolved_at IS NULL AND {NO_ANSWER}) AS unanswered,
+            count(*) FILTER (WHERE q.resolved_at IS NULL AND NOT {INSTRUCTOR_ANSWER}) AS pending,
+            count(*) FILTER (WHERE q.resolved_at IS NOT NULL) AS resolved
+            FROM hub_questions q WHERE q.cohort_id=%s AND q.deleted_at IS NULL""", (cohort_id,)).fetchone()
+        if before is not None:
+            where += ' AND q.id<%s'
+            params.append(before)
+        rows = conn.execute(QUESTION_SELECT + ' WHERE ' + where + QUESTION_GROUP + ' ORDER BY q.id DESC LIMIT %s', [*params, limit + 1]).fetchall()
+    more = len(rows) > limit
+    items = rows[:limit]
+    return {'items': items, 'total': total, 'stats': stats, 'has_more': more, 'next_before': items[-1]['id'] if more else None}
+
+
+def add_question(cohort_id: int, account_id: int, title: str, body: str, attachments: list[str] | None = None):
+    with connect() as conn:
+        ids = list(dict.fromkeys(attachments or []))
+        if ids:
+            found = conn.execute("""SELECT id FROM hub_files WHERE id=ANY(%s)
+                                    AND cohort_id=%s AND uploader_id=%s FOR SHARE""",
+                                 (ids, cohort_id, account_id)).fetchall()
+            if len(found) != len(ids):
+                raise ValueError("Attachments must be your own files in this cohort")
+        qid = conn.execute("""INSERT INTO hub_questions (cohort_id,author_id,title,body)
+                             VALUES (%s,%s,%s,%s) RETURNING id""",
+                           (cohort_id, account_id, title, body)).fetchone()["id"]
+        for file_id in ids:
+            conn.execute("INSERT INTO hub_question_files (question_id,file_id) VALUES (%s,%s)", (qid, file_id))
+        return qid
+
+
+def resolve_question(cohort_id: int, question_id: int, actor_id: int, resolved: bool):
+    with connect() as conn:
+        return conn.execute("""UPDATE hub_questions SET
+            resolved_at=CASE WHEN %s THEN now() ELSE NULL END,
+            resolved_by=CASE WHEN %s THEN %s ELSE NULL END
+            WHERE id=%s AND cohort_id=%s AND deleted_at IS NULL
+            RETURNING id, (resolved_at IS NOT NULL) AS resolved""",
+                            (resolved, resolved, actor_id, question_id, cohort_id)).fetchone()
 
 
 def question(cohort_id: int, question_id: int):
@@ -346,6 +413,36 @@ def files(cohort_id: int):
         ).fetchall()
 
 
+def files_page(cohort_id: int, search: str = '', before: str | None = None, limit: int = 30):
+    where, params = ' f.cohort_id=%s ', [cohort_id]
+    if search:
+        where += ' AND (f.original_name ILIKE %s OR a.username ILIKE %s)'
+        params.extend(['%' + _like_literal(search) + '%'] * 2)
+    with connect() as conn:
+        total = conn.execute('SELECT count(*) AS n FROM hub_files f JOIN hub_accounts a ON a.id=f.uploader_id WHERE ' + where, params).fetchone()['n']
+        if before:
+            cursor = conn.execute('SELECT created_at,id FROM hub_files WHERE cohort_id=%s AND id=%s', (cohort_id, before)).fetchone()
+            if not cursor:
+                raise ValueError('Invalid file cursor')
+            where += ' AND (f.created_at,f.id)<(%s,%s)'
+            params.extend([cursor['created_at'], cursor['id']])
+        rows = conn.execute("""SELECT f.id,f.original_name,f.content_type,f.size_bytes,f.created_at,a.username
+            FROM hub_files f JOIN hub_accounts a ON a.id=f.uploader_id WHERE """ + where + ' ORDER BY f.created_at DESC,f.id DESC LIMIT %s', [*params, limit + 1]).fetchall()
+    more = len(rows) > limit
+    items = rows[:limit]
+    return {'items': items, 'total': total, 'has_more': more, 'next_before': items[-1]['id'] if more else None}
+
+
+def membership_candidates(cohort_id: int, search: str, admin: bool):
+    pattern = '%' + _like_literal(search) + '%'
+    with connect() as conn:
+        return conn.execute("""SELECT a.id,a.username,a.display_name FROM hub_accounts a
+            WHERE a.active AND (a.username ILIKE %s OR a.display_name ILIKE %s)
+              AND (%s OR EXISTS (SELECT 1 FROM hub_memberships m WHERE m.account_id=a.id AND m.cohort_id=%s AND m.active)
+                   OR NOT EXISTS (SELECT 1 FROM hub_memberships m WHERE m.account_id=a.id AND m.active))
+            ORDER BY a.username LIMIT 20""", (pattern, pattern, admin, cohort_id)).fetchall()
+
+
 def add_file(file_id: str, cohort_id: int, account_id: int, name: str, content_type: str, size: int):
     with connect() as conn:
         conn.execute("""INSERT INTO hub_files (id,cohort_id,uploader_id,original_name,content_type,size_bytes)
@@ -387,8 +484,22 @@ def bootstrap_admin(username: str, display_name: str, password: str):
         ).fetchone()
 
 
-def add_membership(cohort_id: int, username: str, role: str):
+def add_membership(cohort_id: int, username: str, role: str, actor: dict | None = None):
     with connect() as conn:
+        if actor is not None:
+            # Serialize role changes in the cohort, and re-check the actor inside the transaction.
+            conn.execute('SELECT id FROM hub_cohorts WHERE id=%s FOR UPDATE', (cohort_id,))
+            target = conn.execute("""SELECT a.id,m.role FROM hub_accounts a LEFT JOIN hub_memberships m
+                ON m.account_id=a.id AND m.cohort_id=%s AND m.active
+                WHERE a.normalized_username=%s AND a.active FOR UPDATE OF a""", (cohort_id, normalize_username(username))).fetchone()
+            if not target:
+                return None
+            current_actor = conn.execute("""SELECT a.is_admin,m.role FROM hub_accounts a LEFT JOIN hub_memberships m
+                ON m.account_id=a.id AND m.cohort_id=%s AND m.active WHERE a.id=%s AND a.active""", (cohort_id, actor['id'])).fetchone()
+            if not current_actor or (not current_actor['is_admin'] and current_actor['role'] != 'instructor'):
+                raise PermissionError('Instructor access required')
+            if not current_actor['is_admin'] and (role == 'instructor' or target['role'] == 'instructor'):
+                raise PermissionError('Only an administrator can change instructor roles')
         return conn.execute(
             """INSERT INTO hub_memberships (cohort_id,account_id,role)
                SELECT %s,id,%s FROM hub_accounts WHERE normalized_username=%s

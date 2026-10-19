@@ -1,4 +1,9 @@
 const messages = {
+  'Only an administrator can change instructor roles': '강사의 역할을 변경하는 것은 관리자만 할 수 있습니다.',
+  'Invalid file cursor': '자료 목록이 변경되었습니다. 목록을 새로 불러와 주세요.',
+  'Use one message cursor at a time': '대화 위치를 확인하고 다시 시도하세요.',
+  'Attachments must be your own files in this cohort': '이 수강반에 직접 올린 파일만 첨부할 수 있습니다.',
+  'Only the author or instructor can resolve a question': '질문 작성자 또는 강사만 해결 상태를 변경할 수 있습니다.',
   'Invalid origin': '허용되지 않은 접속 경로입니다. 원래 페이지에서 다시 시도하세요.',
   'Log in to the prototype hub': '로그인이 필요합니다.',
   'No access to this cohort': '이 수강반에 접근할 권한이 없습니다.',

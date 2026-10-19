@@ -64,6 +64,7 @@ try {
   const selectedLabs = [];
   await page.route('**/hub/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/health')) return route.fulfill({ json: { postgresql: true, sfu_configured: true } });
     if (path.endsWith('/classrooms')) return route.fulfill({ json: [{ id: 'lab-1', name: 'Lab 1' }, { id: 'lab-3', name: 'Lab 3' }] });
     if (path.endsWith('/media-session')) {
       if (route.request().method() === 'POST') {

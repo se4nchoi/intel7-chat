@@ -78,6 +78,7 @@ try {
     ` }));
     await page.route('**/hub/api/**', async route => {
       const req = route.request(), path = new URL(req.url()).pathname, method = req.method();
+      if (path.endsWith('/health')) return route.fulfill({ json: { postgresql: true, sfu_configured: true } });
       const body = req.postData() ? req.postDataJSON() : {};
       if (path.endsWith('/me')) return route.fulfill({ json: { id, username: name, display_name: name } });
       if (path.endsWith('/cohorts')) return route.fulfill({ json: [{ id: 1, slug: 'class-a', name: 'Class A', role, archived: false }] });
@@ -125,6 +126,7 @@ try {
   assert.equal(await first.locator('#media-start').isVisible(),false);
   await teacher.locator('#media-request-list li').filter({hasText:'Student One'}).getByRole('button',{name:'허용',exact:true}).click();
   await first.waitForFunction(()=>!document.querySelector('#media-start').disabled && !document.querySelector('#media-start').classList.contains('hidden'));
+  await teacher.waitForFunction(()=>document.querySelector('#media-start').disabled);
   assert.equal(await teacher.locator('#media-start').isDisabled(),true);
   await first.click('#media-start');
   await first.waitForFunction(()=>window.__captures?.includes(true));

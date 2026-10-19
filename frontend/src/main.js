@@ -2,6 +2,7 @@ import { errorMessage, installKoreanValidation } from './korean.js';
 import { api, cohortSocket, fileDownloadUrl, uploadFile } from './api.js';
 import { readRoute, spaceUrl } from './navigation.js';
 import { renderRich } from './format.js';
+import { DraftStore } from './drafts.js';
 import { ClassroomMedia } from './media.js';
 import { ClassroomSession } from './classroom-session.js';
 
@@ -10,13 +11,18 @@ const ROLE_LABEL = { admin: '관리자', instructor: '강사', student: '수강�
 const FORM_IDS = ['message-form', 'question-form', 'answer-form', 'file-form', 'membership-form', 'channel-form'];
 const GROUP_GAP_MS = 5 * 60 * 1000;
 
-let cohortRequest = 0;
+let tabStorage; try { tabStorage = sessionStorage; } catch { /* tab storage unavailable */ }
+const drafts = new DraftStore(tabStorage);
+const pendingForms = new Set();
+let cohortRequest = 0, boardRefreshTimer, questionRequest = 0, fileRequest = 0;
 const state = {
   account: null, cohorts: [], cohort: null, channel: null, socket: null,
   space: readRoute(location.pathname).space, epoch: 0, channelEpoch: 0, questionEpoch: 0,
   channels: new Map(), lastMessage: null, lastSeenId: 0, reconnectTimer: null, reconnectNow: null,
   channelList: [], unread: new Map(), online: new Set(), members: [], holding: null, historyLoaded: false, ackTimer: null,
   messageMap: new Map(), pins: [], dms: [], newBelow: 0,
+  mediaAvailable: null, accounts: [], managementTab: 'personal',
+  questionCursor: null, questionTotal: 0, boardStats: null, fileCursor: null, fileItems: [], fileSearch: '', fileTotal: 0,
   questions: [], question: null, filter: 'all', search: '', boardView: 'home', fileCount: null,
 };
 
@@ -24,10 +30,38 @@ const state = {
 let statusTimer;
 function status(message, error = false) {
   clearTimeout(statusTimer);
-  $('status').textContent = error ? errorMessage(message) : message;
-  $('status').className = `toast ${error ? 'error' : ''}`;
-  if (message && !error) statusTimer = setTimeout(() => { $('status').textContent = ''; }, 4000);
+  const dialog = document.querySelector('dialog[open]');
+  let target = $('status');
+  if (!message) {
+    $('status').replaceChildren();
+    document.querySelectorAll('.dialog-status').forEach(node => { node.replaceChildren(); node.classList.add('hidden'); });
+    return;
+  }
+  if (dialog) {
+    target = dialog.querySelector('.dialog-status');
+    if (!target) { target = el('div', { class: 'dialog-status', role: 'alert' }); dialog.querySelector('.dialog-head').after(target); }
+  }
+  target.textContent = error ? errorMessage(message) : message;
+  target.classList.remove('hidden');
+  target.classList.toggle('error', error);
+  if (error) target.append(el('button', { type: 'button', class: 'icon-btn', 'aria-label': '알림 닫기', text: '×', onclick: () => { target.replaceChildren(); if (target !== $('status')) target.classList.add('hidden'); } }));
+  if (!error || !dialog) statusTimer = setTimeout(() => { target.replaceChildren(); if (target !== $('status')) target.classList.add('hidden'); }, error ? 10000 : 4000);
 }
+function regionState(id, kind = '', message = '', retry) {
+  const node = $(id);
+  node.className = `region-state${message ? '' : ' hidden'}${kind === 'error' ? ' error' : ''}`;
+  node.replaceChildren();
+  if (message) node.append(el('span', { text: message }));
+  if (retry) node.append(el('button', { type: 'button', text: '다시 시도', onclick: () => Promise.resolve(retry()).catch(error => regionState(id, 'error', error.message, retry)) }));
+}
+function draftKey(kind, target) { return drafts.key(state.account?.id, state.cohort?.id, kind, target); }
+function saveDrafts() {
+  drafts.set(draftKey('message', state.channel?.id), $('message-input').value);
+  drafts.set(draftKey('answer', state.question?.id), $('answer-form').elements.body.value);
+}
+$('message-input').addEventListener('input', () => drafts.set(draftKey('message', state.channel?.id), $('message-input').value));
+$('answer-form').addEventListener('input', () => drafts.set(draftKey('answer', state.question?.id), $('answer-form').elements.body.value));
+
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -77,7 +111,28 @@ function closeChat() {
   clearTimeout(state.reconnectTimer); state.reconnectTimer = null; state.reconnectNow = null;
   const socket = state.socket; state.socket = null; socket?.close();
 }
-function closeNav() { $('hub-app').classList.remove('nav-open'); }
+const narrowNav = matchMedia('(max-width: 800px)');
+let navOpener;
+function syncNav() {
+  const open = narrowNav.matches && $('hub-app').classList.contains('nav-open');
+  for (const node of [document.querySelector('.rail'), $('sidebar')]) {
+    node.inert = narrowNav.matches && !open;
+    node.setAttribute('aria-hidden', String(node.inert));
+  }
+  document.querySelector('.content').inert = open;
+  document.querySelectorAll('.menu-btn').forEach(button => { button.setAttribute('aria-expanded', String(open)); button.setAttribute('aria-controls', 'sidebar'); });
+}
+function closeNav() {
+  const wasOpen = $('hub-app').classList.contains('nav-open');
+  $('hub-app').classList.remove('nav-open'); syncNav();
+  if (wasOpen && navOpener?.getClientRects().length) navOpener.focus();
+}
+function closeMembers() {
+  $('hub-app').classList.remove('members-open');
+  if (matchMedia('(max-width: 1100px)').matches) $('members-toggle').setAttribute('aria-pressed', 'false');
+}
+narrowNav.addEventListener('change', () => { if (!narrowNav.matches) $('hub-app').classList.remove('nav-open'); syncNav(); });
+syncNav();
 
 /* ---------- theme ---------- */
 function applyTheme(theme) { if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme; }
@@ -91,6 +146,7 @@ $('theme-btn').addEventListener('click', () => {
 
 /* ---------- shell ---------- */
 function showAccount() {
+  $('boot-card').classList.add('hidden');
   $('login-card').classList.toggle('hidden', !!state.account);
   $('hub-app').classList.toggle('hidden', !state.account);
   const name = state.account?.display_name || state.account?.username || '';
@@ -109,13 +165,14 @@ function renderRail() {
   })));
 }
 function updateControls() {
-  const writable = !!state.cohort && !state.cohort.archived;
+  const writable = !!state.account && !!state.cohort && !state.cohort.archived;
   for (const id of FORM_IDS) {
-    const enabled = writable && (id !== 'message-form' || !!state.channel) && (id !== 'answer-form' || !!state.question);
+    const enabled = writable && !pendingForms.has(id) && (id !== 'message-form' || (!!state.channel && state.historyLoaded)) && (id !== 'answer-form' || !!state.question);
     for (const control of $(id).elements) control.disabled = !enabled;
   }
   $('new-post-btn').disabled = !writable;
-  $('media-connect').disabled = !writable || !state.channel;
+  $('media-connect').disabled = !writable || !state.channel || state.mediaAvailable !== true;
+  if (state.mediaAvailable === false && !media.room) $('media-status').textContent = isManager() ? '화면 공유가 설정되지 않았습니다. 학원 운영자에게 설정을 요청하세요.' : '아직 화면 공유를 사용할 수 없습니다. 강사에게 확인해 주세요.';
   $('media-start').classList.toggle('hidden', !isManager() && !media.canPublish);
   $('media-start').textContent = isManager() ? '화면 공유하기' : '화면 선택하고 공유';
   const student = state.cohort?.role === 'student';
@@ -126,11 +183,16 @@ function updateControls() {
   $('media-start').disabled = !writable || !media.connected || !media.canPublish || media.publishing || media.sharing;
 }
 function resetContent() {
+  saveDrafts(); $('message-input').value = ''; $('answer-form').elements.body.value = '';
+  clearTimeout(boardRefreshTimer); questionRequest++; fileRequest++;
+  for (const id of ['chat-state', 'board-state', 'board-update', 'files-state']) regionState(id);
+  $('history-more').classList.add('hidden');
+  $('history-latest').classList.add('hidden');
   state.epoch++; state.channelEpoch++; state.questionEpoch++;
   closeChat(); void leaveMedia().catch(error => status(error.message, true));
   state.channel = null; state.question = null; state.questions = []; state.lastMessage = null; state.lastSeenId = 0; state.fileCount = null;
   state.channelList = []; state.unread = new Map(); state.online = new Set(); state.members = []; state.holding = null; state.historyLoaded = false;
-  state.messageMap = new Map(); state.pins = []; state.dms = []; state.newBelow = 0; renderPins();
+  state.messageMap = new Map(); state.pins = []; state.dms = []; state.newBelow = 0; state.questionCursor = null; state.boardStats = null; state.fileItems = []; state.fileCursor = null; renderPins();
   clearTimeout(state.ackTimer); updateTitle();
   for (const id of ['channel-list', 'messages', 'question-list', 'instructor-answers', 'student-answers', 'file-list', 'member-list', 'board-stats']) $(id).replaceChildren();
   $('channel-heading').textContent = '채널을 선택하세요';
@@ -144,7 +206,14 @@ function showSpace() {
   $('chat-side').classList.toggle('hidden', !cohort || !chat);
   $('board-side').classList.toggle('hidden', !cohort || chat);
   $('empty-space').classList.toggle('hidden', !!cohort);
+  const admin = !!state.account?.is_admin;
+  $('empty-heading').textContent = admin ? '첫 수강반을 만들어 주세요' : '참여 중인 수강반이 없습니다';
+  $('empty-description').textContent = admin ? '수강반을 만들고 강사·학생 계정과 채널을 추가하면 시작할 수 있습니다.' : '목록에서 참여 중인 수강반을 선택하세요. 목록에 없다면 강사 또는 학원 운영자에게 배정을 요청하세요.';
+  $('empty-create').classList.toggle('hidden', !admin);
   $('hub-app').classList.toggle('board-mode', !!cohort && !chat);
+  $('board-nav').classList.toggle('hidden', !cohort || chat);
+  $('class-manage-btn').classList.toggle('hidden', !cohort || !isManager());
+  $('academy-manage-btn').classList.toggle('hidden', !state.account?.is_admin);
   $('cohort-name').textContent = cohort?.name || '마디';
   $('role-label').textContent = cohort ? `${ROLE_LABEL[cohort.role] || '구성원'}${cohort.archived ? ' · 종료됨' : ''}` : '';
   $('role-label').className = `role-chip ${roleClass(cohort?.role)}`;
@@ -165,16 +234,40 @@ function showSpace() {
   }
   updateTitle();
   renderRail();
+  setManagementTab(state.managementTab);
   updateControls();
 }
 
 /* ---------- boot / cohorts / spaces ---------- */
+function requireLogin(message = '로그인이 만료되었습니다. 다시 로그인해 주세요.') {
+  if (!state.account) return;
+  const username = state.account.username;
+  saveDrafts();
+  for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+  resetContent(); state.account = null; state.cohort = null; state.cohorts = []; state.accounts = [];
+  for (const id of FORM_IDS) $(id).reset();
+  showAccount(); showSpace(); closeNav();
+  $('login-message').textContent = message; $('login-message').classList.remove('hidden');
+  $('login-form').elements.username.value = username; $('login-form').elements.password.value = '';
+  $('login-form').elements.password.focus();
+}
+addEventListener('madi:unauthorized', () => requireLogin());
 async function boot() {
+  $('boot-card').classList.remove('hidden'); $('login-card').classList.add('hidden'); $('hub-app').classList.add('hidden');
+  $('boot-message').textContent = '학습 공간을 불러오고 있습니다…'; $('boot-retry').classList.add('hidden');
   try { state.account = await api('/me'); }
-  catch { showAccount(); return; }
+  catch (error) {
+    if (error.status === 401) { state.account = null; showAccount(); }
+    else { $('boot-message').textContent = '서비스에 연결할 수 없습니다. 네트워크 상태를 확인하고 다시 시도하세요.'; $('boot-retry').classList.remove('hidden'); }
+    return;
+  }
   showAccount();
+  void loadMediaAvailability();
   try { await loadCohorts(); } catch (error) { status(error.message, true); }
 }
+$('boot-retry').addEventListener('click', boot);
+$('empty-create').addEventListener('click', async () => { await openManagement('academy'); $('cohort-form').elements.slug.focus(); });
+
 async function loadCohorts(preferredId) {
   const request = ++cohortRequest, account = state.account;
   const cohorts = await api('/cohorts');
@@ -185,7 +278,7 @@ async function loadCohorts(preferredId) {
   const chosen = preferredId ? state.cohorts.find(c => c.id === Number(preferredId)) : route.slug ? state.cohorts.find(c => c.slug === route.slug) : state.cohorts[0];
   if (!chosen) {
     state.cohort = null; resetContent(); showSpace();
-    status(route.slug ? '이 수강반에 접근할 수 없습니다. 참여 중인 수강반을 선택하세요.' : '아직 배정된 수강반이 없습니다. 강사에게 참여 권한을 요청하세요.');
+    if (route.slug) status('이 수강반에 접근할 수 없습니다. 참여 중인 수강반을 선택하세요.', true);
     return;
   }
   await selectCohort(chosen.id, 'replace');
@@ -194,20 +287,23 @@ async function selectCohort(id, historyMode = 'push') {
   const next = state.cohorts.find(c => c.id === Number(id));
   if (!next) return;
   if (state.cohort?.id !== next.id) {
+    saveDrafts();
     for (const formId of FORM_IDS) $(formId).reset();
     state.filter = 'all'; state.search = ''; $('post-search').value = ''; syncFilterButtons();
   }
   state.cohort = next;
-  const url = spaceUrl(next.slug, state.space) + (historyMode === 'replace' ? location.hash : '');
+  const url = spaceUrl(next.slug, state.space) + (historyMode === 'replace' ? location.search + location.hash : '');
   if (historyMode === 'replace') history.replaceState(null, '', url);
   else if (location.pathname !== url) history.pushState(null, '', url);
   await loadSpace();
 }
 async function loadSpace() {
+  status('');
   resetContent(); showSpace();
   const epoch = state.epoch;
   try {
-    if (state.space === 'chat') { connectChat(state.cohort); await Promise.all([loadChannels(), loadMembers(), loadDMs()]); }
+    connectChat(state.cohort);
+    if (state.space === 'chat') { await Promise.all([loadMembers(), loadDMs()]); await loadChannels(); }
     else await loadBoard();
     if (epoch === state.epoch && state.cohort.archived) status('종료된 수강반입니다. 기존 내용만 열람할 수 있습니다.');
   } catch (error) { if (epoch === state.epoch) status(error.message, true); }
@@ -223,9 +319,17 @@ for (const space of ['chat', 'board']) {
   });
 }
 window.addEventListener('popstate', () => { if (state.account) loadCohorts().catch(error => status(error.message, true)); });
-for (const button of document.querySelectorAll('.menu-btn')) button.addEventListener('click', () => $('hub-app').classList.add('nav-open'));
+for (const button of document.querySelectorAll('.menu-btn')) button.addEventListener('click', () => { navOpener = button; $('hub-app').classList.add('nav-open'); syncNav(); $(`${state.space}-link`).focus(); });
 $('scrim').addEventListener('click', closeNav);
-document.addEventListener('keydown', event => { if (event.key === 'Escape') { closeNav(); $('hub-app').classList.remove('members-open'); } });
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { closeNav(); closeMembers(); }
+  if (event.key === 'Tab' && narrowNav.matches && $('hub-app').classList.contains('nav-open')) {
+    const nodes = [...document.querySelectorAll('.rail button, .rail a, #sidebar button, #sidebar a, #sidebar input')].filter(n => !n.disabled && n.getClientRects().length && !n.closest('.hidden'));
+    const first = nodes[0], last = nodes.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
+});
 
 /* ---------- chat ---------- */
 async function loadChannels() {
@@ -235,7 +339,10 @@ async function loadChannels() {
   state.channelList = channels;
   state.unread = new Map(counts.map(c => [c.channel_id, c]));
   renderChannelList();
-  if (channels.length) await selectChannel(channels.find(c => c.id === state.channels.get(cohort.id)) || channels[0]);
+  const requested = Number(new URL(location.href).searchParams.get('channel'));
+  const selected = [...channels, ...state.dms].find(c => c.id === (requested || state.channels.get(cohort.id))) || (!requested && channels[0]);
+  if (selected) await selectChannel(selected, 'replace');
+  else if (requested) regionState('chat-state', 'error', '이 대화에 접근할 수 없거나 더 이상 존재하지 않습니다.', async () => { history.replaceState(null, '', spaceUrl(cohort.slug, 'chat')); await loadChannels(); });
   else {
     $('messages').append(el('p', { class: 'muted', text: cohort.archived ? '종료된 수강반이라 채널을 만들 수 없습니다.' : isManager() ? '채널 목록 옆의 + 버튼으로 첫 채널을 만드세요.' : '강사에게 채널 개설을 요청하세요.' }));
     updateControls();
@@ -287,7 +394,7 @@ async function openDM(member) {
   try {
     const dm = dmChannel(await api(`/cohorts/${state.cohort.id}/dms`, { method: 'POST', json: { account_id: member.id } }));
     if (!state.dms.some(d => d.id === dm.id)) state.dms.unshift(dm);
-    $('dm-picker').close(); closeNav(); $('hub-app').classList.remove('members-open');
+    $('dm-picker').close(); closeNav(); closeMembers();
     await selectChannel(dm);
     $('message-input').focus();
   } catch (error) { status(error.message, true); }
@@ -312,7 +419,7 @@ function updateTitle() {
 async function loadMembers() {
   const epoch = state.epoch, cohort = state.cohort;
   let members;
-  try { members = await api(`/cohorts/${cohort.id}/members`); } catch { return; }
+  try { members = await api(`/cohorts/${cohort.id}/members`); } catch { if (epoch === state.epoch) $('member-list').replaceChildren(el('p', { text: '구성원을 불러오지 못했습니다.' }), el('button', { text: '다시 시도', onclick: loadMembers })); return; }
   if (epoch !== state.epoch) return;
   state.members = members;
   renderMembers();
@@ -339,11 +446,18 @@ function renderMembers() {
   if (!nodes.length) nodes.push(el('p', { class: 'muted', text: '구성원이 없습니다.' }));
   $('member-list').replaceChildren(...nodes);
 }
-async function selectChannel(channel) {
+async function selectChannel(channel, historyMode = 'push') {
+  saveDrafts();
   const epoch = state.epoch, channelEpoch = ++state.channelEpoch, cohort = state.cohort;
   await leaveMedia();
   if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
-  state.channel = channel; state.channels.set(cohort.id, channel.id); state.lastMessage = null; state.lastSeenId = 0;
+  state.channel = channel;
+  $('history-latest').classList.add('hidden');
+  $('message-input').value = drafts.get(draftKey('message', channel.id)); $('message-input').style.height = '';
+  const channelUrl = new URL(spaceUrl(cohort.slug, 'chat'), location.origin); channelUrl.searchParams.set('channel', channel.id);
+  if (location.pathname + location.search !== channelUrl.pathname + channelUrl.search) history[historyMode === 'replace' ? 'replaceState' : 'pushState'](null, '', channelUrl.pathname + channelUrl.search);
+  regionState('chat-state', 'loading', '대화를 불러오고 있습니다…');
+  state.channels.set(cohort.id, channel.id); state.lastMessage = null; state.lastSeenId = 0;
   state.historyLoaded = false; state.holding = []; state.messageMap = new Map(); state.pins = []; renderPins();
   const dm = channel.kind === 'dm';
   $('channel-heading').textContent = dm ? `@ ${channel.name}` : `# ${channel.name}`;
@@ -357,23 +471,25 @@ async function selectChannel(channel) {
     : el('div', { class: 'channel-intro' },
         el('div', { class: 'hash-big', 'aria-hidden': 'true', text: '#' }),
         el('h3', { text: `#${channel.name}에 오신 것을 환영합니다` }),
-        el('p', { class: 'muted', text: `${cohort.name}의 #${channel.name} 채널입니다. 최근 메시지 100개까지 표시됩니다.` })));
+        el('p', { class: 'muted', text: `${cohort.name}의 #${channel.name} 채널입니다. 이전 메시지 불러오기로 지난 대화도 확인할 수 있습니다.` })));
   renderChannelList(); updateControls();
   if (!dm) void loadMediaClassrooms().catch(error => status(error.message, true));
   // Live messages for this channel are held while its history loads, then applied in order.
-  const history = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages`);
+  let messages;
+  try { messages = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages`); }
+  catch (error) { if (epoch === state.epoch && channelEpoch === state.channelEpoch) { state.holding = null; regionState('chat-state', 'error', '대화 기록을 불러오지 못했습니다.', () => selectChannel(channel, 'replace')); } return; }
   if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
   const lastRead = Number(state.unread.get(channel.id)?.last_read_id ?? Infinity);
-  const firstNew = history.find(m => m.id > lastRead && m.username !== state.account?.username);
-  for (const message of history) {
+  const firstNew = messages.find(m => m.id > lastRead && m.username !== state.account?.username);
+  for (const message of messages) {
     // The divider goes in first so the first new message starts its own group, author shown.
     if (message === firstNew) $('messages').append(el('div', { class: 'new-divider', role: 'separator', 'aria-label': '여기부터 새 메시지' }, el('span', { text: '새 메시지' })));
     receive(message);
   }
   state.newBelow = 0; showJump();
   if (firstNew) $('messages').querySelector('.new-divider').scrollIntoView({ block: 'center' });
-  state.historyLoaded = true;
-  state.pins = history.filter(m => m.pinned_at); renderPins(); loadPins().catch(() => {});
+  state.historyLoaded = true; regionState('chat-state'); $('history-more').classList.toggle('hidden', messages.length < 100); updateControls();
+  state.pins = messages.filter(m => m.pinned_at); renderPins(); loadPins().catch(() => {});
   flushHolding();
   ackRead(true);
 }
@@ -391,6 +507,15 @@ function applyChannelEvent(event) {
   else if (event.type === 'message_pinned') { updateMessage(event.message); loadPins().catch(() => {}); }
 }
 function handleEvent(event) {
+  if (event.type === 'board_changed' || event.type === 'files_changed') {
+    if (state.space === 'board') { clearTimeout(boardRefreshTimer); boardRefreshTimer = setTimeout(() => refreshBoard().catch(() => regionState('board-update', 'error', '새 내용을 불러오지 못했습니다.', refreshBoard)), 150); }
+    return;
+  }
+  if (event.type === 'membership_changed') {
+    if (event.account_id === state.account?.id) loadCohorts(state.cohort?.id).catch(error => status(error.message, true));
+    else if (state.space === 'chat') void loadMembers();
+    return;
+  }
   if (event.type === 'media_updated') {
     if (event.channel_id === state.channel?.id && classroomSession.active) void classroomSession.check().catch(() => classroomSession.onLost());
     return;
@@ -421,13 +546,16 @@ async function loadUnread() {
 // Mark the open channel read up to the newest message shown, while the tab is visible.
 function ackRead(now = false) {
   clearTimeout(state.ackTimer);
-  const send = () => {
-    const cohort = state.cohort, channel = state.channel, upTo = state.lastSeenId;
-    if (!cohort || !channel || document.visibilityState !== 'visible') return;
-    state.unread.set(channel.id, { unread: 0, mentions: 0 }); renderChannelList();
-    if (upTo) api(`/cohorts/${cohort.id}/channels/${channel.id}/read`, { method: 'POST', json: { message_id: upTo } }).catch(() => { /* retried on next message */ });
+  const send = async () => {
+    const cohort = state.cohort, channel = state.channel, epoch = state.epoch;
+    if (!cohort || !channel || !state.historyLoaded || document.visibilityState !== 'visible') return;
+    const box = $('messages'), rect = box.getBoundingClientRect();
+    const visible = [...box.querySelectorAll('[data-message-id]')].filter(row => { const r = row.getBoundingClientRect(); return r.bottom > rect.top && r.top < rect.bottom; });
+    const upTo = Math.max(0, ...visible.map(row => Number(row.dataset.messageId)));
+    if (!upTo) return;
+    try { await api(`/cohorts/${cohort.id}/channels/${channel.id}/read`, { method: 'POST', json: { message_id: upTo } }); if (epoch === state.epoch && state.channel === channel) await loadUnread(); } catch { /* retry on the next scroll or message */ }
   };
-  if (now) send(); else state.ackTimer = setTimeout(send, 800);
+  if (now) void send(); else state.ackTimer = setTimeout(send, 800);
 }
 // After a (re)connect: fetch what the open channel missed, and refresh every channel's unread count.
 async function catchUp() {
@@ -452,7 +580,7 @@ function connectChat(cohort, retry = 0) {
   socket.onopen = async () => {
     opened = true;
     try {
-      await Promise.all([catchUp(), loadUnread()]);
+      await Promise.all([state.space === 'board' ? (retry ? refreshBoard() : Promise.resolve()) : catchUp(), loadUnread()]);
       if (retry && state.socket === socket) status('채팅에 다시 연결되었습니다.');
     } catch (error) {
       if (state.socket === socket) { status(error.message, true); socket.close(); }
@@ -463,12 +591,12 @@ function connectChat(cohort, retry = 0) {
     state.socket = null;
     state.online = new Set(); renderMembers();
     // 1008: the server revoked this session or cohort access (logout elsewhere, expiry, removal).
-    if (event.code === 1008) { status(REVOKED_MESSAGE, true); return; }
+    if (event.code === 1008) { requireLogin(REVOKED_MESSAGE); return; }
     // A handshake refused before opening looks like a network error; check the session.
     if (!opened) {
       try { await api('/me'); } catch (error) {
         // 401: the session is gone. Anything else (server down, no network) is worth retrying.
-        if (error.status === 401) { if (current()) status(REVOKED_MESSAGE, true); return; }
+        if (error.status === 401) { if (current()) requireLogin(REVOKED_MESSAGE); return; }
       }
     }
     if (!current()) return;
@@ -484,7 +612,7 @@ function connectChat(cohort, retry = 0) {
 }
 // Skip the wait when the network or the tab comes back.
 addEventListener('online', () => state.reconnectNow?.());
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { state.reconnectNow?.(); if (state.historyLoaded) ackRead(true); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { state.reconnectNow?.(); if (state.space === 'board') void refreshBoard().catch(() => {}); else if (state.historyLoaded) ackRead(true); } });
 function appendMessage(message) {
   const box = $('messages');
   if (box.querySelector(`[data-message-id="${message.id}"]`)) return;
@@ -507,6 +635,8 @@ function appendMessage(message) {
         avatar(name, message.username),
         el('div', { class: 'msg-head' }, el('strong', { class: roleClass(message.role), text: name, title: `@${message.username}` }), roleTag(message.role), time),
         body);
+  row.tabIndex = 0; row.setAttribute('aria-label', `${name} · ${stamp(message.created_at)}`);
+  row.addEventListener('keydown', event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); row.querySelector('.msg-actions button')?.focus(); } });
   row.append(reactionsNode(message));
   const actions = messageActions(message, row);
   if (actions) row.append(actions);
@@ -524,10 +654,11 @@ $('jump-new').addEventListener('click', () => { const box = $('messages'); box.s
 $('messages').addEventListener('scroll', () => {
   const box = $('messages');
   if (box.scrollHeight - box.scrollTop - box.clientHeight < 60 && state.newBelow) { state.newBelow = 0; showJump(); }
+  if (state.historyLoaded) ackRead();
 });
 function messageActions(message, row) {
   const name = message.display_name || message.username;
-  const writable = !!state.cohort && !state.cohort.archived;
+  const writable = !!state.account && !!state.cohort && !state.cohort.archived;
   const bar = el('div', { class: 'msg-actions', role: 'toolbar', 'aria-label': '메시지 작업' },
     writable ? el('button', { type: 'button', text: '😀', title: '반응 추가', 'aria-label': '반응 추가', onclick: event => openReactionPicker(message, event.currentTarget) }) : null,
     writable && (isManager() || isDM()) ? el('button', { type: 'button', text: message.pinned_at ? '고정 해제' : '📌 고정', 'aria-label': message.pinned_at ? '고정 해제' : '메시지 고정',
@@ -604,12 +735,42 @@ function renderPins() {
       el('strong', { text: pin.display_name || pin.username }), el('small', { class: 'muted', text: ` · ${stamp(pin.created_at)}` }),
       el('span', { class: 'pin-text', text: pin.body })))) : [el('li', { class: 'muted', text: isManager() ? '고정된 메시지가 없습니다. 메시지에 마우스를 올려 📌 고정을 누르세요.' : '고정된 메시지가 없습니다.' })]));
 }
-function jumpTo(messageId) {
-  const row = $('messages').querySelector(`[data-message-id="${messageId}"]`);
-  if (!row) { status('오래된 메시지라 화면에 없습니다. 최근 100개만 표시됩니다.'); return; }
-  row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+function renderHistory(rows) {
+  state.messageMap = new Map(); state.lastMessage = null;
+  $('messages').replaceChildren();
+  for (const message of rows) receive(message);
+}
+async function jumpTo(messageId) {
+  let row = $('messages').querySelector(`[data-message-id="${messageId}"]`);
+  if (!row) {
+    const cohort = state.cohort, channel = state.channel, epoch = state.channelEpoch;
+    try {
+      const rows = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages?around=${messageId}`);
+      if (epoch !== state.channelEpoch) return;
+      renderHistory(rows); $('history-more').classList.remove('hidden'); $('history-latest').classList.remove('hidden');
+      row = $('messages').querySelector(`[data-message-id="${messageId}"]`);
+    } catch { regionState('chat-state', 'error', '고정 메시지를 불러오지 못했습니다.', () => jumpTo(messageId)); return; }
+  }
+  if (!row) { regionState('chat-state', 'error', '삭제되었거나 접근할 수 없는 메시지입니다.'); return; }
+  row.scrollIntoView({ block: 'center', behavior: 'instant' }); row.focus({ preventScroll: true });
   row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 1600);
 }
+$('history-latest').addEventListener('click', () => selectChannel(state.channel, 'replace'));
+$('history-more').addEventListener('click', async () => {
+  const channel = state.channel, cohort = state.cohort, epoch = state.channelEpoch;
+  const before = Math.min(...state.messageMap.keys());
+  if (!Number.isFinite(before)) return;
+  $('history-more').disabled = true;
+  try {
+    const older = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages?before=${before}`);
+    if (epoch !== state.channelEpoch) return;
+    const box = $('messages'), height = box.scrollHeight, top = box.scrollTop;
+    const rows = [...new Map([...older, ...state.messageMap.values()].map(message => [message.id, message])).values()].sort((a, b) => a.id - b.id);
+    renderHistory(rows); box.scrollTop = top + box.scrollHeight - height;
+    $('history-more').classList.toggle('hidden', older.length < 100); regionState('chat-state');
+  } catch { regionState('chat-state', 'error', '이전 메시지를 불러오지 못했습니다.', () => $('history-more').click()); }
+  finally { $('history-more').disabled = false; }
+});
 $('pins-toggle').addEventListener('click', event => {
   const hidden = $('pins-panel').classList.toggle('hidden');
   event.currentTarget.setAttribute('aria-pressed', String(!hidden));
@@ -618,7 +779,7 @@ $('pins-toggle').addEventListener('click', event => {
 function startEditMessage(message, row) {
   if (row.classList.contains('editing')) return;
   const body = row.querySelector('.msg-body'), original = [...body.childNodes];
-  const current = row.querySelector('.msg-text').textContent;
+  const current = message.body;
   const input = el('textarea', { class: 'edit-input', rows: 2, maxlength: 2000, 'aria-label': '메시지 수정' });
   input.value = current;
   const done = () => { row.classList.remove('editing'); body.replaceChildren(...original); };
@@ -682,39 +843,88 @@ $('stage-toggle').addEventListener('click', event => {
 });
 
 /* ---------- board ---------- */
+function boardUrl(view, questionId) {
+  const url = new URL(spaceUrl(state.cohort.slug, 'board'), location.origin);
+  if (state.filter !== 'all') url.searchParams.set('filter', state.filter);
+  if (state.search) url.searchParams.set('q', state.search);
+  if (view === 'files' || view === 'compose') url.searchParams.set('view', view);
+  if (view === 'files' && state.fileSearch) url.searchParams.set('file', state.fileSearch);
+  if (view === 'post') url.hash = `post-${questionId}`;
+  return url.pathname + url.search + url.hash;
+}
+function writeBoardUrl(view, questionId, replace = false) {
+  const next = boardUrl(view, questionId);
+  if (location.pathname + location.search + location.hash !== next) history[replace ? 'replaceState' : 'pushState'](null, '', next);
+}
 async function loadBoard() {
-  const postId = Number((location.hash.match(/^#post-(\d+)$/) || [])[1]);
-  await Promise.all([loadQuestions(), loadFileCount()]);
-  const target = postId && state.questions.find(q => q.id === postId);
-  if (target) await selectQuestion(target, false);
-  else showBoardView(state.boardView === 'files' ? 'files' : 'home');
+  const url = new URL(location.href), postId = Number((url.hash.match(/^#post-(\d+)$/) || [])[1]);
+  state.filter = Object.hasOwn(FILTERS, url.searchParams.get('filter')) ? url.searchParams.get('filter') : 'all';
+  state.search = (url.searchParams.get('q') || '').slice(0, 200); $('post-search').value = state.search;
+  state.fileSearch = (url.searchParams.get('file') || '').slice(0, 200); $('file-search').value = state.fileSearch;
+  if (url.searchParams.get('view') === 'files') { showBoardView('files', { navigate: false }); await loadFiles(); return; }
+  await loadQuestions();
+  if (postId) {
+    try { await refreshQuestion(postId); }
+    catch (error) { showBoardView('home', { navigate: false }); regionState('board-state', 'error', error.status === 404 ? '질문이 삭제되었거나 존재하지 않습니다.' : '질문을 불러오지 못했습니다.', () => refreshQuestion(postId)); }
+  } else if (url.searchParams.get('view') === 'compose') openQuestionComposer(false);
+  else showBoardView('home', { navigate: false });
 }
-async function loadQuestions() {
-  const epoch = state.epoch, cohort = state.cohort;
-  const questions = await api(`/cohorts/${cohort.id}/questions`);
+async function loadQuestions({ reset = true, quiet = false } = {}) {
+  const epoch = state.epoch, cohort = state.cohort, request = ++questionRequest;
+  if (!cohort) return;
+  const params = new URLSearchParams({ search: state.search, filter: state.filter });
+  if (!reset && state.questionCursor) params.set('before', state.questionCursor);
+  if (!quiet) regionState('board-state', 'loading', '질문을 불러오고 있습니다…');
+  $('questions-more').disabled = true;
+  try {
+    const data = await api(`/cohorts/${cohort.id}/questions/page?${params}`);
+    if (epoch !== state.epoch || request !== questionRequest) return;
+    const items = Array.isArray(data) ? data : data.items;
+    state.questions = reset ? items : [...new Map([...state.questions, ...items].map(q => [q.id, q])).values()];
+    state.questionTotal = data.total ?? items.length; state.boardStats = data.stats || null;
+    state.questionCursor = data.next_before || null;
+    $('questions-more').classList.toggle('hidden', !data.has_more);
+    $('question-count').textContent = `${state.questionTotal}개 중 ${state.questions.length}개 표시`;
+    regionState('board-state'); renderFeed(); renderStats();
+  } catch (error) {
+    if (epoch === state.epoch && request === questionRequest) regionState('board-state', 'error', errorMessage(error.message), () => loadQuestions({ reset, quiet: false }));
+  } finally { if (request === questionRequest) $('questions-more').disabled = false; }
+}
+async function refreshQuestion(id, quiet = false) {
+  const epoch = state.epoch, cohort = state.cohort, current = state.question?.id;
+  const question = await api(`/cohorts/${cohort.id}/questions/${id}`);
+  if (epoch !== state.epoch || (quiet && state.question?.id !== current)) return;
+  await selectQuestion(question, false, { quiet });
+}
+async function refreshBoard() {
+  if (state.space !== 'board' || !state.cohort) return;
+  if (state.boardView === 'files') { await loadFiles({ quiet: true }); return; }
+  if (state.boardView === 'compose' || !$('post-edit-form').classList.contains('hidden') || $('post-view').querySelector('.answer-body form')) {
+    regionState('board-update', '', '새 변경 사항이 있습니다. 작성 중인 내용을 저장한 뒤 확인하세요.', refreshBoard); return;
+  }
+  const epoch = state.epoch, id = state.question?.id;
+  await loadQuestions({ quiet: true });
   if (epoch !== state.epoch) return;
-  state.questions = questions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  if (state.question) state.question = questions.find(q => q.id === state.question.id) || state.question;
-  renderFeed(); renderStats();
+  if (id && state.question?.id === id) {
+    try { await refreshQuestion(id, true); }
+    catch (error) { if (error.status === 404) { showBoardView('home'); regionState('board-state', 'error', '열려 있던 질문이 삭제되었습니다.'); } else throw error; }
+  }
+  regionState('board-update');
 }
-async function loadFileCount() {
-  if (state.boardView === 'files') return loadFiles();
-  const epoch = state.epoch;
-  try { const files = await api(`/cohorts/${state.cohort.id}/files`); if (epoch === state.epoch) { state.fileCount = files.length; renderStats(); } } catch { /* stats only */ }
-}
+$('questions-more').addEventListener('click', () => loadQuestions({ reset: false }));
 const FILTERS = {
   all: () => true,
-  unanswered: q => Number(q.answer_count) === 0,
-  'no-instructor': q => !q.instructor_answered,
+  unanswered: q => !q.resolved && Number(q.answer_count) === 0,
+  'no-instructor': q => !q.resolved && !q.instructor_answered,
   mine: q => q.username === state.account?.username,
+  resolved: q => !!q.resolved,
 };
 function feedGroup(value) {
   const days = daysAgo(value);
   return days <= 0 ? '오늘' : days === 1 ? '어제' : days < 7 ? '이번 주' : days < 14 ? '지난주' : '이전';
 }
 function renderFeed() {
-  const term = state.search.trim().toLowerCase();
-  const items = state.questions.filter(FILTERS[state.filter]).filter(q => !term || `${q.title}\n${q.body}\n${q.display_name || ''}`.toLowerCase().includes(term));
+  const items = state.questions;
   const list = $('question-list'), nodes = [];
   let group = null;
   for (const q of items) {
@@ -725,48 +935,65 @@ function renderFeed() {
       el('span', { class: 'feed-title' }, el('span', { text: q.title }), el('time', { datetime: q.created_at, text: feedTime(q.created_at) })),
       el('span', { class: 'feed-snippet', text: q.body }),
       el('span', { class: 'feed-badges' },
+        q.resolved ? el('span', { class: 'tag', text: '✓ 해결됨' }) : null,
         q.instructor_answered ? el('span', { class: 'tag instructor', text: '🎓 강사 답변' }) : null,
         q.endorsed ? el('span', { class: 'endorsed-mark', text: '✓ 인정됨' }) : null,
-        answers === 0 ? el('span', { class: 'tag danger', text: '미답변' }) : el('span', { text: `답변 ${answers}` }),
+        answers === 0 && !q.resolved ? el('span', { class: 'tag danger', text: '미답변' }) : el('span', { text: `답변 ${answers}` }),
         el('span', { text: `· ${q.display_name || q.username}` })));
-    nodes.push(el('li', { class: `feed-item${answers === 0 ? ' unanswered' : ''}` }, button));
+    nodes.push(el('li', { class: `feed-item${answers === 0 && !q.resolved ? ' unanswered' : ''}` }, button));
   }
-  if (!nodes.length) nodes.push(el('li', { class: 'feed-empty', text: state.questions.length ? '조건에 맞는 질문이 없습니다.' : state.cohort?.archived ? '이 수강반에는 질문이 없습니다.' : '아직 질문이 없습니다. 첫 질문을 올려 보세요.' }));
+  if (!nodes.length) nodes.push(el('li', { class: 'feed-empty', text: state.search || state.filter !== 'all' ? '조건에 맞는 질문이 없습니다.' : state.cohort?.archived ? '이 수강반에는 질문이 없습니다.' : '아직 질문이 없습니다. 첫 질문을 올려 보세요.' }));
   list.replaceChildren(...nodes);
 }
 function renderStats() {
   const qs = state.questions;
-  const stat = (value, label, warn = false) => el('div', { class: `stat${warn && value ? ' warn' : ''}` }, el('strong', { text: String(value ?? '–') }), el('span', { text: label }));
+  const counts = state.boardStats || { total: qs.length, unanswered: qs.filter(FILTERS.unanswered).length, pending: qs.filter(FILTERS['no-instructor']).length, resolved: qs.filter(FILTERS.resolved).length };
+  const stat = (value, label, filter, warn = false) => el('button', { type: 'button', class: `stat${warn && value ? ' warn' : ''}`, onclick: () => selectBoardFilter(filter) }, el('strong', { text: String(value ?? '–') }), el('span', { text: label }));
   $('board-stats').replaceChildren(
-    stat(qs.length, '전체 질문'),
-    stat(qs.filter(FILTERS.unanswered).length, '미답변', true),
-    stat(qs.filter(q => q.instructor_answered).length, '강사 답변'),
-    stat(state.fileCount, '공유 자료'));
+    stat(counts.total, '전체 질문', 'all'),
+    stat(counts.unanswered, '미답변', 'unanswered', true),
+    stat(counts.pending, '강사 답변 대기', 'no-instructor'),
+    stat(counts.resolved, '해결됨', 'resolved'));
 }
 function syncFilterButtons() {
   for (const button of document.querySelectorAll('.filters button')) button.setAttribute('aria-pressed', String(button.dataset.filter === state.filter));
+  for (const button of document.querySelectorAll('[data-board-filter]')) button.setAttribute('aria-current', String(state.boardView === 'home' && button.dataset.boardFilter === state.filter));
 }
-for (const button of document.querySelectorAll('.filters button')) {
-  button.addEventListener('click', () => { state.filter = button.dataset.filter; syncFilterButtons(); renderFeed(); });
+function selectBoardFilter(filter) {
+  state.filter = filter; showBoardView('home'); closeNav(); syncFilterButtons(); void loadQuestions();
+  $('board-heading').focus();
 }
-$('post-search').addEventListener('input', event => { state.search = event.target.value; renderFeed(); });
-function showBoardView(view) {
+for (const button of document.querySelectorAll('.filters button, [data-board-filter]')) {
+  button.addEventListener('click', () => selectBoardFilter(button.dataset.filter || button.dataset.boardFilter));
+}
+let questionSearchTimer;
+$('post-search').addEventListener('input', event => { state.search = event.target.value.slice(0, 200); clearTimeout(questionSearchTimer); questionSearchTimer = setTimeout(() => { writeBoardUrl('home', null, true); void loadQuestions(); }, 250); });
+$('board-back').addEventListener('click', () => { showBoardView('home'); void loadQuestions(); });
+function showBoardView(view, { navigate = true, focus = true } = {}) {
+  saveDrafts();
+  status('');
   state.boardView = view;
+  syncFilterButtons();
+  $('board-back').classList.toggle('hidden', view === 'home');
   for (const [name, id] of [['home', 'board-home'], ['post', 'post-view'], ['compose', 'compose-view'], ['files', 'files-view']]) $(id).classList.toggle('hidden', name !== view);
   $('files-link').setAttribute('aria-current', String(view === 'files'));
   if (view !== 'post') {
     state.question = null; state.questionEpoch++;
-    if (location.hash) history.replaceState(null, '', location.pathname);
+    $('answer-form').elements.body.value = '';
     renderFeed(); updateControls();
   }
   $('board-heading').textContent = { home: 'Q&A 게시판', post: 'Q&A 게시판', compose: '새 질문', files: '자료실' }[view];
   $('board-space').querySelector('.board-body').scrollTop = 0;
+  if (navigate) writeBoardUrl(view);
+  if (focus) $('board-heading').focus();
 }
-async function selectQuestion(question, updateUrl = true) {
+async function selectQuestion(question, updateUrl = true, { quiet = false } = {}) {
   const epoch = state.epoch, questionEpoch = ++state.questionEpoch, cohort = state.cohort;
+  saveDrafts();
   state.question = question;
-  showBoardView('post');
-  if (updateUrl) history.replaceState(null, '', `${location.pathname}#post-${question.id}`);
+  $('answer-form').elements.body.value = drafts.get(draftKey('answer', question.id));
+  if (!quiet) showBoardView('post', { navigate: false });
+  if (updateUrl) writeBoardUrl('post', question.id);
   $('board-heading').textContent = question.title;
   $('post-title').textContent = question.title;
   $('post-meta').replaceChildren(...[avatar(question.display_name || question.username, question.username, true),
@@ -774,9 +1001,14 @@ async function selectQuestion(question, updateUrl = true) {
     el('span', { text: `· ${stamp(question.created_at)}` }), el('span', { text: `· 질문 #${question.id}` })].filter(Boolean));
   $('post-body').replaceChildren(...[renderBody(el('span'), question.body), editedMark(question)].filter(Boolean));
   $('post-delete').classList.toggle('hidden', !canDelete(question));
+  $('post-resolve').classList.toggle('hidden', !canDelete(question));
+  $('post-resolve').textContent = question.resolved ? '해결됨 취소' : '해결됨으로 표시';
+  $('post-resolve').setAttribute('aria-pressed', String(!!question.resolved));
+  $('post-attachments').classList.toggle('hidden', !question.attachments?.length);
+  $('post-attachments').replaceChildren(...(question.attachments || []).map(file => el('li', {}, el('a', { href: fileDownloadUrl(cohort.id, file.id), text: file.name }))));
   $('post-edit').classList.toggle('hidden', !canEdit(question));
   $('post-edit-form').classList.add('hidden'); $('post-content').classList.remove('hidden');
-  $('instructor-answers').replaceChildren(); $('student-answers').replaceChildren();
+  if (!quiet) { $('instructor-answers').replaceChildren(); $('student-answers').replaceChildren(); }
   renderFeed(); updateControls();
   const answers = await api(`/cohorts/${cohort.id}/questions/${question.id}/answers`);
   if (epoch !== state.epoch || questionEpoch !== state.questionEpoch) return;
@@ -812,12 +1044,24 @@ function startEditAnswer(answer, item) {
     const epoch = state.epoch, question = state.question;
     try {
       await api(`/cohorts/${state.cohort.id}/questions/${question.id}/answers/${answer.id}`, { method: 'PATCH', json: { body: input.value } });
-      if (epoch === state.epoch && state.question?.id === question.id) await selectQuestion(state.question, false);
+      if (epoch === state.epoch && state.question?.id === question.id) await refreshQuestion(question.id);
       status('답변을 수정했습니다.');
     } catch (error) { status(error.message, true); }
   });
   body.replaceChildren(form); input.focus();
 }
+$('post-resolve').addEventListener('click', async () => {
+  const question = state.question, cohort = state.cohort, epoch = state.epoch;
+  if (!question) return;
+  $('post-resolve').disabled = true;
+  try {
+    await api(`/cohorts/${cohort.id}/questions/${question.id}/resolution`, { method: 'POST', json: { resolved: !question.resolved } });
+    if (epoch !== state.epoch) return;
+    await loadQuestions();
+    if (state.question?.id === question.id) await refreshQuestion(question.id);
+  } catch (error) { status(error.message, true); }
+  finally { $('post-resolve').disabled = false; }
+});
 $('post-edit').addEventListener('click', () => {
   const question = state.question, form = $('post-edit-form');
   if (!question) return;
@@ -830,7 +1074,7 @@ handleForm('post-edit-form', async form => {
   await api(`/cohorts/${state.cohort.id}/questions/${question.id}`, { method: 'PATCH', json: formValues(form) });
   if (epoch !== state.epoch) return;
   await loadQuestions();
-  if (state.question?.id === question.id) await selectQuestion(state.question, false);
+  if (state.question?.id === question.id) await refreshQuestion(question.id);
   status('질문을 수정했습니다.');
 });
 async function deleteAnswer(answer) {
@@ -840,7 +1084,7 @@ async function deleteAnswer(answer) {
     await api(`/cohorts/${state.cohort.id}/questions/${question.id}/answers/${answer.id}`, { method: 'DELETE' });
     if (epoch !== state.epoch) return;
     await loadQuestions();
-    if (epoch === state.epoch && state.question?.id === question.id) await selectQuestion(state.question, false);
+    if (epoch === state.epoch && state.question?.id === question.id) await refreshQuestion(question.id);
     status('답변을 삭제했습니다.');
   } catch (error) { status(error.message, true); }
 }
@@ -865,85 +1109,149 @@ async function endorse(answer, button) {
     await api(`/cohorts/${state.cohort.id}/questions/${question.id}/answers/${answer.id}/endorse`, { method: 'POST', json: { endorsed: !answer.endorsed } });
     if (epoch !== state.epoch) return;
     await loadQuestions();
-    if (epoch === state.epoch && state.question?.id === question.id) await selectQuestion(state.question, false);
+    if (epoch === state.epoch && state.question?.id === question.id) await refreshQuestion(question.id);
   } catch (error) { status(error.message, true); button.disabled = false; }
 }
-async function loadFiles() {
-  const epoch = state.epoch, cohort = state.cohort;
-  const files = await api(`/cohorts/${cohort.id}/files`);
-  if (epoch !== state.epoch) return;
-  state.fileCount = files.length; renderStats();
-  const list = $('file-list');
-  if (!files.length) { list.replaceChildren(el('li', { class: 'muted', text: '아직 공유된 자료가 없습니다.' })); return; }
-  list.replaceChildren(...files.map(file => {
-    const ext = (file.original_name.split('.').pop() || '').slice(0, 4).toUpperCase();
-    const size = file.size_bytes >= 1048576 ? `${(file.size_bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(file.size_bytes / 1024)} KB`;
-    return el('li', {}, el('span', { class: 'file-icon', 'aria-hidden': 'true', text: ext }),
-      el('div', { class: 'file-info' }, el('a', { href: fileDownloadUrl(cohort.id, file.id), text: file.original_name }),
-        el('small', { text: `@${file.username} · ${size} · ${stamp(file.created_at)}` })));
-  }));
+async function loadFiles({ reset = true, quiet = false } = {}) {
+  const epoch = state.epoch, cohort = state.cohort, request = ++fileRequest;
+  if (!cohort) return;
+  const params = new URLSearchParams({ search: state.fileSearch });
+  if (!reset && state.fileCursor) params.set('before', state.fileCursor);
+  if (!quiet) regionState('files-state', 'loading', '자료를 불러오고 있습니다…');
+  $('files-more').disabled = true;
+  try {
+    const data = await api(`/cohorts/${cohort.id}/files/page?${params}`);
+    if (epoch !== state.epoch || request !== fileRequest) return;
+    const items = Array.isArray(data) ? data : data.items;
+    state.fileItems = reset ? items : [...new Map([...state.fileItems, ...items].map(f => [f.id, f])).values()];
+    state.fileCursor = data.next_before || null; state.fileTotal = data.total ?? items.length;
+    $('files-more').classList.toggle('hidden', !data.has_more);
+    $('file-count').textContent = `${state.fileTotal}개 중 ${state.fileItems.length}개 표시`;
+    const list = $('file-list');
+    list.replaceChildren(...state.fileItems.map(file => {
+      const ext = (file.original_name.split('.').pop() || '').slice(0, 4).toUpperCase();
+      const size = file.size_bytes >= 1048576 ? `${(file.size_bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(file.size_bytes / 1024)} KB`;
+      return el('li', {}, el('span', { class: 'file-icon', 'aria-hidden': 'true', text: ext }),
+        el('div', { class: 'file-info' }, el('a', { href: fileDownloadUrl(cohort.id, file.id), text: file.original_name }),
+          el('small', { text: `@${file.username} · ${size} · ${stamp(file.created_at)}` })));
+    }));
+    regionState('files-state', '', state.fileItems.length ? '' : state.fileSearch ? '검색 조건에 맞는 자료가 없습니다.' : '아직 공유된 자료가 없습니다.');
+  } catch (error) {
+    if (epoch === state.epoch && request === fileRequest) regionState('files-state', 'error', errorMessage(error.message), () => loadFiles({ reset }));
+  } finally { if (request === fileRequest) $('files-more').disabled = false; }
 }
-$('new-post-btn').addEventListener('click', () => { closeNav(); showBoardView('compose'); $('question-form').elements.title.focus(); });
+$('files-more').addEventListener('click', () => loadFiles({ reset: false }));
+let fileSearchTimer;
+$('file-search').addEventListener('input', event => { state.fileSearch = event.target.value.slice(0, 200); clearTimeout(fileSearchTimer); fileSearchTimer = setTimeout(() => { writeBoardUrl('files', null, true); void loadFiles(); }, 250); });
+const questionDraftKey = () => `madi-question:${state.account?.id}:${state.cohort?.id}`;
+let uploadedQuestionFiles = new WeakMap();
+$('question-form').addEventListener('input', () => {
+  try { sessionStorage.setItem(questionDraftKey(), JSON.stringify(formValues($('question-form')))); $('question-draft-status').textContent = '제목과 내용이 이 탭에 임시 저장되었습니다. 첨부파일은 새로고침 후 다시 선택하세요.'; } catch { $('question-draft-status').textContent = '이 브라우저에서 임시 저장을 사용할 수 없습니다.'; }
+});
+function openQuestionComposer(navigate = true) {
+  closeNav(); showBoardView('compose', { navigate });
+  const form = $('question-form');
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(questionDraftKey()) || 'null');
+    if (draft && !form.elements.title.value && !form.elements.body.value) { form.elements.title.value = draft.title || ''; form.elements.body.value = draft.body || ''; $('question-draft-status').textContent = '이 탭에 저장한 질문을 불러왔습니다.'; }
+  } catch { /* storage unavailable */ }
+  form.elements.title.focus();
+}
+$('new-post-btn').addEventListener('click', () => openQuestionComposer());
 $('compose-cancel').addEventListener('click', () => showBoardView('home'));
-$('files-link').addEventListener('click', () => { closeNav(); showBoardView('files'); loadFiles().catch(error => status(error.message, true)); });
+$('files-link').addEventListener('click', () => { closeNav(); showBoardView('files'); void loadFiles(); });
 
 /* ---------- forms ---------- */
 function handleForm(id, action) {
   $(id).addEventListener('submit', async event => {
     event.preventDefault();
-    const form = event.currentTarget;
+    if (pendingForms.has(id)) return;
+    const form = event.currentTarget, account = state.account;
     const button = form.querySelector('button[type=submit], button:not([type])');
+    pendingForms.add(id); form.setAttribute('aria-busy', 'true'); status('');
     if (button) button.disabled = true;
     const epoch = state.epoch;
-    try { await action(form); if (epoch === state.epoch || id === 'login-form') form.reset(); }
-    catch (error) { status(error.message, true); }
-    finally { if (button) button.disabled = false; updateControls(); }
+    try {
+      await action(form);
+      if (!['message-form', 'answer-form', 'question-form'].includes(id) && (epoch === state.epoch || id === 'login-form')) form.reset();
+    } catch (error) { if (account === state.account || id === 'login-form') status(error.message, true); }
+    finally { pendingForms.delete(id); form.removeAttribute('aria-busy'); if (button) button.disabled = false; updateControls(); }
   });
 }
 
 handleForm('login-form', async form => {
   await api('/login', { method: 'POST', json: formValues(form) });
   state.account = await api('/me');
-  status('');
+  status(''); $('login-message').classList.add('hidden');
   showAccount();
+  void loadMediaAvailability();
   await loadCohorts();
 });
 
 $('logout-btn').addEventListener('click', async () => {
+  saveDrafts(); closeChat();
   try { await api('/logout', { method: 'POST' }); } catch (error) { status(error.message, true); return; }
   state.cohort = null; resetContent();
-  state.account = null; state.cohorts = [];
+  state.account = null; state.cohorts = []; state.accounts = []; state.mediaAvailable = null;
+  for (const id of FORM_IDS) $(id).reset();
+  uploadedQuestionFiles = new WeakMap(); $('question-draft-status').textContent = '';
+  $('account-list').replaceChildren(); $('membership-options').replaceChildren();
   showAccount(); showSpace();
+  $('login-message').classList.add('hidden');
   status('로그아웃되었습니다.');
 });
 
 handleForm('message-form', async () => {
   if (!state.cohort || !state.channel) throw new Error('먼저 채널을 선택하세요');
-  const epoch = state.epoch, channelEpoch = state.channelEpoch;
-  const body = $('message-input').value.trim();
+  const cohort = state.cohort, channel = state.channel, account = state.account, channelEpoch = state.channelEpoch;
+  const original = $('message-input').value, body = original.trim(), key = draftKey('message', channel.id);
   if (!body) return;
-  const message = await api(`/cohorts/${state.cohort.id}/channels/${state.channel.id}/messages`, { method: 'POST', json: { body } });
-  $('message-input').style.height = '';
-  if (epoch === state.epoch && channelEpoch === state.channelEpoch) appendMessage(message);
+  drafts.set(key, original);
+  const message = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages`, { method: 'POST', json: { body } });
+  drafts.clearIfUnchanged(key, original);
+  if (account === state.account && channelEpoch === state.channelEpoch) {
+    if ($('message-input').value === original) $('message-input').value = drafts.get(key);
+    if (!$('message-input').value) $('message-input').style.height = '';
+    receive(message);
+  }
 });
 
 handleForm('question-form', async form => {
-  const epoch = state.epoch;
-  const { id } = await api(`/cohorts/${state.cohort.id}/questions`, { method: 'POST', json: formValues(form) });
+  const epoch = state.epoch, cohort = state.cohort, draftKey = questionDraftKey();
+  const data = formValues(form), files = [...$('question-files').files];
+  if (files.length > 5 || files.some(file => !file.size || file.size > 10 * 1024 * 1024)) throw new Error('첨부파일은 최대 5개, 각 1바이트~10MB까지 가능합니다.');
+  const attachments = [];
+  for (const file of files) {
+    let id = uploadedQuestionFiles.get(file);
+    if (!id) {
+      const payload = new FormData(); payload.append('upload', file);
+      const result = await uploadFile(cohort.id, payload);
+      id = result.id; uploadedQuestionFiles.set(file, id);
+    }
+    attachments.push(id);
+    if (epoch !== state.epoch) return;
+  }
+  const { id } = await api(`/cohorts/${cohort.id}/questions`, { method: 'POST', json: { ...data, attachments } });
   if (epoch !== state.epoch) return;
+  if (form.elements.title.value === data.title && form.elements.body.value === data.body) { form.reset(); try { sessionStorage.removeItem(draftKey); } catch { /* storage unavailable */ } }
+  uploadedQuestionFiles = new WeakMap(); $('question-draft-status').textContent = '';
   await loadQuestions();
-  const created = state.questions.find(q => q.id === id);
-  if (epoch === state.epoch && created) await selectQuestion(created);
+  const created = await api(`/cohorts/${cohort.id}/questions/${id}`);
+  if (epoch === state.epoch) await selectQuestion(created);
   status('질문을 등록했습니다.');
 });
 
 handleForm('answer-form', async form => {
   if (!state.question) throw new Error('질문을 선택하세요');
-  const epoch = state.epoch, question = state.question;
-  await api(`/cohorts/${state.cohort.id}/questions/${question.id}/answers`, { method: 'POST', json: formValues(form) });
+  const epoch = state.epoch, cohort = state.cohort, question = state.question, key = draftKey('answer', question.id);
+  const original = form.elements.body.value, data = formValues(form);
+  drafts.set(key, original);
+  await api(`/cohorts/${cohort.id}/questions/${question.id}/answers`, { method: 'POST', json: data });
+  drafts.clearIfUnchanged(key, original);
   if (epoch !== state.epoch) return;
+  if (state.question?.id === question.id && form.elements.body.value === original) form.elements.body.value = drafts.get(key);
   await loadQuestions();
-  if (epoch === state.epoch && state.question?.id === question.id) await selectQuestion(state.question, false);
+  if (epoch === state.epoch && state.question?.id === question.id) await refreshQuestion(question.id);
 });
 
 handleForm('file-form', async form => {
@@ -954,8 +1262,19 @@ handleForm('file-form', async form => {
 });
 
 handleForm('account-form', async form => {
-  await api('/accounts', { method: 'POST', json: formValues(form) });
-  status('계정을 만들었습니다. 수강반에 구성원으로 추가해 주세요.');
+  const data = formValues(form), cohort = state.cohort;
+  const enroll = $('enroll-new-account').checked && !!cohort && !cohort.archived;
+  const role = $('new-account-role').value;
+  await api('/accounts', { method: 'POST', json: data });
+  await loadAccounts();
+  if (enroll) {
+    try {
+      await api(`/cohorts/${cohort.id}/memberships`, { method: 'POST', json: { username: data.username, role } });
+      await refreshManagement();
+      if (state.cohort === cohort && state.space === 'chat') await loadMembers();
+      status('계정을 만들고 수강반에 추가했습니다.');
+    } catch { status('계정은 생성되었습니다. 수강반 추가에 실패했으니 수강반 관리에서 다시 추가해 주세요.', true); }
+  } else status('계정을 만들었습니다. 수강반 관리에서 구성원으로 추가할 수 있습니다.');
 });
 
 handleForm('cohort-form', async form => {
@@ -967,6 +1286,7 @@ handleForm('cohort-form', async form => {
 handleForm('membership-form', async form => {
   await api(`/cohorts/${state.cohort.id}/memberships`, { method: 'POST', json: formValues(form) });
   if (state.space === 'chat') await loadMembers();
+  await refreshManagement();
   status('구성원 정보를 저장했습니다.');
 });
 
@@ -993,6 +1313,12 @@ async function loadManageMembers() {
   const cohort = state.cohort, admin = !!state.account?.is_admin;
   const members = await api(`/cohorts/${cohort.id}/members`);
   if (state.cohort !== cohort) return;
+  state.manageMembers = members; renderManageMembers();
+}
+function renderManageMembers() {
+  if (!state.cohort) return;
+  const cohort = state.cohort, admin = !!state.account?.is_admin, term = $('member-search').value.trim().toLowerCase();
+  const members = (state.manageMembers || []).filter(m => `${m.username} ${m.display_name}`.toLowerCase().includes(term));
   const rows = members.map(member => {
     const removable = member.username !== state.account.username && (admin || member.role === 'student') && !cohort.archived;
     return el('li', {},
@@ -1012,7 +1338,16 @@ async function removeMember(member) {
   } catch (error) { status(error.message, true); }
 }
 async function loadAccounts() {
+  const account = state.account;
   const accounts = await api('/accounts');
+  if (state.account !== account) return;
+  state.accounts = accounts;
+  $('membership-options').replaceChildren(...accounts.filter(a => a.active).map(a => el('option', { value: a.username, label: a.display_name })));
+  renderAccounts();
+}
+function renderAccounts() {
+  const term = $('account-search').value.trim().toLowerCase();
+  const accounts = state.accounts.filter(a => `${a.username} ${a.display_name}`.toLowerCase().includes(term));
   const cohortName = new Map(state.cohorts.map(c => [c.id, c.name]));
   $('account-list').replaceChildren(...accounts.map(account => {
     const self = account.id === state.account.id;
@@ -1061,16 +1396,61 @@ handleForm('password-form', async () => {
   await api('/me/password', { method: 'POST', json: formValues(form) });
   status('비밀번호를 변경했습니다. 다른 기기의 로그인은 끊겼습니다.');
 });
-$('manage-btn').addEventListener('click', () => {
+function setManagementTab(tab) {
+  const admin = !!state.account?.is_admin, manager = !!state.cohort && isManager();
+  if ((tab === 'academy' && !admin) || (tab === 'class' && !manager)) tab = 'personal';
+  state.managementTab = tab;
+  $('management-cohort').textContent = state.cohort ? `관리 중인 수강반: ${state.cohort.name}` : '';
+  $('self-card').classList.toggle('hidden', tab !== 'personal');
+  $('admin-card').classList.toggle('hidden', tab !== 'academy' || !admin);
+  $('accounts-card').classList.toggle('hidden', tab !== 'academy' || !admin);
+  $('manage-card').classList.toggle('hidden', tab !== 'class' || !manager);
+  for (const button of document.querySelectorAll('[data-management-tab]')) {
+    const name = button.dataset.managementTab;
+    button.classList.toggle('hidden', (name === 'academy' && !admin) || (name === 'class' && !manager));
+    button.setAttribute('aria-pressed', String(name === tab));
+  }
+  $('enroll-new-account').disabled = !state.cohort || !!state.cohort.archived;
+  $('new-account-role-label').classList.toggle('hidden', !$('enroll-new-account').checked || $('enroll-new-account').disabled);
+}
+async function openManagement(tab = 'personal') {
+  status(''); closeNav();
   $('temp-password').classList.add('hidden'); $('temp-password').textContent = '';
+  setManagementTab(tab);
   $('management').showModal();
-  refreshManagement().catch(error => status(error.message, true));
+  try { await refreshManagement(); } catch (error) { status(error.message, true); }
+}
+for (const button of document.querySelectorAll('[data-management-tab]')) button.addEventListener('click', () => setManagementTab(button.dataset.managementTab));
+$('enroll-new-account').addEventListener('change', () => setManagementTab(state.managementTab));
+$('account-form').addEventListener('reset', () => queueMicrotask(() => setManagementTab(state.managementTab)));
+$('account-search').addEventListener('input', renderAccounts);
+$('member-search').addEventListener('input', renderManageMembers);
+let candidateTimer, candidateRequest = 0;
+$('membership-form').elements.username.addEventListener('input', event => {
+  const search = event.target.value.trim(), cohort = state.cohort, request = ++candidateRequest;
+  clearTimeout(candidateTimer);
+  if (!search || !cohort) { $('membership-options').replaceChildren(); return; }
+  candidateTimer = setTimeout(async () => {
+    try {
+      const items = await api(`/cohorts/${cohort.id}/members/candidates?q=${encodeURIComponent(search)}`);
+      if (request === candidateRequest && cohort === state.cohort) $('membership-options').replaceChildren(...items.map(a => el('option', { value: a.username, label: a.display_name })));
+    } catch (error) { if (request === candidateRequest) status(error.message, true); }
+  }, 250);
 });
-$('add-channel-btn').addEventListener('click', () => { $('management').showModal(); $('channel-form').elements.slug.focus(); refreshManagement().catch(error => status(error.message, true)); });
+$('manage-btn').addEventListener('click', () => openManagement('personal'));
+$('class-manage-btn').addEventListener('click', () => openManagement('class'));
+$('academy-manage-btn').addEventListener('click', () => openManagement('academy'));
+$('add-channel-btn').addEventListener('click', async () => { await openManagement('class'); $('channel-form').elements.slug.focus(); });
 $('management-close').addEventListener('click', () => $('management').close());
 $('management').addEventListener('close', () => { $('temp-password').classList.add('hidden'); $('temp-password').textContent = ''; });
 
 /* ---------- screen share (LiveKit SFU) ---------- */
+async function loadMediaAvailability() {
+  const account = state.account;
+  try { const health = await api('/health'); if (state.account === account) state.mediaAvailable = health.sfu_configured === true; }
+  catch { if (state.account === account) state.mediaAvailable = false; }
+  if (state.account === account) updateControls();
+}
 const MEDIA_MESSAGES = {
   idle: '연결하면 공유 화면을 볼 수 있습니다.',
   connecting: '화면 공유 서버에 연결하고 있습니다…',
@@ -1129,8 +1509,10 @@ async function loadMediaClassrooms() {
   const channel = state.channel;
   const labs = await api(`/cohorts/${cohort.id}/classrooms`);
   if (state.cohort !== cohort || state.channel !== channel || media.room || media.phase === 'connecting') return;
+  const selectedClassroom = $('media-classroom').value;
   $('media-classroom').replaceChildren(el('option', { value: '', text: '시청만 하기' }),
     ...labs.map(lab => el('option', { value: lab.id, text: lab.name })));
+  if (labs.some(lab => lab.id === selectedClassroom)) $('media-classroom').value = selectedClassroom;
   $('media-classroom-label').classList.toggle('hidden', !labs.length);
 }
 const media = new ClassroomMedia({
@@ -1165,7 +1547,7 @@ $('media-connect').addEventListener('click', async () => {
     if (media.room || media.phase === 'connecting') { await leaveMedia(); return; }
     if (!state.cohort || !state.channel) throw new Error('채널을 선택하세요');
     await media.connect(state.cohort.id, state.channel.id);
-  } catch (error) { status(error.message, true); }
+  } catch (error) { $('media-status').textContent = `화면 공유에 연결하지 못했습니다. ${errorMessage(error.message)}`; }
 });
 
 $('media-start').addEventListener('click', async () => {

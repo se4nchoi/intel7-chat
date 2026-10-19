@@ -104,6 +104,11 @@ class Message(BaseModel):
 class Question(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     body: str = Field(min_length=1, max_length=5000)
+    attachments: list[str] = Field(default_factory=list, max_length=5)
+
+
+class QuestionResolution(BaseModel):
+    resolved: bool
 
 
 class Answer(BaseModel):
@@ -277,11 +282,15 @@ async def add_membership(cohort_id: int, body: Membership, request: Request):
     if body.role == "instructor" and cohort["role"] != "admin":
         log.warning("instructor assignment denied by=%r cohort=%s ip=%s", actor["username"], cohort_id, _ip(request))
         raise HTTPException(403, "Only an administrator can assign instructors")
-    record = await asyncio.to_thread(db.add_membership, cohort_id, body.username, body.role)
+    try:
+        record = await asyncio.to_thread(db.add_membership, cohort_id, body.username, body.role, actor)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     if not record:
         raise HTTPException(404, "Account not found")
     log.info("membership set by=%r cohort=%s account=%s role=%s",
              actor["username"], cohort_id, record["account_id"], record["role"])
+    await _broadcast(cohort_id, {"type": "membership_changed", "account_id": record["account_id"]})
     return record
 
 
@@ -289,6 +298,14 @@ async def add_membership(cohort_id: int, body: Membership, request: Request):
 async def members(cohort_id: int, request: Request):
     await _cohort(request, cohort_id)
     return await asyncio.to_thread(db.members, cohort_id)
+
+
+@router.get("/api/cohorts/{cohort_id}/members/candidates")
+async def membership_candidates(cohort_id: int, request: Request, q: str = Query('', max_length=100)):
+    account, _ = await _cohort(request, cohort_id, manage=True)
+    if len(q.strip()) < 1:
+        return []
+    return await asyncio.to_thread(db.membership_candidates, cohort_id, q.strip(), account['is_admin'])
 
 
 @router.get("/api/cohorts/{cohort_id}/channels")
@@ -312,11 +329,14 @@ async def create_channel(cohort_id: int, body: NewChannel, request: Request):
 
 
 @router.get("/api/cohorts/{cohort_id}/channels/{channel_id}/messages")
-async def messages(cohort_id: int, channel_id: int, request: Request, after: int | None = Query(None, ge=0)):
+async def messages(cohort_id: int, channel_id: int, request: Request, after: int | None = Query(None, ge=0),
+                   before: int | None = Query(None, ge=1), around: int | None = Query(None, ge=1)):
     account, _ = await _cohort(request, cohort_id)
     if not await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"]):
         raise HTTPException(404, "Channel not found")
-    return await asyncio.to_thread(db.messages, channel_id, after)
+    if sum(value is not None for value in (after, before, around)) > 1:
+        raise HTTPException(400, "Use one message cursor at a time")
+    return await asyncio.to_thread(db.messages, channel_id, after, before, around)
 
 
 class MediaStart(BaseModel):
@@ -576,6 +596,23 @@ async def mark_read(cohort_id: int, channel_id: int, body: ReadMark, request: Re
     await asyncio.to_thread(db.mark_read, account["id"], channel_id, body.message_id)
 
 
+@router.get("/api/cohorts/{cohort_id}/questions/page")
+async def questions_page(cohort_id: int, request: Request, search: str = Query('', max_length=200),
+                         filter: str = Query('all', pattern=r'^(all|mine|resolved|unanswered|no-instructor)$'),
+                         before: int | None = Query(None, ge=1)):
+    account, _ = await _cohort(request, cohort_id)
+    return await asyncio.to_thread(db.questions_page, cohort_id, account['id'], search.strip(), filter, before)
+
+
+@router.get("/api/cohorts/{cohort_id}/questions/{question_id}")
+async def question_detail(cohort_id: int, question_id: int, request: Request):
+    await _cohort(request, cohort_id)
+    record = await asyncio.to_thread(db.question_detail, cohort_id, question_id)
+    if not record:
+        raise HTTPException(404, "Question not found")
+    return record
+
+
 @router.get("/api/cohorts/{cohort_id}/questions")
 async def questions(cohort_id: int, request: Request):
     await _cohort(request, cohort_id)
@@ -588,8 +625,29 @@ async def add_question(cohort_id: int, body: Question, request: Request):
     account, _ = await _cohort(request, cohort_id)
     if not body.title.strip() or not body.body.strip():
         raise HTTPException(400, "Question title and body are required")
-    qid = await asyncio.to_thread(db.add_question, cohort_id, account["id"], body.title.strip(), body.body.strip())
+    try:
+        qid = await asyncio.to_thread(db.add_question, cohort_id, account["id"], body.title.strip(), body.body.strip(), body.attachments)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    await _broadcast(cohort_id, {"type": "board_changed", "question_id": qid})
     return {"id": qid}
+
+
+@router.post("/api/cohorts/{cohort_id}/questions/{question_id}/resolution")
+async def resolve_question(cohort_id: int, question_id: int, body: QuestionResolution, request: Request):
+    _same_origin(request)
+    actor, cohort = await _cohort(request, cohort_id)
+    question = await asyncio.to_thread(db.question, cohort_id, question_id)
+    if not question:
+        raise HTTPException(404, "Question not found")
+    if actor["id"] != question["author_id"] and cohort["role"] not in {"admin", "instructor"}:
+        raise HTTPException(403, "Only the author or instructor can resolve a question")
+    record = await asyncio.to_thread(db.resolve_question, cohort_id, question_id, actor["id"], body.resolved)
+    if not record:
+        raise HTTPException(404, "Question not found")
+    log.info("question resolution by=%r cohort=%s question=%s resolved=%s", actor["username"], cohort_id, question_id, body.resolved)
+    await _broadcast(cohort_id, {"type": "board_changed", "question_id": question_id})
+    return record
 
 
 @router.get("/api/cohorts/{cohort_id}/questions/{question_id}/answers")
@@ -609,6 +667,7 @@ async def add_answer(cohort_id: int, question_id: int, body: Answer, request: Re
     if not body.body.strip():
         raise HTTPException(400, "Answer cannot be empty")
     answer_id = await asyncio.to_thread(db.add_answer, question_id, account["id"], body.body.strip())
+    await _broadcast(cohort_id, {"type": "board_changed", "question_id": question_id})
     return {"id": answer_id}
 
 
@@ -622,7 +681,18 @@ async def endorse_answer(cohort_id: int, question_id: int, answer_id: int, body:
     if not record:
         raise HTTPException(404, "Answer not found")
     log.info("answer endorsement by=%r cohort=%s answer=%s endorsed=%s", actor["username"], cohort_id, answer_id, body.endorsed)
+    await _broadcast(cohort_id, {"type": "board_changed", "question_id": question_id})
     return record
+
+
+@router.get("/api/cohorts/{cohort_id}/files/page")
+async def files_page(cohort_id: int, request: Request, search: str = Query('', max_length=200),
+                     before: str | None = Query(None, pattern=r'^[a-f0-9]{32}$')):
+    await _cohort(request, cohort_id)
+    try:
+        return await asyncio.to_thread(db.files_page, cohort_id, search.strip(), before)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/api/cohorts/{cohort_id}/files")
@@ -653,6 +723,7 @@ async def upload_file(cohort_id: int, request: Request, upload: UploadFile = Fil
         target.unlink(missing_ok=True)
         raise
     log.info("file uploaded user=%r cohort=%s file=%s name=%r bytes=%s", account["username"], cohort_id, file_id, name, len(content))
+    await _broadcast(cohort_id, {"type": "files_changed"})
     return {"id": file_id, "name": name, "size_bytes": len(content)}
 
 
@@ -815,6 +886,7 @@ async def delete_question(cohort_id: int, question_id: int, request: Request):
     if not _may_delete(account, cohort, found["author_id"]):
         raise HTTPException(403, "You can only delete your own posts")
     await asyncio.to_thread(db.soft_delete, "question", question_id, account["id"])
+    await _broadcast(cohort_id, {"type": "board_changed", "question_id": question_id})
     log.info("question deleted by=%r cohort=%s question=%s own=%s", account["username"], cohort_id,
              question_id, found["author_id"] == account["id"])
 
@@ -831,6 +903,7 @@ async def delete_answer(cohort_id: int, question_id: int, answer_id: int, reques
     if not _may_delete(account, cohort, found["author_id"]):
         raise HTTPException(403, "You can only delete your own posts")
     await asyncio.to_thread(db.soft_delete, "answer", answer_id, account["id"])
+    await _broadcast(cohort_id, {"type": "board_changed", "question_id": question_id})
     log.info("answer deleted by=%r cohort=%s question=%s answer=%s own=%s", account["username"], cohort_id,
              question_id, answer_id, found["author_id"] == account["id"])
 
@@ -886,6 +959,7 @@ async def edit_question(cohort_id: int, question_id: int, body: QuestionEdit, re
     if found["author_id"] != account["id"]:
         raise HTTPException(403, "You can only edit your own posts")
     await asyncio.to_thread(db.edit_post, "question", question_id, account["id"], _clean(body.body), _clean(body.title))
+    await _broadcast(cohort_id, {"type": "board_changed", "question_id": question_id})
     log.info("question edited user=%r cohort=%s question=%s", account["username"], cohort_id, question_id)
 
 
@@ -901,6 +975,7 @@ async def edit_answer(cohort_id: int, question_id: int, answer_id: int, body: An
     if found["author_id"] != account["id"]:
         raise HTTPException(403, "You can only edit your own posts")
     await asyncio.to_thread(db.edit_post, "answer", answer_id, account["id"], _clean(body.body))
+    await _broadcast(cohort_id, {"type": "board_changed", "question_id": question_id})
     log.info("answer edited user=%r cohort=%s question=%s answer=%s", account["username"], cohort_id, question_id, answer_id)
 
 
