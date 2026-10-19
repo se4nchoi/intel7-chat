@@ -350,3 +350,82 @@
   </div>
 </div>
 
+<!-- 새 그룹 대화 만들기 모달 -->
+<div id="create-group-dm-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="create-group-dm-title">
+  <div class="modal-box group-dm-modal-box">
+    <div class="admin-panel-header">
+      <div>
+        <h2 id="create-group-dm-title">새 그룹 대화 만들기</h2>
+        <p class="modal-desc">여러 사용자를 선택해 비공개 그룹 대화를 시작합니다.</p>
+      </div>
+      <button id="create-group-dm-close" class="admin-close" type="button" aria-label="닫기">×</button>
+    </div>
+    <form id="create-group-dm-form" class="channel-form">
+      <label for="group-dm-name-input">그룹 대화 이름 (선택)</label>
+      <input id="group-dm-name-input" type="text" maxlength="50" placeholder="예: 스터디 모임 (비워두면 참여자 이름으로 표시)" autocomplete="off" />
+      
+      <div class="group-dm-picker-header">
+        <label for="group-dm-user-search">참여자 선택</label>
+        <span id="group-dm-selected-count" class="group-dm-selected-badge">0명 선택됨</span>
+      </div>
+      <input id="group-dm-user-search" class="admin-search-input" type="search" placeholder="참여자 검색 (이름 / @아이디)..." autocomplete="off" />
+      
+      <div id="group-dm-user-list" class="group-dm-picker-list" role="group" aria-label="참여자 목록"></div>
+
+      <p id="create-group-dm-error" class="error-msg" aria-live="polite"></p>
+      <button id="create-group-dm-submit" type="submit" disabled>그룹 대화 만들기</button>
+    </form>
+  </div>
+</div>
+
+<!-- 그룹 대화 관리 모달 -->
+<div id="manage-group-dm-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="manage-group-dm-title">
+  <div class="modal-box group-dm-modal-box">
+    <div class="admin-panel-header">
+      <div>
+        <h2 id="manage-group-dm-title">그룹 대화 관리</h2>
+        <p class="modal-desc" id="manage-group-dm-desc">대화방 이름 변경 및 참여자를 관리합니다.</p>
+      </div>
+      <button id="manage-group-dm-close" class="admin-close" type="button" aria-label="닫기">×</button>
+    </div>
+
+    <div class="group-dm-manage-content">
+      <!-- Section: 이름 변경 -->
+      <form id="manage-group-dm-name-form" class="channel-form group-dm-subform">
+        <label for="manage-group-dm-name-input">그룹 대화 이름</label>
+        <div class="group-dm-inline-row">
+          <input id="manage-group-dm-name-input" type="text" maxlength="50" placeholder="그룹 대화 이름 (비워두면 참여자 이름)" autocomplete="off" />
+          <button id="manage-group-dm-name-save" type="submit" class="secondary-btn group-dm-inline-btn">저장</button>
+        </div>
+      </form>
+
+      <!-- Section: 현재 참여자 목록 -->
+      <div class="group-dm-section">
+        <div class="group-dm-section-header">
+          <span class="group-dm-section-title">현재 참여자 (<span id="manage-group-dm-member-count">0</span>명)</span>
+        </div>
+        <div id="manage-group-dm-members-list" class="group-dm-members-list" role="list"></div>
+      </div>
+
+      <!-- Section: 새 참여자 초대 -->
+      <div class="group-dm-section">
+        <div class="group-dm-section-header">
+          <span class="group-dm-section-title">새 참여자 초대</span>
+          <span id="manage-group-dm-invite-count" class="group-dm-selected-badge">0명 선택됨</span>
+        </div>
+        <input id="manage-group-dm-invite-search" class="admin-search-input" type="search" placeholder="초대할 사용자 검색..." autocomplete="off" />
+        <div id="manage-group-dm-invite-list" class="group-dm-picker-list small" role="group" aria-label="초대 가능한 사용자 목록"></div>
+        <div class="group-dm-invite-actions">
+          <button id="manage-group-dm-invite-btn" type="button" class="secondary-btn" disabled>선택한 사용자 초대하기</button>
+        </div>
+      </div>
+
+      <p id="manage-group-dm-error" class="error-msg" aria-live="polite"></p>
+
+      <div class="group-dm-danger-zone">
+        <button id="manage-group-dm-leave-btn" type="button" class="danger-btn">대화방 나가기</button>
+      </div>
+    </div>
+  </div>
+</div>
+

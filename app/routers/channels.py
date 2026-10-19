@@ -10,7 +10,7 @@ from app.auth import (
 from app.database import (
     archive_channel, channel_exists, create_channel, delete_channel,
     get_channel_by_id, get_channel_by_name, get_recent_messages,
-    list_channels, list_mentionable_users, update_channel
+    is_group_dm_member, list_channels, list_mentionable_users, update_channel
 )
 from app import main
 
@@ -49,10 +49,12 @@ async def api_create_channel(request: Request):
 
 @router.get("/{channel_id}")
 async def api_get_channel(channel_id: int, request: Request):
-    main.request_user(request)
+    user = main.request_user(request)
     channel = get_channel_by_id(channel_id)
     if not channel:
         raise HTTPException(404, "채널을 찾을 수 없습니다.")
+    if channel.get("is_dm_group") and not is_group_dm_member(channel_id, user["id"]):
+        raise HTTPException(403, "비공개 그룹 대화에 접근할 권한이 없습니다.")
     return channel
 
 
@@ -64,6 +66,8 @@ async def api_update_channel(channel_id: int, request: Request):
     current = get_channel_by_id(channel_id)
     if not current:
         raise HTTPException(404, "채널을 찾을 수 없습니다.")
+    if current.get("is_dm_group"):
+        raise HTTPException(400, "그룹 대화는 그룹 대화 관리 메뉴에서 수정하세요.")
     data = await main.read_json_body(request)
     name = data.get("name")
     display_name = data.get("display_name")
@@ -109,6 +113,8 @@ async def api_archive_channel(channel_id: int, request: Request):
         raise HTTPException(404, "채널을 찾을 수 없습니다.")
     if current.get("is_default"):
         raise HTTPException(400, "기본 채널은 보관할 수 없습니다.")
+    if current.get("is_dm_group"):
+        raise HTTPException(400, "그룹 대화는 보관할 수 없습니다.")
     data = await main.read_json_body(request) if request.headers.get("content-type", "").startswith("application/json") else {}
     unarchive = bool(data.get("unarchive", False)) or request.url.path.endswith("/unarchive")
     try:
@@ -132,6 +138,8 @@ async def api_delete_channel(channel_id: int, request: Request):
         raise HTTPException(404, "채널을 찾을 수 없습니다.")
     if current.get("is_default"):
         raise HTTPException(400, "기본 채널은 삭제할 수 없습니다.")
+    if current.get("is_dm_group"):
+        raise HTTPException(400, "그룹 대화는 채널 삭제 API로 삭제할 수 없습니다.")
     try:
         deleted_files = delete_channel(channel_id)
     except ValueError as exc:
@@ -147,8 +155,11 @@ async def api_delete_channel(channel_id: int, request: Request):
 @router.get("/{channel_id}/messages")
 async def channel_message_history(channel_id: int, request: Request, before_id: Optional[int] = None):
     user = main.request_user(request)
-    if not await asyncio.to_thread(channel_exists, channel_id):
+    channel = await asyncio.to_thread(get_channel_by_id, channel_id)
+    if not channel:
         raise HTTPException(404, "채널을 찾을 수 없습니다.")
+    if channel.get("is_dm_group") and not await asyncio.to_thread(is_group_dm_member, channel_id, user["id"]):
+        raise HTTPException(403, "비공개 그룹 대화에 접근할 권한이 없습니다.")
     messages = await asyncio.to_thread(get_recent_messages, main.PUBLIC_HISTORY_PAGE_SIZE + 1, before_id, channel_id=channel_id, current_user_id=user["id"])
     has_more = len(messages) > main.PUBLIC_HISTORY_PAGE_SIZE
     messages = messages[-main.PUBLIC_HISTORY_PAGE_SIZE:]

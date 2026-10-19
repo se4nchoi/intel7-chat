@@ -7,9 +7,9 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.database import (
     ALLOWED_REACTION_EMOJIS, get_channel_by_id, get_direct_message_by_id,
-    get_direct_messages_between, get_message_by_id, get_message_reactions,
+    get_direct_messages_between, get_group_dm_member_ids, get_message_by_id, get_message_reactions,
     get_pinned_messages, get_recent_messages, get_user_by_id, get_user_by_username,
-    get_user_conversation_states, get_user_unread_counts, list_mentionable_users,
+    get_user_conversation_states, get_user_unread_counts, is_group_dm_member, list_mentionable_users,
     move_message_channel, normalize_dm_conversation_id, pin_message,
     search_conversation_history, set_conversation_muted, set_message_hidden,
     toggle_message_reaction, unpin_message, update_direct_message_content,
@@ -50,7 +50,12 @@ async def api_update_message(message_id: int, request: Request):
         raise HTTPException(404, "메시지를 찾을 수 없습니다.")
     users = await asyncio.to_thread(list_mentionable_users)
     enriched = main.with_mentions(updated, users)
-    await main.broadcast({"type": "message_edited", "message": enriched})
+    chan = get_channel_by_id(updated["channel_id"])
+    if chan and chan.get("is_dm_group"):
+        member_ids = get_group_dm_member_ids(updated["channel_id"])
+        await main.send_to_user_ids(member_ids, {"type": "message_edited", "message": enriched})
+    else:
+        await main.broadcast({"type": "message_edited", "message": enriched})
     return enriched
 
 
@@ -161,17 +166,26 @@ async def api_toggle_reaction(message_type: str, message_id: int, request: Reque
         if msg.get("is_hidden") and user["role"] != "admin":
             raise HTTPException(403, "숨겨진 메시지에는 반응할 수 없습니다.")
 
+        chan = get_channel_by_id(msg["channel_id"])
+        if chan and chan.get("is_dm_group") and not is_group_dm_member(msg["channel_id"], user["id"]):
+            raise HTTPException(403, "그룹 대화 참여자만 반응할 수 있습니다.")
+
         toggle_message_reaction("channel", message_id, user["id"], emoji)
         updated_reactions = get_message_reactions("channel", message_id, current_user_id=user["id"])
 
         all_reactions = get_message_reactions("channel", message_id, current_user_id=None)
-        await main.broadcast({
+        payload = {
             "type": "reaction_updated",
             "message_type": "channel",
             "message_id": message_id,
             "channel_id": msg["channel_id"],
             "reactions": all_reactions,
-        })
+        }
+        if chan and chan.get("is_dm_group"):
+            member_ids = get_group_dm_member_ids(msg["channel_id"])
+            await main.send_to_user_ids(member_ids, payload)
+        else:
+            await main.broadcast(payload)
         return {
             "message_type": "channel",
             "message_id": message_id,
@@ -295,6 +309,8 @@ async def api_get_pins(conv_type: str, conv_id: str, request: Request):
         chan = get_channel_by_id(cid)
         if not chan:
             raise HTTPException(404, "채널을 찾을 수 없습니다.")
+        if chan.get("is_dm_group") and not is_group_dm_member(cid, user["id"]):
+            raise HTTPException(403, "그룹 대화 참여자만 고정 목록을 볼 수 있습니다.")
         pins = get_pinned_messages("channel", str(cid), current_user_id=user["id"])
     else:
         partner = resolve_dm_partner(conv_id)
@@ -328,6 +344,8 @@ async def api_pin_message(conv_type: str, conv_id: str, message_id: int, request
         chan = get_channel_by_id(cid)
         if not chan:
             raise HTTPException(404, "채널을 찾을 수 없습니다.")
+        if chan.get("is_dm_group") and not is_group_dm_member(cid, user["id"]):
+            raise HTTPException(403, "그룹 대화 참여자만 고정할 수 있습니다.")
         try:
             pin = pin_message("channel", str(cid), message_id, user["id"])
         except ValueError as exc:
@@ -338,14 +356,19 @@ async def api_pin_message(conv_type: str, conv_id: str, message_id: int, request
         users = list_mentionable_users()
         pin["message"] = main.with_mentions(pin["message"], users)
 
-        await main.broadcast({
+        pin_payload = {
             "type": "pin_updated",
             "conversation_type": "channel",
             "conversation_id": str(cid),
             "message_id": message_id,
             "is_pinned": True,
             "pin": pin,
-        })
+        }
+        if chan.get("is_dm_group"):
+            member_ids = get_group_dm_member_ids(cid)
+            await main.send_to_user_ids(member_ids, pin_payload)
+        else:
+            await main.broadcast(pin_payload)
         return pin
     else:
         partner = resolve_dm_partner(conv_id)
@@ -400,15 +423,22 @@ async def api_unpin_message(conv_type: str, conv_id: str, message_id: int, reque
         chan = get_channel_by_id(cid)
         if not chan:
             raise HTTPException(404, "채널을 찾을 수 없습니다.")
+        if chan.get("is_dm_group") and not is_group_dm_member(cid, user["id"]):
+            raise HTTPException(403, "그룹 대화 참여자만 고정 해제할 수 있습니다.")
         unpinned = unpin_message("channel", str(cid), message_id, user["id"])
-        await main.broadcast({
+        unpin_payload = {
             "type": "pin_updated",
             "conversation_type": "channel",
             "conversation_id": str(cid),
             "message_id": message_id,
             "is_pinned": False,
             "pin": None,
-        })
+        }
+        if chan.get("is_dm_group"):
+            member_ids = get_group_dm_member_ids(cid)
+            await main.send_to_user_ids(member_ids, unpin_payload)
+        else:
+            await main.broadcast(unpin_payload)
         return {"success": unpinned}
     else:
         partner = resolve_dm_partner(conv_id)

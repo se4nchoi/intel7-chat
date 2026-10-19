@@ -510,6 +510,27 @@ export function initWebSocket(callbacks = {}) {
         break;
       }
 
+      case 'group_dm_created': {
+        if (callbacks.onGroupDmCreated) {
+          callbacks.onGroupDmCreated(data.group_dm);
+        }
+        break;
+      }
+
+      case 'group_dm_updated': {
+        if (callbacks.onGroupDmUpdated) {
+          callbacks.onGroupDmUpdated(data.channel_id, data.group_dm);
+        }
+        break;
+      }
+
+      case 'group_dm_member_left': {
+        if (callbacks.onGroupDmMemberLeft) {
+          callbacks.onGroupDmMemberLeft(data.channel_id, data.user_id, data);
+        }
+        break;
+      }
+
       case 'presence':
         // Silently ignored — presence count handled by 'users' event
         break;

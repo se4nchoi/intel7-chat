@@ -42,6 +42,7 @@ def get_channel_by_id(channel_id: int) -> Optional[Dict[str, Any]]:
     d = dict(row)
     d["is_default"] = bool(d.get("is_default"))
     d["archived"] = bool(d.get("archived"))
+    d["is_dm_group"] = bool(d.get("is_dm_group"))
     return d
 
 
@@ -54,12 +55,13 @@ def get_channel_by_name(name: str) -> Optional[Dict[str, Any]]:
     d = dict(row)
     d["is_default"] = bool(d.get("is_default"))
     d["archived"] = bool(d.get("archived"))
+    d["is_dm_group"] = bool(d.get("is_dm_group"))
     return d
 
 
 def list_channels(include_archived: bool = False) -> List[Dict[str, Any]]:
     with get_connection() as conn:
-        where_clause = "" if include_archived else "WHERE c.archived = 0"
+        where_clause = "WHERE c.is_dm_group = 0" if include_archived else "WHERE c.is_dm_group = 0 AND c.archived = 0"
         rows = conn.execute(
             f"""SELECT c.*,
             (SELECT COUNT(*) FROM messages m WHERE m.channel_id=c.id) AS message_count
@@ -72,8 +74,208 @@ def list_channels(include_archived: bool = False) -> List[Dict[str, Any]]:
             d = dict(r)
             d["is_default"] = bool(d.get("is_default"))
             d["archived"] = bool(d.get("archived"))
+            d["is_dm_group"] = bool(d.get("is_dm_group"))
             result.append(d)
         return result
+
+
+def create_group_dm(
+    creator_user_id: int,
+    member_user_ids: List[int],
+    custom_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a lightweight private channel for multi-user direct messaging."""
+    all_member_ids = list(dict.fromkeys([int(creator_user_id), *[int(m) for m in member_user_ids]]))
+    if len(all_member_ids) < 2:
+        raise ValueError("그룹 대화에는 본인 외 최소 1명 이상의 대화 상대가 필요합니다.")
+
+    clean_display = (custom_name or "").strip()[:50]
+    chan_uuid = _uuid.uuid4().hex
+    chan_name = f"gdm-{chan_uuid}"
+    now = utc_now()
+
+    with get_connection() as conn:
+        marks = ",".join("?" for _ in all_member_ids)
+        active_users = conn.execute(
+            f"SELECT id FROM users WHERE id IN ({marks}) AND active = 1", all_member_ids
+        ).fetchall()
+        if len(active_users) != len(all_member_ids):
+            raise ValueError("일부 사용자를 찾을 수 없거나 비활성화된 계정입니다.")
+
+        cur = conn.execute(
+            """INSERT INTO channels
+            (name, display_name, description, uuid, created_by_user_id, is_default, archived, is_dm_group, created_at)
+            VALUES (?, ?, '', ?, ?, 0, 0, 1, ?)""",
+            (chan_name, clean_display, chan_uuid, creator_user_id, now),
+        )
+        channel_id = cur.lastrowid
+        conn.executemany(
+            """INSERT INTO group_dm_members (channel_id, user_id, joined_at)
+            VALUES (?, ?, ?)""",
+            [(channel_id, uid, now) for uid in all_member_ids],
+        )
+        conn.commit()
+
+    detail = get_group_dm_detail(channel_id, creator_user_id)
+    if not detail:
+        raise RuntimeError("그룹 대화 생성에 실패했습니다.")
+    return detail
+
+
+def is_group_dm_member(channel_id: int, user_id: int) -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM group_dm_members WHERE channel_id = ? AND user_id = ?",
+            (channel_id, user_id),
+        ).fetchone()
+        return bool(row)
+
+
+def get_group_dm_member_ids(channel_id: int) -> Set[int]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT user_id FROM group_dm_members WHERE channel_id = ?", (channel_id,)
+        ).fetchall()
+        return {r[0] for r in rows}
+
+
+def get_group_dm_members(channel_id: int) -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT u.id, u.username, u.display_name, u.role, u.active, gdm.joined_at
+            FROM group_dm_members gdm
+            JOIN users u ON u.id = gdm.user_id
+            WHERE gdm.channel_id = ?
+            ORDER BY gdm.joined_at ASC, u.id ASC""",
+            (channel_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_group_dm_detail(channel_id: int, current_user_id: int) -> Optional[Dict[str, Any]]:
+    chan = get_channel_by_id(channel_id)
+    if not chan or not chan.get("is_dm_group"):
+        return None
+    if not is_group_dm_member(channel_id, current_user_id):
+        return None
+    members = get_group_dm_members(channel_id)
+    other_members = [m for m in members if m["id"] != current_user_id]
+    if chan["display_name"]:
+        effective_name = chan["display_name"]
+    else:
+        names = [m.get("display_name") or m["username"] for m in other_members]
+        if not names:
+            names = [m.get("display_name") or m["username"] for m in members]
+        effective_name = ", ".join(names)
+
+    chan["effective_name"] = effective_name
+    chan["members"] = members
+    chan["member_count"] = len(members)
+    return chan
+
+
+def list_user_group_dms(user_id: int) -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT c.*,
+            (SELECT COUNT(*) FROM messages m WHERE m.channel_id=c.id) AS message_count,
+            (SELECT created_at FROM messages m WHERE m.channel_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_message_at
+            FROM channels c
+            JOIN group_dm_members gdm ON gdm.channel_id = c.id AND gdm.user_id = ?
+            WHERE c.is_dm_group = 1 AND c.archived = 0
+            ORDER BY COALESCE(last_message_at, c.created_at) DESC""",
+            (user_id,),
+        ).fetchall()
+
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["is_default"] = bool(d.get("is_default"))
+            d["archived"] = bool(d.get("archived"))
+            d["is_dm_group"] = True
+            cid = d["id"]
+            members_rows = conn.execute(
+                """SELECT u.id, u.username, u.display_name, u.role, u.active, gdm.joined_at
+                FROM group_dm_members gdm
+                JOIN users u ON u.id = gdm.user_id
+                WHERE gdm.channel_id = ?
+                ORDER BY gdm.joined_at ASC, u.id ASC""",
+                (cid,),
+            ).fetchall()
+            members = [dict(m) for m in members_rows]
+            other_members = [m for m in members if m["id"] != user_id]
+            if d["display_name"]:
+                effective_name = d["display_name"]
+            else:
+                names = [m.get("display_name") or m["username"] for m in other_members]
+                if not names:
+                    names = [m.get("display_name") or m["username"] for m in members]
+                effective_name = ", ".join(names)
+
+            d["effective_name"] = effective_name
+            d["members"] = members
+            d["member_count"] = len(members)
+            result.append(d)
+        return result
+
+
+def add_group_dm_members(
+    channel_id: int, new_user_ids: List[int], actor_user_id: int
+) -> List[Dict[str, Any]]:
+    if not is_group_dm_member(channel_id, actor_user_id):
+        raise PermissionError("그룹 대화 참여자만 다른 사용자를 초대할 수 있습니다.")
+    clean_ids = list(dict.fromkeys([int(uid) for uid in new_user_ids if int(uid) != actor_user_id]))
+    if not clean_ids:
+        return get_group_dm_members(channel_id)
+
+    now = utc_now()
+    with get_connection() as conn:
+        marks = ",".join("?" for _ in clean_ids)
+        active_users = conn.execute(
+            f"SELECT id FROM users WHERE id IN ({marks}) AND active = 1", clean_ids
+        ).fetchall()
+        valid_uids = [r[0] for r in active_users]
+        if not valid_uids:
+            return get_group_dm_members(channel_id)
+
+        conn.executemany(
+            "INSERT OR IGNORE INTO group_dm_members (channel_id, user_id, joined_at) VALUES (?, ?, ?)",
+            [(channel_id, uid, now) for uid in valid_uids],
+        )
+        conn.commit()
+
+    return get_group_dm_members(channel_id)
+
+
+def leave_group_dm(channel_id: int, user_id: int) -> bool:
+    if not is_group_dm_member(channel_id, user_id):
+        raise PermissionError("참여하고 있지 않은 그룹 대화입니다.")
+
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM group_dm_members WHERE channel_id = ? AND user_id = ?",
+            (channel_id, user_id),
+        )
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM group_dm_members WHERE channel_id = ?", (channel_id,)
+        ).fetchone()[0]
+        if remaining == 0:
+            conn.execute("UPDATE channels SET archived = 1 WHERE id = ?", (channel_id,))
+        conn.commit()
+    return True
+
+
+def update_group_dm_name(channel_id: int, name: str, actor_user_id: int) -> Dict[str, Any]:
+    if not is_group_dm_member(channel_id, actor_user_id):
+        raise PermissionError("그룹 대화 참여자만 이름을 변경할 수 있습니다.")
+    clean_name = name.strip()[:50]
+    with get_connection() as conn:
+        conn.execute("UPDATE channels SET display_name = ? WHERE id = ?", (clean_name, channel_id))
+        conn.commit()
+    detail = get_group_dm_detail(channel_id, actor_user_id)
+    if not detail:
+        raise RuntimeError("그룹 정보를 찾을 수 없습니다.")
+    return detail
 
 
 def channel_exists(channel_id: int) -> bool:
@@ -737,6 +939,8 @@ def search_conversation_history(
             ]
             if not is_admin:
                 clauses.append("m.is_hidden=0")
+            clauses.append("(c.is_dm_group = 0 OR EXISTS (SELECT 1 FROM group_dm_members gdm WHERE gdm.channel_id=c.id AND gdm.user_id=?))")
+            params.append(user_id)
             if conversation_type == "channel":
                 clauses.append("m.channel_id=?")
                 params.append(int(conversation_id or 0))
@@ -922,8 +1126,14 @@ def get_user_unread_counts(user_id: int) -> Dict[str, int]:
         ).fetchall():
             states[f"{r[0]}:{r[1]}"] = int(r[2])
 
-        # Channels (exclude messages authored by user_id)
-        chans = conn.execute("SELECT id FROM channels WHERE archived = 0").fetchall()
+        # Channels (exclude messages authored by user_id, include public channels + group DMs user is in)
+        chans = conn.execute(
+            """SELECT id FROM channels
+            WHERE archived = 0 AND (is_dm_group = 0 OR id IN (
+                SELECT channel_id FROM group_dm_members WHERE user_id = ?
+            ))""",
+            (user_id,),
+        ).fetchall()
         for chan in chans:
             cid = chan[0]
             key = f"channel:{cid}"

@@ -7,7 +7,7 @@ import { state, setCurrentUser, setActiveRoom } from './state.js';
 import { showToast } from './utils.js';
 import { initAuthListeners, bootstrapAuth, updateNickBadge, showNicknameHint, refreshStorageWarning, showAuthModal } from './auth.js';
 import { loadChannels, renderChannels, initChannelsListeners, channelsDirectory } from './channels.js';
-import { renderDms, displayNickname, getOrCreateDm, userDirectory } from './dm.js';
+import { renderDms, displayNickname, getOrCreateDm, userDirectory, loadGroupDms, loadCandidateUsers } from './dm.js';
 import {
   loadDrafts,
   saveCurrentDraft,
@@ -182,17 +182,33 @@ async function switchConversation(type, id) {
   const chatAreaDesc = document.getElementById('chat-area-desc');
   const msgInput = document.getElementById('msg-input');
   const channelSettingsBtn = document.getElementById('channel-settings-btn');
+  const groupDmManageBtn = document.getElementById('group-dm-manage-btn');
+  const screenshareToggleBtn = document.getElementById('screenshare-toggle-btn');
   const loadOlderBtn = document.getElementById('load-older-btn');
 
   if (type === 'channel') {
     const chanId = Number(id);
-    const chanObj = channelsDirectory.get(chanId);
-    const displayName = chanObj?.display_name || (chanId === 1 ? '전체 채팅' : `채널 ${chanId}`);
-    if (chatAreaTitle) chatAreaTitle.textContent = `# ${displayName}`;
-    if (chatAreaDesc) chatAreaDesc.textContent = chanObj?.description || '';
-    if (msgInput) msgInput.placeholder = `# ${displayName}에 메시지 입력`;
-    if (channelSettingsBtn) {
-      channelSettingsBtn.classList.toggle('hidden', state.currentUser?.role !== 'admin');
+    const groupDm = state.groupDms?.find(g => Number(g.id) === chanId);
+    if (groupDm) {
+      const displayName = groupDm.effective_name || groupDm.display_name || '그룹 대화';
+      const memberNames = (groupDm.members || []).map(m => m.display_name || m.username).join(', ');
+      if (chatAreaTitle) chatAreaTitle.textContent = `👥 ${displayName}`;
+      if (chatAreaDesc) chatAreaDesc.textContent = `참여자 ${groupDm.member_count || groupDm.members?.length || 0}명: ${memberNames}`;
+      if (msgInput) msgInput.placeholder = `${displayName}에 메시지 입력`;
+      if (channelSettingsBtn) channelSettingsBtn.classList.add('hidden');
+      if (groupDmManageBtn) groupDmManageBtn.classList.remove('hidden');
+      if (screenshareToggleBtn) screenshareToggleBtn.classList.add('hidden');
+    } else {
+      const chanObj = channelsDirectory.get(chanId);
+      const displayName = chanObj?.display_name || (chanId === 1 ? '전체 채팅' : `채널 ${chanId}`);
+      if (chatAreaTitle) chatAreaTitle.textContent = `# ${displayName}`;
+      if (chatAreaDesc) chatAreaDesc.textContent = chanObj?.description || '';
+      if (msgInput) msgInput.placeholder = `# ${displayName}에 메시지 입력`;
+      if (channelSettingsBtn) {
+        channelSettingsBtn.classList.toggle('hidden', state.currentUser?.role !== 'admin');
+      }
+      if (groupDmManageBtn) groupDmManageBtn.classList.add('hidden');
+      if (screenshareToggleBtn) screenshareToggleBtn.classList.remove('hidden');
     }
   } else {
     const displayName = displayNickname(String(id));
@@ -200,6 +216,8 @@ async function switchConversation(type, id) {
     if (chatAreaDesc) chatAreaDesc.textContent = '';
     if (msgInput) msgInput.placeholder = `${displayName}에게 DM 보내기`;
     if (channelSettingsBtn) channelSettingsBtn.classList.add('hidden');
+    if (groupDmManageBtn) groupDmManageBtn.classList.add('hidden');
+    if (screenshareToggleBtn) screenshareToggleBtn.classList.remove('hidden');
   }
 
   loadActiveDraft();
@@ -355,6 +373,393 @@ async function loadOlderMessages() {
     loadingOlder = false;
     if (loadOlderBtn) { loadOlderBtn.disabled = false; loadOlderBtn.textContent = '↑ 이전 메시지 더 불러오기'; }
   }
+}
+
+// --- Group DM Modal Interactions ---
+function initGroupDmModals(onSwitchConv) {
+  // 1. Create Group DM Modal
+  const createModal = document.getElementById('create-group-dm-modal');
+  const createBtn = document.getElementById('create-group-dm-btn');
+  const createClose = document.getElementById('create-group-dm-close');
+  const createForm = document.getElementById('create-group-dm-form');
+  const nameInput = document.getElementById('group-dm-name-input');
+  const searchInput = document.getElementById('group-dm-user-search');
+  const userListEl = document.getElementById('group-dm-user-list');
+  const countBadge = document.getElementById('group-dm-selected-count');
+  const submitBtn = document.getElementById('create-group-dm-submit');
+  const errorEl = document.getElementById('create-group-dm-error');
+
+  const selectedUserIds = new Set();
+  let candidateUsers = [];
+
+  function updateSelectedCount() {
+    const count = selectedUserIds.size;
+    if (countBadge) countBadge.textContent = `${count}명 선택됨`;
+    if (submitBtn) submitBtn.disabled = count === 0;
+  }
+
+  function renderPickerUsers(filterQuery = '') {
+    if (!userListEl) return;
+    userListEl.replaceChildren();
+    const query = filterQuery.trim().toLowerCase();
+    const filtered = candidateUsers.filter(u => {
+      if (!query) return true;
+      return (u.display_name || '').toLowerCase().includes(query) ||
+             (u.username || '').toLowerCase().includes(query);
+    });
+
+    if (filtered.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'group-dm-empty-msg';
+      empty.textContent = query ? '일치하는 사용자가 없습니다.' : '초대 가능한 사용자가 없습니다.';
+      userListEl.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach(u => {
+      const row = document.createElement('label');
+      row.className = 'group-dm-picker-item';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = u.id;
+      cb.checked = selectedUserIds.has(Number(u.id));
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          selectedUserIds.add(Number(u.id));
+        } else {
+          selectedUserIds.delete(Number(u.id));
+        }
+        updateSelectedCount();
+      });
+
+      const dot = document.createElement('span');
+      dot.className = `online-dot${u.online ? '' : ' offline'}`;
+
+      const nameWrap = document.createElement('span');
+      nameWrap.className = 'group-dm-picker-names';
+
+      const displayName = document.createElement('span');
+      displayName.className = 'group-dm-picker-display';
+      displayName.textContent = u.display_name || u.username;
+
+      const username = document.createElement('span');
+      username.className = 'group-dm-picker-username';
+      username.textContent = `@${u.username}`;
+
+      nameWrap.append(displayName, username);
+      row.append(cb, dot, nameWrap);
+      userListEl.appendChild(row);
+    });
+  }
+
+  async function openCreateModal() {
+    if (!createModal) return;
+    selectedUserIds.clear();
+    if (nameInput) nameInput.value = '';
+    if (searchInput) searchInput.value = '';
+    if (errorEl) errorEl.textContent = '';
+    updateSelectedCount();
+
+    createModal.classList.remove('hidden');
+    if (userListEl) {
+      userListEl.innerHTML = '<div class="group-dm-loading">사용자 목록을 불러오는 중...</div>';
+    }
+
+    try {
+      candidateUsers = await loadCandidateUsers();
+      renderPickerUsers();
+    } catch {
+      if (userListEl) userListEl.innerHTML = '<div class="group-dm-empty-msg">사용자 목록을 불러오지 못했습니다.</div>';
+    }
+  }
+
+  function closeCreateModal() {
+    createModal?.classList.add('hidden');
+  }
+
+  createBtn?.addEventListener('click', openCreateModal);
+  createClose?.addEventListener('click', closeCreateModal);
+  createModal?.addEventListener('click', (e) => {
+    if (e.target === createModal) closeCreateModal();
+  });
+
+  searchInput?.addEventListener('input', () => {
+    renderPickerUsers(searchInput.value);
+  });
+
+  createForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (selectedUserIds.size === 0) return;
+    if (errorEl) errorEl.textContent = '';
+    if (submitBtn) submitBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/group-dms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          member_ids: Array.from(selectedUserIds),
+          name: nameInput?.value.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || '그룹 대화 생성에 실패했습니다.');
+      }
+
+      const created = await res.json();
+      closeCreateModal();
+      showToast('새 그룹 대화가 시작되었습니다.', 'success');
+      await loadGroupDms(onSwitchConv);
+      onSwitchConv('channel', created.id);
+    } catch (err) {
+      if (errorEl) errorEl.textContent = err.message;
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+
+  // 2. Manage Group DM Modal
+  const manageModal = document.getElementById('manage-group-dm-modal');
+  const manageBtn = document.getElementById('group-dm-manage-btn');
+  const manageClose = document.getElementById('manage-group-dm-close');
+  const manageNameForm = document.getElementById('manage-group-dm-name-form');
+  const manageNameInput = document.getElementById('manage-group-dm-name-input');
+  const manageNameSave = document.getElementById('manage-group-dm-name-save');
+  const memberCountSpan = document.getElementById('manage-group-dm-member-count');
+  const membersListEl = document.getElementById('manage-group-dm-members-list');
+  const inviteSearchInput = document.getElementById('manage-group-dm-invite-search');
+  const inviteListEl = document.getElementById('manage-group-dm-invite-list');
+  const inviteCountSpan = document.getElementById('manage-group-dm-invite-count');
+  const inviteSubmitBtn = document.getElementById('manage-group-dm-invite-btn');
+  const manageErrorEl = document.getElementById('manage-group-dm-error');
+  const leaveBtn = document.getElementById('manage-group-dm-leave-btn');
+
+  let currentManageGdmId = null;
+  const selectedInviteIds = new Set();
+  let availableInviteUsers = [];
+
+  function updateInviteCount() {
+    const count = selectedInviteIds.size;
+    if (inviteCountSpan) inviteCountSpan.textContent = `${count}명 선택됨`;
+    if (inviteSubmitBtn) inviteSubmitBtn.disabled = count === 0;
+  }
+
+  function renderInvitePicker(filterQuery = '') {
+    if (!inviteListEl) return;
+    inviteListEl.replaceChildren();
+    const query = filterQuery.trim().toLowerCase();
+    const filtered = availableInviteUsers.filter(u => {
+      if (!query) return true;
+      return (u.display_name || '').toLowerCase().includes(query) ||
+             (u.username || '').toLowerCase().includes(query);
+    });
+
+    if (filtered.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'group-dm-empty-msg';
+      empty.textContent = query ? '일치하는 사용자가 없습니다.' : '초대 가능한 모든 사용자가 이미 참여 중입니다.';
+      inviteListEl.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach(u => {
+      const row = document.createElement('label');
+      row.className = 'group-dm-picker-item';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = u.id;
+      cb.checked = selectedInviteIds.has(Number(u.id));
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          selectedInviteIds.add(Number(u.id));
+        } else {
+          selectedInviteIds.delete(Number(u.id));
+        }
+        updateInviteCount();
+      });
+
+      const dot = document.createElement('span');
+      dot.className = `online-dot${u.online ? '' : ' offline'}`;
+
+      const nameWrap = document.createElement('span');
+      nameWrap.className = 'group-dm-picker-names';
+
+      const displayName = document.createElement('span');
+      displayName.className = 'group-dm-picker-display';
+      displayName.textContent = u.display_name || u.username;
+
+      const username = document.createElement('span');
+      username.className = 'group-dm-picker-username';
+      username.textContent = `@${u.username}`;
+
+      nameWrap.append(displayName, username);
+      row.append(cb, dot, nameWrap);
+      inviteListEl.appendChild(row);
+    });
+  }
+
+  async function openManageModal() {
+    if (!manageModal) return;
+    if (state.activeRoom.type !== 'channel') return;
+    const chanId = Number(state.activeRoom.id);
+    currentManageGdmId = chanId;
+    selectedInviteIds.clear();
+    updateInviteCount();
+    if (manageErrorEl) manageErrorEl.textContent = '';
+    if (inviteSearchInput) inviteSearchInput.value = '';
+
+    manageModal.classList.remove('hidden');
+
+    try {
+      const res = await fetch(`/api/group-dms/${chanId}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('그룹 대화 정보를 불러오지 못했습니다.');
+      const detail = await res.json();
+
+      if (manageNameInput) manageNameInput.value = detail.display_name || '';
+      if (memberCountSpan) memberCountSpan.textContent = String(detail.member_count || detail.members?.length || 0);
+
+      // Render members
+      if (membersListEl) {
+        membersListEl.replaceChildren();
+        const existingMemberIds = new Set();
+        (detail.members || []).forEach(m => {
+          existingMemberIds.add(Number(m.id));
+          const row = document.createElement('div');
+          row.className = 'group-dm-member-row';
+
+          const left = document.createElement('div');
+          left.className = 'group-dm-member-left';
+
+          const dot = document.createElement('span');
+          const isOnline = userDirectory.get(m.username)?.online ?? false;
+          dot.className = `online-dot${isOnline ? '' : ' offline'}`;
+
+          const name = document.createElement('span');
+          name.className = 'group-dm-member-name';
+          name.textContent = m.display_name || m.username;
+          if (m.id === state.currentUser?.id) {
+            name.textContent += ' (나)';
+          }
+
+          const uname = document.createElement('span');
+          uname.className = 'group-dm-member-username';
+          uname.textContent = `@${m.username}`;
+
+          left.append(dot, name, uname);
+          row.appendChild(left);
+          membersListEl.appendChild(row);
+        });
+
+        // Load candidate users for invite
+        const allCandidates = await loadCandidateUsers();
+        availableInviteUsers = allCandidates.filter(u => !existingMemberIds.has(Number(u.id)));
+        renderInvitePicker();
+      }
+    } catch (err) {
+      if (manageErrorEl) manageErrorEl.textContent = err.message;
+    }
+  }
+
+  function closeManageModal() {
+    manageModal?.classList.add('hidden');
+    currentManageGdmId = null;
+  }
+
+  manageBtn?.addEventListener('click', openManageModal);
+  manageClose?.addEventListener('click', closeManageModal);
+  manageModal?.addEventListener('click', (e) => {
+    if (e.target === manageModal) closeManageModal();
+  });
+
+  inviteSearchInput?.addEventListener('input', () => {
+    renderInvitePicker(inviteSearchInput.value);
+  });
+
+  // Rename Group DM
+  manageNameForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentManageGdmId) return;
+    const newName = manageNameInput?.value.trim() || '';
+    if (manageErrorEl) manageErrorEl.textContent = '';
+    if (manageNameSave) manageNameSave.disabled = true;
+
+    try {
+      const res = await fetch(`/api/group-dms/${currentManageGdmId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || '이름 변경에 실패했습니다.');
+      }
+      const updated = await res.json();
+      showToast('그룹 대화 이름이 변경되었습니다.', 'success');
+      await loadGroupDms(onSwitchConv);
+      if (state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(currentManageGdmId)) {
+        const chatAreaTitle = document.getElementById('chat-area-title');
+        const displayName = updated.effective_name || updated.display_name || '그룹 대화';
+        if (chatAreaTitle) chatAreaTitle.textContent = `👥 ${displayName}`;
+      }
+    } catch (err) {
+      if (manageErrorEl) manageErrorEl.textContent = err.message;
+    } finally {
+      if (manageNameSave) manageNameSave.disabled = false;
+    }
+  });
+
+  // Invite Members
+  inviteSubmitBtn?.addEventListener('click', async () => {
+    if (!currentManageGdmId || selectedInviteIds.size === 0) return;
+    if (manageErrorEl) manageErrorEl.textContent = '';
+    inviteSubmitBtn.disabled = true;
+
+    try {
+      const res = await fetch(`/api/group-dms/${currentManageGdmId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ member_ids: Array.from(selectedInviteIds) }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || '참여자 초대에 실패했습니다.');
+      }
+      showToast('새 참여자를 초대했습니다.', 'success');
+      await loadGroupDms(onSwitchConv);
+      await openManageModal(); // Refresh modal state
+    } catch (err) {
+      if (manageErrorEl) manageErrorEl.textContent = err.message;
+      inviteSubmitBtn.disabled = false;
+    }
+  });
+
+  // Leave Group DM
+  leaveBtn?.addEventListener('click', async () => {
+    if (!currentManageGdmId) return;
+    if (!confirm('정말 이 그룹 대화방을 나가시겠습니까? 대화 기록을 더 이상 볼 수 없습니다.')) return;
+    if (manageErrorEl) manageErrorEl.textContent = '';
+    leaveBtn.disabled = true;
+
+    try {
+      const res = await fetch(`/api/group-dms/${currentManageGdmId}/members/me`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || '대화방 나가기에 실패했습니다.');
+      }
+      closeManageModal();
+      showToast('그룹 대화방을 나갔습니다.', 'info');
+      await loadGroupDms(onSwitchConv);
+      onSwitchConv('channel', 1);
+    } catch (err) {
+      if (manageErrorEl) manageErrorEl.textContent = err.message;
+      leaveBtn.disabled = false;
+    }
+  });
 }
 
 // --- App Bootstrap ---
@@ -582,6 +987,7 @@ function initApp() {
   // 3. Initialize modules
   initChatListeners(handleSendMessage);
   initChannelsListeners(switchConversation);
+  initGroupDmModals(switchConversation);
   initPinsListeners();
   initQuizListeners();
   initPlayHubListeners();
@@ -609,6 +1015,7 @@ function initApp() {
     loadDrafts();
     await Promise.all([
       loadChannels(switchConversation),
+      loadGroupDms(switchConversation),
       loadScreenshares(),
     ]);
     await switchConversation('channel', 1);
@@ -619,6 +1026,38 @@ function initApp() {
       },
       onOpenDm: (nick) => switchConversation('dm', nick),
       onDmsUpdated: () => renderDms(switchConversation),
+      onGroupDmCreated: async () => {
+        await loadGroupDms(switchConversation);
+      },
+      onGroupDmUpdated: async (chanId, gdm) => {
+        await loadGroupDms(switchConversation);
+        if (state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(chanId)) {
+          const chatAreaTitle = document.getElementById('chat-area-title');
+          const chatAreaDesc = document.getElementById('chat-area-desc');
+          if (gdm) {
+            const displayName = gdm.effective_name || gdm.display_name || '그룹 대화';
+            const memberNames = (gdm.members || []).map(m => m.display_name || m.username).join(', ');
+            if (chatAreaTitle) chatAreaTitle.textContent = `👥 ${displayName}`;
+            if (chatAreaDesc) chatAreaDesc.textContent = `참여자 ${gdm.member_count || gdm.members?.length || 0}명: ${memberNames}`;
+          }
+        }
+      },
+      onGroupDmMemberLeft: async (chanId, userId) => {
+        if (userId === state.currentUser?.id) {
+          if (state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(chanId)) {
+            switchConversation('channel', 1);
+          }
+        }
+        await loadGroupDms(switchConversation);
+        if (state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(chanId)) {
+          const detail = state.groupDms?.find(g => Number(g.id) === Number(chanId));
+          if (detail) {
+            const chatAreaDesc = document.getElementById('chat-area-desc');
+            const memberNames = (detail.members || []).map(m => m.display_name || m.username).join(', ');
+            if (chatAreaDesc) chatAreaDesc.textContent = `참여자 ${detail.member_count || detail.members?.length || 0}명: ${memberNames}`;
+          }
+        }
+      },
       onUnreadUpdated: (counts) => {
         if (counts) applyServerUnreadCounts(counts);
         renderChannels(switchConversation);

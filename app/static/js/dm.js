@@ -41,11 +41,104 @@ export function getOrCreateDm(nick, partnerUserId = null) {
   return existing;
 }
 
+export async function loadGroupDms(onSwitchConv) {
+  if (!state.currentUser) return;
+  try {
+    const res = await fetch('/api/group-dms', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      state.groupDms = data;
+      data.forEach(g => {
+        if (typeof g.unread_count === 'number') {
+          state.unreadCounts.channels[String(g.id)] = g.unread_count;
+        }
+      });
+      if (typeof onSwitchConv === 'function') {
+        renderDms(onSwitchConv);
+      }
+    }
+  } catch (err) {
+    console.debug('Failed to load group DMs:', err);
+  }
+}
+
+export async function loadCandidateUsers() {
+  try {
+    const res = await fetch('/api/group-dms/users', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch { /* fallback to userDirectory below */ }
+
+  const myNick = state.currentUser?.username;
+  const list = [];
+  for (const [uname, u] of userDirectory.entries()) {
+    if (uname !== myNick) {
+      list.push({
+        id: u.id,
+        username: u.username,
+        display_name: u.display_name || u.nickname || u.username,
+        online: Boolean(u.online),
+      });
+    }
+  }
+  return list;
+}
+
 export function renderDms(onSwitchConv) {
   const dmListEl = document.getElementById('dm-list');
   if (!dmListEl) return;
   dmListEl.replaceChildren();
 
+  // 1. Group DMs
+  const groupDms = Array.isArray(state.groupDms) ? state.groupDms : [];
+  groupDms.forEach(gdm => {
+    const isActive = state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(gdm.id);
+    const item = document.createElement('li');
+    item.className = `sidebar-item conv-item dm-item group-dm-item${isActive ? ' active' : ''}`;
+    item.dataset.id = gdm.id;
+    item.dataset.type = 'group_dm';
+
+    const icon = document.createElement('span');
+    icon.className = 'conv-icon group-dm-icon';
+    icon.textContent = '👥';
+
+    const name = document.createElement('span');
+    name.className = 'sidebar-item-name conv-name';
+    name.textContent = gdm.effective_name || gdm.display_name || '그룹 대화';
+
+    const countPill = document.createElement('span');
+    countPill.className = 'group-dm-count-pill';
+    countPill.textContent = String(gdm.member_count || gdm.members?.length || 0);
+    countPill.title = `참여자 ${countPill.textContent}명`;
+
+    item.append(icon, name, countPill);
+
+    if (isConversationMuted('channel', gdm.id)) {
+      const muteIcon = document.createElement('span');
+      muteIcon.className = 'conv-mute-indicator';
+      muteIcon.textContent = '🔕';
+      muteIcon.title = '음소거됨';
+      item.appendChild(muteIcon);
+    }
+
+    const unreadCount = state.unreadCounts.channels[String(gdm.id)] ?? gdm.unread_count ?? 0;
+    if (unreadCount > 0 && !isActive) {
+      const badge = document.createElement('span');
+      badge.className = 'sidebar-badge conv-unread dm-unread';
+      badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+      item.appendChild(badge);
+    }
+
+    const activate = () => onSwitchConv('channel', gdm.id);
+    item.addEventListener('click', activate);
+    makeKeyboardClickable(item, activate);
+    dmListEl.appendChild(item);
+  });
+
+  // 2. 1:1 DMs
   const sorted = [...state.dms].sort((a, b) => {
     const timeA = a.lastActivityTime || 0;
     const timeB = b.lastActivityTime || 0;

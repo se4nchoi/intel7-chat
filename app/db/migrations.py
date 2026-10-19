@@ -627,6 +627,22 @@ def _migrate_v28(conn: sqlite3.Connection) -> None:
     )""")
 
 
+def _migrate_v29(conn: sqlite3.Connection) -> None:
+    """Add is_dm_group to channels and create group_dm_members table for multi-user DMs."""
+    _add_column_if_missing(conn, "channels", "is_dm_group", "INTEGER NOT NULL DEFAULT 0")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_channels_dm_group ON channels(is_dm_group)")
+    conn.execute("""CREATE TABLE IF NOT EXISTS group_dm_members (
+        channel_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        joined_at TEXT NOT NULL,
+        PRIMARY KEY (channel_id, user_id),
+        FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_group_dm_members_user ON group_dm_members(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_group_dm_members_channel ON group_dm_members(channel_id)")
+
+
 _MIGRATIONS = [
     _migrate_v1,
     _migrate_v2,
@@ -656,6 +672,7 @@ _MIGRATIONS = [
     _migrate_v26,
     _migrate_v27,
     _migrate_v28,
+    _migrate_v29,
 ]
 
 

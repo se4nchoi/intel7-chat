@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Deque, Dict, Optional, Set
+from typing import Deque, Dict, Iterable, List, Optional, Set, Union
 from urllib.parse import unquote, urlsplit
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -40,6 +40,7 @@ from app.database import (attachment_is_visible_to_user, channel_exists, claim_a
     get_message_by_id, update_message_content, set_message_hidden, move_message_channel,
     get_user_conversation_states, update_user_read_state, set_conversation_muted, get_user_unread_counts,
     update_display_name, update_password_hash,
+    is_group_dm_member, get_group_dm_member_ids,
     ALLOWED_REACTION_EMOJIS, toggle_message_reaction, get_message_reactions, get_direct_message_by_id,
     update_direct_message_content,
     normalize_dm_conversation_id, pin_message, unpin_message, get_pinned_messages, get_pinned_message_ids,
@@ -420,6 +421,21 @@ async def send_to_user_id(user_id: int, payload: dict) -> None:
     for ws in dead:
         _remove_client(ws)
 
+async def send_to_user_ids(user_ids: Iterable[int], payload: dict) -> None:
+    target_ids = set(user_ids)
+    if not target_ids:
+        return
+    encoded = json.dumps(payload, ensure_ascii=False)
+    dead = set()
+    for ws, info in list(connected_clients.items()):
+        if info.user_id in target_ids:
+            try:
+                await ws.send_text(encoded)
+            except Exception:
+                dead.add(ws)
+    for ws in dead:
+        _remove_client(ws)
+
 async def send_to_username(username: str, payload: dict) -> None:
     encoded = json.dumps(payload, ensure_ascii=False)
     dead = set()
@@ -530,6 +546,7 @@ from app.routers.admin import router as admin_router
 from app.routers.quiz import router as quiz_router
 from app.routers.games import router as games_router
 from app.routers.screenshare import router as screenshare_router
+from app.routers.group_dms import router as group_dms_router
 
 app.include_router(auth_router)
 app.include_router(channels_router)
@@ -539,6 +556,7 @@ app.include_router(admin_router)
 app.include_router(quiz_router)
 app.include_router(games_router)
 app.include_router(screenshare_router)
+app.include_router(group_dms_router)
 
 
 
@@ -814,12 +832,26 @@ async def websocket_endpoint(ws: WebSocket):
                 if chan.get("archived"):
                     await ws.send_text(json.dumps({"type":"error","message":"보관된 채널에는 메시지를 작성할 수 없습니다."},ensure_ascii=False))
                     continue
+                is_group_dm = bool(chan.get("is_dm_group"))
+                if is_group_dm and not is_group_dm_member(channel_id, info.user_id):
+                    await ws.send_text(json.dumps({"type":"error","message":"그룹 대화 참여자가 아닙니다."},ensure_ascii=False))
+                    continue
                 saved=save_message(info.username,content,ip=ip,reply=reply,
                     attachment_ids=[a["id"] for a in attachments],user_id=info.user_id,
                     channel_id=channel_id)
                 saved.pop("ip",None)
                 saved=with_mentions(saved)
-                await broadcast({"type":"chat",**saved})
+                if is_group_dm:
+                    member_ids = get_group_dm_member_ids(channel_id)
+                    await send_to_user_ids(member_ids, {"type":"chat",**saved})
+                    for mid in member_ids:
+                        if mid != info.user_id:
+                            await send_to_user_id(mid, {
+                                "type": "read_state_updated",
+                                "unread_counts": get_user_unread_counts(mid),
+                            })
+                else:
+                    await broadcast({"type":"chat",**saved})
             elif msg_type=="dm":
                 dm_res = save_direct_message(
                     user,target_user,content,reply=reply,

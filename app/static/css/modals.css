@@ -621,3 +621,199 @@
 .notification-status-info { flex: 1; }
 .notification-status-info strong { font-size: 0.92rem; color: var(--text); }
 .notification-status-info p { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+
+/* Group DM Modals & Pickers */
+.group-dm-modal-box {
+  width: min(480px, 94vw);
+  max-height: min(88vh, 720px);
+  overflow-y: auto;
+}
+
+.group-dm-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.group-dm-selected-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(79, 142, 247, 0.12);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.group-dm-picker-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  box-sizing: border-box;
+}
+
+.group-dm-picker-list.small {
+  max-height: 140px;
+}
+
+.group-dm-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.group-dm-picker-item:hover {
+  background: var(--surface2);
+}
+
+.group-dm-picker-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.group-dm-picker-names {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.group-dm-picker-display {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-dm-picker-username {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.group-dm-empty-msg,
+.group-dm-loading {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  padding: 16px;
+}
+
+.group-dm-manage-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.group-dm-inline-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.group-dm-inline-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 10px 16px;
+}
+
+.group-dm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.group-dm-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.group-dm-section-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.group-dm-members-list {
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group-dm-member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.group-dm-member-row:hover {
+  background: var(--surface2);
+}
+
+.group-dm-member-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-dm-member-name {
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.group-dm-member-username {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.group-dm-invite-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.group-dm-danger-zone {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.group-dm-count-pill {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: var(--surface3);
+  padding: 1px 5px;
+  border-radius: 10px;
+  margin-left: 4px;
+  font-weight: 600;
+}
+

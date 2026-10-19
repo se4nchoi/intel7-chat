@@ -7,6 +7,7 @@ export const state = {
   activeRoom: { type: 'channel', id: 'general' }, // { type: 'channel'|'dm', id: string|number }
   channels: [],
   dms: [],
+  groupDms: [],
   onlineUsers: [],
   pinnedMessages: [],
   unreadCounts: { channels: {}, dms: {} },
