@@ -1028,6 +1028,7 @@ function initApp() {
       onDmsUpdated: () => renderDms(switchConversation),
       onGroupDmCreated: async () => {
         await loadGroupDms(switchConversation);
+        renderChannels(switchConversation);
       },
       onGroupDmUpdated: async (chanId, gdm) => {
         await loadGroupDms(switchConversation);

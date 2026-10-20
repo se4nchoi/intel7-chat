@@ -206,7 +206,10 @@ export function initWebSocket(callbacks = {}) {
         const isOwn = data.nickname === myNick || (myUserId !== null && Number(data.author_id) === myUserId);
         if (!isOwn && !data.history) {
           const senderDisplay = displayNickname(data.nickname);
-          const chanTitle = conv.displayName || `채널 ${chanId}`;
+          const groupDm = state.groupDms?.find(g => Number(g.id) === chanId);
+          const chanTitle = groupDm
+            ? `👥 ${groupDm.effective_name || groupDm.display_name || '그룹 대화'}`
+            : `#${conv.displayName || `채널 ${chanId}`}`;
           const contentPreview = (data.content || '파일 전송').slice(0, 50);
 
           const mentionsMe = Array.isArray(chatMessage.mentioned_user_ids)
@@ -217,7 +220,7 @@ export function initWebSocket(callbacks = {}) {
             emitAttention({
               kind: 'reply',
               conversationId: `channel:${chanId}`,
-              title: `#${chanTitle} · ${senderDisplay}`,
+              title: `${chanTitle} · ${senderDisplay}`,
               body: `${senderDisplay}님이 답장했습니다: ${contentPreview}`,
               onSelectConv: callbacks.onSwitchConv,
             });
@@ -225,7 +228,7 @@ export function initWebSocket(callbacks = {}) {
             emitAttention({
               kind: 'mention',
               conversationId: `channel:${chanId}`,
-              title: `#${chanTitle} · ${senderDisplay}`,
+              title: `${chanTitle} · ${senderDisplay}`,
               body: `${senderDisplay}님이 멘션했습니다: ${contentPreview}`,
               onSelectConv: callbacks.onSwitchConv,
             });
@@ -233,7 +236,7 @@ export function initWebSocket(callbacks = {}) {
             emitAttention({
               kind: 'ordinary',
               conversationId: `channel:${chanId}`,
-              title: `#${chanTitle}`,
+              title: chanTitle,
               body: `${senderDisplay}: ${contentPreview}`,
               onSelectConv: callbacks.onSwitchConv,
             });

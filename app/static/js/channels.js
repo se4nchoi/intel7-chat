@@ -93,8 +93,11 @@ export function renderChannels(onSwitchConv) {
   const systemChannels = [];
   const pinnedChannels = [];
   const unpinnedChannels = [];
+  // Group DMs share the channel transport but are listed under the DM section.
+  const groupDmIds = new Set((state.groupDms || []).map(g => Number(g.id)));
 
   for (const conv of state.channels) {
+    if (groupDmIds.has(conv.channelId)) continue;
     if (SYSTEM_CHANNEL_IDS.includes(conv.channelId)) { systemChannels.push(conv); }
     else if (pinnedIds.includes(conv.channelId)) { pinnedChannels.push(conv); }
     else { unpinnedChannels.push(conv); }
