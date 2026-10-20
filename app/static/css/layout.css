@@ -287,13 +287,16 @@
   display: none !important;
 }
 
-.sidebar-channels { flex: 1 1 35%; min-height: 42px; }
+.sidebar-channels { flex: 1 1 30%; min-height: 42px; }
 .sidebar-channels .channel-list { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
 
-.sidebar-dms { flex: 1 1 30%; min-height: 42px; }
+.sidebar-group-dms { flex: 1 1 20%; min-height: 42px; }
+.sidebar-group-dms .dm-list { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+
+.sidebar-dms { flex: 1 1 25%; min-height: 42px; }
 .sidebar-dms .dm-list { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
 
-.sidebar-online { flex: 1 1 35%; min-height: 42px; }
+.sidebar-online { flex: 1 1 25%; min-height: 42px; }
 .sidebar-online .online-list { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
 
 

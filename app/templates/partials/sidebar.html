@@ -17,7 +17,26 @@
     </div>
     <ul id="channel-list" class="channel-list"></ul>
   </div>
-  <div class="sidebar-divider sidebar-slider" data-resizer="channels-dms" title="드래그하여 크기 조절" role="separator" aria-orientation="horizontal"></div>
+  <div class="sidebar-divider sidebar-slider" data-resizer="channels-groups" title="드래그하여 크기 조절" role="separator" aria-orientation="horizontal"></div>
+  <div class="sidebar-section sidebar-group-dms" data-section="group-dms">
+    <div class="sidebar-section-header">
+      <button class="section-toggle-btn" type="button" aria-expanded="true" aria-controls="group-dm-list">
+        <span class="section-toggle-icon">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+            <path d="M2 3.5L5 6.5L8 3.5H2Z"/>
+          </svg>
+        </span>
+        <span class="sidebar-section-title">그룹 대화</span>
+      </button>
+      <button id="create-group-dm-btn" class="icon-btn create-channel-btn" type="button" title="새 그룹 대화 만들기" aria-label="새 그룹 대화 만들기">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <ul id="group-dm-list" class="dm-list group-dm-list"></ul>
+  </div>
+  <div class="sidebar-divider sidebar-slider" data-resizer="groups-dms" title="드래그하여 크기 조절" role="separator" aria-orientation="horizontal"></div>
   <div class="sidebar-section sidebar-dms" data-section="dms">
     <div class="sidebar-section-header">
       <button class="section-toggle-btn" type="button" aria-expanded="true" aria-controls="dm-list">
@@ -26,12 +45,7 @@
             <path d="M2 3.5L5 6.5L8 3.5H2Z"/>
           </svg>
         </span>
-        <span class="sidebar-section-title">다이렉트 메시지</span>
-      </button>
-      <button id="create-group-dm-btn" class="icon-btn create-channel-btn" type="button" title="새 그룹 대화 만들기" aria-label="새 그룹 대화 만들기">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
+        <span class="sidebar-section-title">1:1 대화</span>
       </button>
     </div>
     <ul id="dm-list" class="dm-list"></ul>

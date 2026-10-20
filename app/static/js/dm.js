@@ -91,8 +91,10 @@ export function renderDms(onSwitchConv) {
   const dmListEl = document.getElementById('dm-list');
   if (!dmListEl) return;
   dmListEl.replaceChildren();
+  const groupDmListEl = document.getElementById('group-dm-list') || dmListEl;
+  if (groupDmListEl !== dmListEl) groupDmListEl.replaceChildren();
 
-  // 1. Group DMs
+  // 1. Group DMs (own sidebar section)
   const groupDms = Array.isArray(state.groupDms) ? state.groupDms : [];
   groupDms.forEach(gdm => {
     const isActive = state.activeRoom.type === 'channel' && String(state.activeRoom.id) === String(gdm.id);
@@ -135,7 +137,7 @@ export function renderDms(onSwitchConv) {
     const activate = () => onSwitchConv('channel', gdm.id);
     item.addEventListener('click', activate);
     makeKeyboardClickable(item, activate);
-    dmListEl.appendChild(item);
+    groupDmListEl.appendChild(item);
   });
 
   // 2. 1:1 DMs
