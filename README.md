@@ -28,7 +28,7 @@ Implementation highlights include persisted read state across sessions, account-
 
 교실 내부 LAN에서 사용하는 실시간 채팅 및 학습 플랫폼입니다. 계정 로그인, 영구 채팅 기록, 멘션과 답장 알림, Markdown, 1:1 DM, 파일 업로드, AI 기반 데일리 퀴즈(CBT), 실시간 멀티플레이 체스 대국 및 관리자 계정 관리를 지원합니다.
 
-> 이 서비스는 HTTP로 동작합니다. 같은 LAN의 트래픽은 암호화되지 않으므로 다른 곳에서 쓰는 비밀번호, 개인정보, 민감한 자료를 입력하거나 공유하지 마세요. 공개 인터넷 포트 포워딩에는 사용하지 않습니다.
+> 기본 실행은 HTTP입니다. 아래 HTTPS 실행 방법을 사용하면 브라우저와 서버 사이의 트래픽을 암호화할 수 있습니다. HTTP 사용 시 다른 곳에서 쓰는 비밀번호, 개인정보, 민감한 자료를 입력하거나 공유하지 마세요. 공개 인터넷 포트 포워딩에는 사용하지 않습니다.
 
 ## 설치
 
@@ -64,6 +64,34 @@ uv run --locked python run.py
 uv run --locked python run.py --close-registration
 uv run --locked python run.py --open-registration
 ```
+
+## HTTPS 서버 실행
+
+인증서와 `bamboochat.json` 설정이 준비되었다면 프로젝트 폴더에서 다음 명령으로 실행합니다.
+
+```powershell
+uv run --locked python run.py --ssl-certfile certs/server.crt --ssl-keyfile certs/server-key.pem
+```
+
+서버 PC에서는 `https://localhost:8000`, 같은 교실의 다른 PC에서는 `https://서버의-LAN-IP:8000`으로 접속합니다. 현재 교실 주소가 `10.10.21.23`이면 `https://10.10.21.23:8000`입니다. 로컬 인증서 경고가 나오면 **고급 → 계속 진행**을 선택합니다. 서버 종료는 **Ctrl+C**입니다.
+
+인증서가 없는 새 환경에서는 먼저 서버의 실제 LAN IP로 인증서를 생성합니다. Git for Windows에 포함된 OpenSSL을 사용하는 예시입니다.
+
+```powershell
+uv run --locked python scripts/create_local_certificate.py --host 10.10.21.23 --openssl 'C:\Program Files\Git\usr\bin\openssl.exe'
+```
+
+OpenSSL이 PATH에 있으면 `--openssl` 옵션을 생략할 수 있습니다. 서버 IP가 바뀌면 새 주소를 포함하도록 인증서를 재발급해야 합니다. 생성기는 기존 인증서를 덮어쓰지 않습니다. 갱신, 선택적 CA 신뢰 설치 및 개인 키 보관 방법은 [로컬 HTTPS 안내](docs/local-https.md)를 참고하세요.
+
+## 새 PC에서 기존 데이터로 실행
+
+서버를 중지한 상태에서 백업한 `BambooChatData` 폴더 전체(`chat.db`, `uploads`, 퀴즈 관련 폴더 포함)를 복원합니다. 기존 `bamboochat.json`도 복원하고, `data_dir`을 새 PC의 실제 데이터 폴더로 수정합니다. 모든 로컬 인터페이스에서 접속하려면 `bind_host`를 `0.0.0.0`으로 설정합니다. 다른 설정값은 유지하세요.
+
+예를 들어 이 PC의 데이터 경로는 `C:/Users/user/_se4nchoi/BambooChatData`입니다. JSON에 Windows 경로를 적을 때는 `/` 또는 이중 역슬래시(`\\`)를 사용합니다. 기존 설정 파일이 있으면 최초 설정 마법사는 실행되지 않으며 기존 계정으로 로그인할 수 있습니다.
+
+기존 `bamboochat.json`이 없다면 실행 전에 기존 DB의 위치를 가리키는 설정을 준비해야 합니다. 최초 설정 마법사는 관리자 계정을 새로 만드는 절차이므로 기존 DB 복원용으로 실행하지 마세요. 이 PC는 복원된 데이터 폴더를 가리키도록 설정되어 있으며, 신규 가입은 닫혀 있습니다.
+
+`uv sync --locked`로 의존성을 설치하고 위 HTTPS 명령으로 실행합니다. `bamboochat.json`과 `certs/`는 Git에 포함되지 않으므로 새 PC마다 별도로 준비해야 합니다.
 
 ## 개발 서버 실행 (dev_run.py)
 
