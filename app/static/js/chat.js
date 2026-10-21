@@ -1063,7 +1063,9 @@ export function appendMessageNode(msg, previousMsg) {
     }, 80);
   };
 
-  // 1. Desktop Hover: wait 1.5 seconds before popping
+  const HOVER_ACTIONS_DELAY_MS = 500; // 0.5초 지연
+
+  // 1. Desktop Hover: wait 0.5 seconds before popping
   const onRowMouseEnter = (e) => {
     clearHoverTimer();
     if (removeTimer) {
@@ -1079,7 +1081,7 @@ export function appendMessageNode(msg, previousMsg) {
     hoverTimer = setTimeout(() => {
       hoverTimer = null;
       positionActions(lastHoverPos);
-    }, 1500);
+    }, HOVER_ACTIONS_DELAY_MS);
   };
 
   const onRowMouseMove = (e) => {
