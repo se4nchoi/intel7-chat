@@ -17,6 +17,9 @@ export function closeReactionPicker() {
     }
     activeReactionPicker.remove();
     activeReactionPicker = null;
+    if (parentShell && parentShell.classList.contains('message-actions') && !parentShell.matches(':hover') && !parentShell.closest('.msg-row')?.matches(':hover')) {
+      parentShell.remove();
+    }
   }
 }
 

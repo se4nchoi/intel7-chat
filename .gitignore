@@ -19,6 +19,7 @@ bamboochat_dev.json
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # OS
 .DS_Store

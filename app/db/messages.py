@@ -517,8 +517,12 @@ def _message_public(
     is_pinned: bool = False,
 ) -> Dict[str, Any]:
     reply = None
-    if row["reply_nickname"] or row["reply_content"]:
+    keys = row.keys() if hasattr(row, "keys") else row
+    reply_msg_id = row["reply_message_id"] if "reply_message_id" in keys else None
+    if row["reply_nickname"] or row["reply_content"] or reply_msg_id:
         reply = {"nickname": row["reply_nickname"] or "", "content": row["reply_content"] or ""}
+        if reply_msg_id:
+            reply["message_id"] = str(reply_msg_id)
     live = next((item for item in attachments if not item.get("removed")), None)
     keys = row.keys() if hasattr(row, "keys") else row
     channel_id = row["channel_id"] if "channel_id" in keys else 1
@@ -619,11 +623,12 @@ def save_message(
 ) -> Dict[str, Any]:
     selected = list(dict.fromkeys(attachment_ids or ([] if not attachment_id else [attachment_id])))
     now = utc_now()
+    reply_msg_id = (reply.get("message_id") or reply.get("id")) if reply else None
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT INTO messages
-            (nickname,content,created_at,ip,reply_nickname,reply_content,attachment_id,user_id,channel_id)
-            VALUES(?,?,?,?,?,?,?,?,?)""",
+            (nickname,content,created_at,ip,reply_nickname,reply_content,reply_message_id,attachment_id,user_id,channel_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?)""",
             (
                 nickname,
                 content,
@@ -631,6 +636,7 @@ def save_message(
                 ip,
                 reply.get("nickname", "") if reply else None,
                 reply.get("content", "") if reply else None,
+                str(reply_msg_id) if reply_msg_id else None,
                 selected[0] if selected else None,
                 user_id,
                 channel_id,
@@ -742,13 +748,18 @@ def _direct_message_public(
     attachments: List[Dict[str, Any]],
     reactions: Optional[List[Dict[str, Any]]] = None,
     is_pinned: bool = False,
+    quiz_badge: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     reply = None
-    if row["reply_nickname"] or row["reply_content"]:
+    keys = row.keys() if hasattr(row, "keys") else row
+    reply_msg_id = row["reply_message_id"] if "reply_message_id" in keys else None
+    if row["reply_nickname"] or row["reply_content"] or reply_msg_id:
         reply = {
             "nickname": row["reply_nickname"] or "",
             "content": row["reply_content"] or "",
         }
+        if reply_msg_id:
+            reply["message_id"] = str(reply_msg_id)
     live = next((item for item in attachments if not item.get("removed")), None)
     keys = row.keys() if hasattr(row, "keys") else row
     edited_at = row["edited_at"] if "edited_at" in keys else None
@@ -767,12 +778,14 @@ def _direct_message_public(
         "attachment_removed": bool(attachments and not live),
         "reactions": reactions if reactions is not None else [],
         "is_pinned": bool(is_pinned),
+        "quiz_badge": quiz_badge,
     }
 
 
 def get_direct_message_by_id(
     dm_id: int, current_user_id: Optional[int] = None
 ) -> Optional[Dict[str, Any]]:
+    from app.db.games import get_user_quiz_badge
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM direct_messages WHERE id=?", (dm_id,)).fetchone()
         if not row:
@@ -786,7 +799,8 @@ def get_direct_message_by_id(
             ).fetchone()
             is not None
         )
-        return _direct_message_public(row, items, reactions, is_pinned=pinned)
+        badge = get_user_quiz_badge(row["sender_user_id"])
+        return _direct_message_public(row, items, reactions, is_pinned=pinned, quiz_badge=badge)
 
 
 def update_direct_message_content(
@@ -814,12 +828,14 @@ def save_direct_message(
     reply: Optional[Dict[str, str]] = None,
     attachment_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    from app.db.games import get_user_quiz_badge
     selected = list(dict.fromkeys(attachment_ids or []))
+    reply_msg_id = (reply.get("message_id") or reply.get("id")) if reply else None
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT INTO direct_messages
             (sender_user_id,recipient_user_id,sender_nickname,recipient_nickname,content,
-             created_at,reply_nickname,reply_content) VALUES(?,?,?,?,?,?,?,?)""",
+             created_at,reply_nickname,reply_content,reply_message_id) VALUES(?,?,?,?,?,?,?,?,?)""",
             (
                 sender["id"],
                 recipient["id"],
@@ -829,6 +845,7 @@ def save_direct_message(
                 utc_now(),
                 reply.get("nickname", "") if reply else None,
                 reply.get("content", "") if reply else None,
+                str(reply_msg_id) if reply_msg_id else None,
             ),
         )
         message_id = cur.lastrowid
@@ -851,10 +868,12 @@ def save_direct_message(
         row = conn.execute("SELECT * FROM direct_messages WHERE id=?", (message_id,)).fetchone()
         items = _direct_message_attachments(conn, [message_id])[message_id]
         conn.commit()
-    return _direct_message_public(row, items, [])
+    badge = get_user_quiz_badge(sender["id"])
+    return _direct_message_public(row, items, [], quiz_badge=badge)
 
 
 def get_recent_direct_messages(user_id: int, limit: int = 30) -> List[Dict[str, Any]]:
+    from app.db.games import get_user_quiz_badges_map
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT * FROM (
@@ -870,7 +889,17 @@ def get_recent_direct_messages(user_id: int, limit: int = 30) -> List[Dict[str, 
         msg_ids = [row["id"] for row in rows]
         items = _direct_message_attachments(conn, msg_ids)
         reactions = get_reactions_for_messages(conn, "dm", msg_ids, user_id)
-    return [_direct_message_public(row, items[row["id"]], reactions.get(row["id"], [])) for row in rows]
+        sender_ids = list({row["sender_user_id"] for row in rows if row["sender_user_id"]})
+        badges_map = get_user_quiz_badges_map(sender_ids) if sender_ids else {}
+    return [
+        _direct_message_public(
+            row,
+            items[row["id"]],
+            reactions.get(row["id"], []),
+            quiz_badge=badges_map.get(row["sender_user_id"]),
+        )
+        for row in rows
+    ]
 
 
 def get_direct_messages_between(
@@ -879,6 +908,7 @@ def get_direct_messages_between(
     limit: int = 50,
     before_id: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
+    from app.db.games import get_user_quiz_badges_map
     params: List[Any] = [user_id, partner_user_id, partner_user_id, user_id]
     before_clause = ""
     if before_id is not None:
@@ -906,12 +936,15 @@ def get_direct_messages_between(
                 (norm_id,),
             ).fetchall()
         }
+        sender_ids = list({row["sender_user_id"] for row in rows if row["sender_user_id"]})
+        badges_map = get_user_quiz_badges_map(sender_ids) if sender_ids else {}
     return [
         _direct_message_public(
             row,
             items[row["id"]],
             reactions.get(row["id"], []),
             is_pinned=(row["id"] in pinned_ids),
+            quiz_badge=badges_map.get(row["sender_user_id"]),
         )
         for row in rows
     ]

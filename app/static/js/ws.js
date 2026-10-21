@@ -353,6 +353,7 @@ export function initWebSocket(callbacks = {}) {
             username: u.username,
             display_name: u.display_name || u.username,
             online: Boolean(u.online),
+            quiz_badge: u.quiz_badge || null,
           });
           if (state.unreadCounts.dms[String(u.id)] !== undefined) {
             state.unreadCounts.dms[u.username] = state.unreadCounts.dms[String(u.id)];

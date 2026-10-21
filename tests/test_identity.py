@@ -442,6 +442,34 @@ class TestMentionsWithDisplayName:
         assert len(mentions_a) == 1
         assert mentions_a[0]["username"] == "student_a"
 
+    def test_mention_by_display_name_and_username_format(self):
+        user = database.create_user("target_id", hash_secret("pass123"))
+        database.update_display_name(user["id"], "닉네임")
+        mentions = main.find_mentions("안녕 @닉네임 (target_id) 확인해줘!")
+        assert len(mentions) == 1
+        assert mentions[0]["username"] == "target_id"
+        assert mentions[0]["display_name"] == "닉네임"
+
+    def test_dm_history_includes_quiz_badge(self):
+        u1 = database.create_user("sender_u", hash_secret("pass123"))
+        u2 = database.create_user("recv_u", hash_secret("pass123"))
+        with database.get_connection() as conn:
+            conn.execute(
+                "INSERT INTO user_quiz_stats (user_id, weekly_score, total_score, current_streak) VALUES (?, 100, 100, 3)",
+                (u1["id"],),
+            )
+            conn.commit()
+        dm = database.save_direct_message(u1, u2, "DM content")
+        assert dm["quiz_badge"] is not None
+        assert dm["quiz_badge"]["type"] == "score"
+        assert dm["quiz_badge"]["label"] == "100점"
+
+        history = database.get_direct_messages_between(u1["id"], u2["id"])
+        assert len(history) == 1
+        assert history[0]["quiz_badge"] is not None
+        assert history[0]["quiz_badge"]["type"] == "score"
+        assert history[0]["quiz_badge"]["label"] == "100점"
+
 
 # ==========================================================================
 # Admin display name management

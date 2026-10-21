@@ -238,7 +238,13 @@ def clean_reply(value) -> Optional[dict]:
         return None
     nickname = str(value.get("nickname","")).strip()[:30]
     content = str(value.get("content","")).strip()[:MAX_REPLY_CONTENT_LEN]
-    return {"nickname":nickname,"content":content} if nickname or content else None
+    message_id = str(value.get("message_id") or value.get("id") or "").strip()[:50]
+    if not (nickname or content or message_id):
+        return None
+    res = {"nickname": nickname, "content": content}
+    if message_id:
+        res["message_id"] = message_id
+    return res
 
 def clean_original_filename(encoded_name: str) -> str:
     decoded = unquote(encoded_name).replace("\\","/").split("/")[-1]
@@ -349,13 +355,23 @@ def find_mentions(content: str, users: Optional[list[dict]] = None,
             continue
         username = user["username"]
         display_name = user.get("display_name") or username
-        # Match on @username
+
+        # 1. Match on @display_name (username) or @display_name(username)
+        if display_name != username:
+            combined_pattern = rf"(?<![\w.@-])@{re.escape(display_name)}\s*\({re.escape(username)}\)"
+            if re.search(combined_pattern, content, flags=re.IGNORECASE):
+                matches.append({"user_id": user["id"], "username": username,
+                                "display_name": display_name})
+                continue
+
+        # 2. Match on @username
         pattern = rf"(?<![\w.@-])@{re.escape(username)}(?![\w.-])"
         if re.search(pattern, content, flags=re.IGNORECASE):
             matches.append({"user_id": user["id"], "username": username,
                             "display_name": display_name})
             continue
-        # Also match on @display_name if it differs from username
+
+        # 3. Also match on @display_name if it differs from username
         if display_name != username:
             display_pattern = rf"(?<![\w.@-])@{re.escape(display_name)}(?![\w.-])"
             if re.search(display_pattern, content, flags=re.IGNORECASE):

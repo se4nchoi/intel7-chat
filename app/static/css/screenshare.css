@@ -487,7 +487,8 @@
   max-width: 100%;
   box-sizing: border-box;
 }
-.chat-area.ss-theatre > #new-messages-btn { grid-column: 2; grid-row: 4; }
+.chat-area.ss-theatre > #new-messages-btn,
+.chat-area.ss-theatre > #reply-return-btn { grid-column: 2; grid-row: 4; }
 .chat-area.ss-theatre > .composer { grid-column: 2; grid-row: 5; min-width: 0; }
 .chat-area.ss-theatre .composer-hint,
 .chat-area.ss-theatre .composer-footer { display: none; }
@@ -500,7 +501,8 @@
   }
   .chat-area.ss-theatre > .screenshare-panel-container { grid-column: 1; grid-row: 3; }
   .chat-area.ss-theatre > #message-list { grid-column: 1; grid-row: 4; }
-  .chat-area.ss-theatre > #new-messages-btn { grid-column: 1; grid-row: 5; }
+  .chat-area.ss-theatre > #new-messages-btn,
+  .chat-area.ss-theatre > #reply-return-btn { grid-column: 1; grid-row: 5; }
   .chat-area.ss-theatre > .composer { grid-column: 1; grid-row: 6; }
 }
 

@@ -843,4 +843,60 @@ class TestMessageEditHideMove:
         assert resp.status_code == 400
         assert "이미 해당 채널" in resp.json()["detail"]
 
+    def test_reply_message_id_and_file_download_param(self):
+        alice_client, user_alice = session_client("reply_alice")
+        chan = database.create_channel("reply-test-chan", "답장 테스트")
+
+        # 1. Alice sends original message
+        orig_msg = database.save_message("reply_alice", "원본 메시지", user_id=user_alice["id"], channel_id=chan["id"])
+        orig_id = orig_msg["message_id"]
+
+        # 2. Alice sends reply message with message_id in reply dict via WS
+        with alice_client.websocket_connect("/ws", headers=ORIGIN) as ws:
+            while True:
+                msg = ws.receive_json()
+                if msg.get("type") == "history_ready":
+                    break
+            ws.send_json({
+                "type": "chat",
+                "channel_id": chan["id"],
+                "content": "답장 메시지",
+                "reply": {
+                    "nickname": "reply_alice",
+                    "content": "원본 메시지",
+                    "message_id": orig_id
+                }
+            })
+            event = ws.receive_json()
+            assert event["type"] == "chat"
+            assert event["reply"] is not None
+            assert event["reply"]["message_id"] == orig_id
+            assert event["reply"]["nickname"] == "reply_alice"
+
+        # 3. Verify history returns reply message_id
+        hist = alice_client.get(f"/api/channels/{chan['id']}/messages").json()
+        replied = next(m for m in hist["messages"] if m["content"] == "답장 메시지")
+        assert replied["reply"]["message_id"] == orig_id
+
+        # 4. Upload file and test download parameter
+        png_header = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+        upload_resp = alice_client.post("/api/files", content=png_header, headers={
+            **ORIGIN, "X-File-Name": quote("test_image.png", safe="")
+        })
+        assert upload_resp.status_code == 201
+        att_id = upload_resp.json()["id"]
+
+        # 4a. Default previewable GET uses inline
+        prev_resp = alice_client.get(f"/api/files/{att_id}")
+        assert prev_resp.status_code == 200
+        assert "inline" in prev_resp.headers.get("content-disposition", "")
+        assert "test_image.png" in prev_resp.headers.get("content-disposition", "")
+
+        # 4b. GET with download=1 uses attachment
+        dl_resp = alice_client.get(f"/api/files/{att_id}?download=1")
+        assert dl_resp.status_code == 200
+        assert "attachment" in dl_resp.headers.get("content-disposition", "")
+        assert "test_image.png" in dl_resp.headers.get("content-disposition", "")
+
+
 

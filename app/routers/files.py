@@ -116,7 +116,8 @@ async def download_file(attachment_id: str, request: Request):
     path = main.attachment_path(record["stored_name"])
     if not path.is_file():
         raise HTTPException(404, "파일을 찾을 수 없습니다.")
-    preview = bool(record["previewable"])
+    force_download = request.query_params.get("download") == "1"
+    preview = bool(record["previewable"]) and not force_download
     return FileResponse(
         path,
         media_type=record["content_type"] if preview else "application/octet-stream",

@@ -203,19 +203,46 @@ export function renderMarkdown(container, source) {
 }
 
 export function highlightMentions(container, mentions) {
-  const usernames = (Array.isArray(mentions) ? mentions : [])
-    .map(mention => String(mention.username || ''))
-    .filter(Boolean)
-    .sort((first, second) => second.length - first.length);
-  if (!usernames.length) return;
-  const names = usernames.map(escapeRegExp).join('|');
-  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}._-])(@(?:${names}))(?![\\p{L}\\p{N}._-])`, 'giu');
+  const mentionList = Array.isArray(mentions) ? mentions : [];
+  if (!mentionList.length) return;
+
+  const targets = [];
+  mentionList.forEach(m => {
+    const username = String(m.username || '').trim();
+    const displayName = String(m.display_name || '').trim();
+    if (!username && !displayName) return;
+
+    if (displayName && username && displayName !== username) {
+      targets.push({
+        regexStr: `@${escapeRegExp(displayName)}\\s*\\(${escapeRegExp(username)}\\)`,
+        mention: m,
+      });
+      targets.push({
+        regexStr: `@${escapeRegExp(displayName)}(?![\\p{L}\\p{N}._-])`,
+        mention: m,
+      });
+    }
+    if (username) {
+      targets.push({
+        regexStr: `@${escapeRegExp(username)}(?![\\p{L}\\p{N}._-])`,
+        mention: m,
+      });
+    }
+  });
+
+  if (!targets.length) return;
+
+  targets.sort((a, b) => b.regexStr.length - a.regexStr.length);
+  const combinedNames = targets.map(t => t.regexStr).join('|');
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}._-])(${combinedNames})`, 'giu');
+
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   const textNodes = [];
   while (walker.nextNode()) {
     const node = walker.currentNode;
     if (!node.parentElement?.closest('code, a')) textNodes.push(node);
   }
+
   textNodes.forEach(textNode => {
     const source = textNode.nodeValue || '';
     pattern.lastIndex = 0;
@@ -226,9 +253,20 @@ export function highlightMentions(container, mentions) {
     for (const match of source.matchAll(pattern)) {
       if (match.index > cursor) fragment.append(source.slice(cursor, match.index));
       if (match[1]) fragment.append(match[1]);
+
+      const matchedText = match[2];
+      const matched = targets.find(t => {
+        const testReg = new RegExp(`^${t.regexStr}$`, 'iu');
+        return testReg.test(matchedText);
+      })?.mention;
+
       const mention = document.createElement('span');
       mention.className = 'message-mention';
-      mention.textContent = match[2];
+      if (matched && matched.display_name && matched.username && matched.display_name !== matched.username) {
+        mention.textContent = `@${matched.display_name} (${matched.username})`;
+      } else {
+        mention.textContent = matchedText;
+      }
       fragment.appendChild(mention);
       cursor = match.index + match[0].length;
     }

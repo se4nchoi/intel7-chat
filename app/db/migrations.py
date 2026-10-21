@@ -91,6 +91,7 @@ def init_db() -> None:
             ("ip", "TEXT NOT NULL DEFAULT ''"),
             ("reply_nickname", "TEXT"),
             ("reply_content", "TEXT"),
+            ("reply_message_id", "TEXT"),
             ("attachment_id", "TEXT"),
             ("user_id", "INTEGER"),
             ("edited_at", "TEXT"),
@@ -132,9 +133,11 @@ def init_db() -> None:
             created_at TEXT NOT NULL,
             reply_nickname TEXT,
             reply_content TEXT,
+            reply_message_id TEXT,
             FOREIGN KEY(sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY(recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
         )""")
+        _add_column_if_missing(conn, "direct_messages", "reply_message_id", "TEXT")
         conn.execute("""CREATE TABLE IF NOT EXISTS direct_message_attachments (
             direct_message_id INTEGER NOT NULL,
             attachment_id TEXT NOT NULL,

@@ -8,8 +8,7 @@ import { openReactionPicker, renderMessageReactions, toggleReaction, closeReacti
 import { toggleMessagePin } from './pins.js';
 import { displayNickname, userDirectory } from './dm.js';
 import { channelsDirectory } from './channels.js';
-import { refreshStorageWarning } from './auth.js';
-import { scrollToLatest } from './message_scroll.js';
+import { scrollToLatest, isNearLatest } from './message_scroll.js';
 
 export const replyTargets = new Map();
 export const pendingAttachments = new Map();
@@ -126,7 +125,10 @@ export function selectMention(user = mentionMatches[mentionActiveIndex]) {
   if (!user || !mentionRange || !msgInput) return;
   const before = msgInput.value.slice(0, mentionRange.start);
   const after = msgInput.value.slice(mentionRange.end);
-  const inserted = `@${user.username} `;
+  const displayName = user.display_name || user.username;
+  const inserted = (displayName && displayName !== user.username)
+    ? `@${displayName} (${user.username}) `
+    : `@${user.username} `;
   msgInput.value = before + inserted + after;
   const caret = before.length + inserted.length;
   msgInput.setSelectionRange(caret, caret);
@@ -208,12 +210,20 @@ export function createAttachmentEntry(attachment) {
   card.href = attachment.url;
   card.target = '_blank';
   card.rel = 'noopener';
-  if (!attachment.previewable) card.download = attachment.name;
+  card.download = attachment.name || '';
+  card.title = attachment.name || '';
+  if (attachment.name) card.setAttribute('download', attachment.name);
+
   if (attachment.previewable) {
     const image = document.createElement('img');
     image.src = attachment.url;
-    image.alt = attachment.name;
+    image.alt = attachment.name || '이미지 첨부파일';
     image.loading = 'lazy';
+    image.addEventListener('load', () => {
+      if (typeof isNearLatest === 'function' && isNearLatest()) {
+        scrollToLatest();
+      }
+    });
     card.appendChild(image);
     card.addEventListener('click', (e) => {
       if (!e.ctrlKey && !e.metaKey && e.button === 0) {
@@ -221,18 +231,20 @@ export function createAttachmentEntry(attachment) {
         openImageLightbox(attachment.url, attachment.name, formatBytes(attachment.size));
       }
     });
+  } else {
+    const icon = document.createElement('span');
+    icon.className = 'attachment-icon';
+    icon.textContent = '📄';
+    const info = document.createElement('span');
+    info.className = 'attachment-info';
+    const name = document.createElement('strong');
+    name.textContent = attachment.name;
+    info.appendChild(name);
+    const meta = document.createElement('small');
+    meta.textContent = `${formatBytes(attachment.size)} · SHA-256 ${(attachment.sha256 || '').slice(0, 12)}…`;
+    info.append(meta);
+    card.append(icon, info);
   }
-  const icon = document.createElement('span');
-  icon.className = 'attachment-icon';
-  icon.textContent = attachment.previewable ? '🖼️' : '📄';
-  const info = document.createElement('span');
-  info.className = 'attachment-info';
-  const name = document.createElement('strong');
-  name.textContent = attachment.name;
-  const meta = document.createElement('small');
-  meta.textContent = `${formatBytes(attachment.size)} · SHA-256 ${(attachment.sha256 || '').slice(0, 12)}…`;
-  info.append(name, meta);
-  card.append(icon, info);
   entry.appendChild(card);
 
   const myUserId = state.currentUser ? Number(state.currentUser.id) : null;
@@ -258,15 +270,128 @@ export function createAttachmentEntry(attachment) {
   return entry;
 }
 
-export function createReplyQuote(reply) {
+let activeReplyOriginRow = null;
+let replyReturnTimer = null;
+
+export function hideReplyReturnButton() {
+  const returnBtn = document.getElementById('reply-return-btn');
+  if (returnBtn) returnBtn.classList.add('hidden');
+  activeReplyOriginRow = null;
+  if (replyReturnTimer) {
+    clearTimeout(replyReturnTimer);
+    replyReturnTimer = null;
+  }
+}
+
+export function initReplyReturnButton() {
+  const returnBtn = document.getElementById('reply-return-btn');
+  if (returnBtn && !returnBtn.__initialized) {
+    returnBtn.__initialized = true;
+    returnBtn.addEventListener('click', () => {
+      if (activeReplyOriginRow && activeReplyOriginRow.isConnected) {
+        activeReplyOriginRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        activeReplyOriginRow.classList.remove('reply-target-highlight');
+        void activeReplyOriginRow.offsetWidth;
+        activeReplyOriginRow.classList.add('reply-target-highlight');
+      }
+      hideReplyReturnButton();
+    });
+  }
+}
+
+export function formatUserWithId(username, displayName = null) {
+  if (!username) return '익명';
+  const raw = String(username).trim();
+  if (/\([^)]+\)$/.test(raw)) return raw;
+  const name = displayName || displayNickname(raw);
+  if (name && name !== raw) {
+    return `${name} (${raw})`;
+  }
+  return raw;
+}
+
+export function jumpToReplyTarget(reply, originRow = null) {
+  if (!reply) return;
+  const messageListEl = document.getElementById('message-list');
+  if (!messageListEl) return;
+
+  let targetRow = null;
+  if (reply.message_id) {
+    targetRow = messageListEl.querySelector(`.msg-row[data-message-id="${reply.message_id}"]`);
+  }
+  if (!targetRow && (reply.id || reply.message_id)) {
+    const rawId = String(reply.id || reply.message_id).replace(/^(public|dm):/, '');
+    if (rawId) {
+      targetRow = messageListEl.querySelector(`.msg-row[data-message-id="public:${rawId}"], .msg-row[data-message-id="dm:${rawId}"]`);
+    }
+  }
+  if (!targetRow && (reply.nickname || reply.content)) {
+    const cleanNick = (reply.raw_username || reply.nickname || '').replace(/\s*\([^)]*\)$/, '').trim();
+    const rows = Array.from(messageListEl.querySelectorAll('.msg-row'));
+    const startIndex = originRow ? rows.indexOf(originRow) : rows.length;
+    const candidates = startIndex > 0 ? rows.slice(0, startIndex).reverse() : rows.slice().reverse();
+    for (const r of candidates) {
+      const authorEl = r.querySelector('.nick, .message-author-name');
+      const textEl = r.querySelector('.msg-bubble');
+      const authorMatch = !reply.nickname || (authorEl && (
+        authorEl.textContent.trim() === reply.nickname
+        || authorEl.dataset.username === reply.nickname
+        || (cleanNick && (authorEl.dataset.username === cleanNick || authorEl.textContent.trim() === cleanNick))
+      ));
+      const contentMatch = !reply.content || (textEl && textEl.textContent.includes(reply.content.trim().slice(0, 30)));
+      if (authorMatch && contentMatch) {
+        targetRow = r;
+        break;
+      }
+    }
+  }
+
+  if (targetRow) {
+    activeReplyOriginRow = originRow;
+    targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    targetRow.classList.remove('reply-target-highlight');
+    void targetRow.offsetWidth;
+    targetRow.classList.add('reply-target-highlight');
+
+    const returnBtn = document.getElementById('reply-return-btn');
+    if (returnBtn && originRow) {
+      returnBtn.textContent = '↩ 원래 메시지로 돌아가기';
+      returnBtn.classList.remove('hidden');
+
+      if (replyReturnTimer) clearTimeout(replyReturnTimer);
+      replyReturnTimer = setTimeout(() => {
+        hideReplyReturnButton();
+      }, 30000);
+    }
+  } else {
+    showToast('답장 대상 메시지가 현재 목록에 없습니다.', 'info');
+  }
+}
+
+export function createReplyQuote(reply, originRow = null) {
   if (!reply) return null;
   const quote = document.createElement('div');
   quote.className = 'message-reply-quote';
+  quote.setAttribute('role', 'button');
+  quote.setAttribute('tabindex', '0');
+  quote.setAttribute('title', '답장 원본 메시지로 이동');
   const name = document.createElement('strong');
-  name.textContent = reply.nickname || '메시지';
+  name.textContent = formatUserWithId(reply.nickname) || '메시지';
   const text = document.createElement('span');
   text.textContent = reply.content || '첨부 파일';
   quote.append(name, text);
+
+  const onJump = (e) => {
+    e.stopPropagation();
+    jumpToReplyTarget(reply, originRow);
+  };
+  quote.addEventListener('click', onJump);
+  quote.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onJump(e);
+    }
+  });
   return quote;
 }
 
@@ -274,9 +399,13 @@ let activeMessageMoreMenu = null;
 
 export function closeMessageMoreMenu() {
   if (activeMessageMoreMenu) {
+    const actions = activeMessageMoreMenu.actions;
     activeMessageMoreMenu.popover?.remove();
-    activeMessageMoreMenu.actions?.classList.remove('has-open-menu');
+    actions?.classList.remove('has-open-menu');
     activeMessageMoreMenu = null;
+    if (actions && !actions.matches(':hover') && !actions.closest('.msg-row')?.matches(':hover')) {
+      actions.remove();
+    }
   }
 }
 
@@ -439,8 +568,16 @@ export function createMessageActions(msg) {
   replyBtn.addEventListener('click', () => {
     const currentKey = `${state.activeRoom.type}:${state.activeRoom.id}`;
     const authorNick = isChat ? msg.nickname : msg.from_nick;
+    const authorDisplayName = isChat
+      ? (msg.display_name || displayNickname(authorNick))
+      : (isOwn && state.currentUser?.display_name ? state.currentUser.display_name : displayNickname(authorNick));
+    const formattedAuthor = formatUserWithId(authorNick, authorDisplayName);
+    const msgId = msg.message_id || (isChat ? `public:${msg.id}` : `dm:${msg.id}`);
     replyTargets.set(currentKey, {
-      nickname: authorNick || '메시지',
+      message_id: msgId,
+      id: msg.id,
+      nickname: formattedAuthor,
+      raw_username: authorNick,
       content: (msg.content || '첨부 파일').slice(0, 180),
     });
     renderComposerPreviews();
@@ -731,10 +868,16 @@ export function appendMessageNode(msg, previousMsg) {
     nick.title = `@${rawNick}`;
     meta.append(nick);
 
-    if (msg.quiz_badge) {
+    const badge = msg.quiz_badge || (
+      isOwn
+        ? state.currentUser?.quiz_badge
+        : (userDirectory.get(rawNick)?.quiz_badge || null)
+    );
+    if (badge) {
       const badgeSpan = document.createElement('span');
-      badgeSpan.className = `quiz-user-badge badge-${msg.quiz_badge.type}`;
-      badgeSpan.textContent = `${msg.quiz_badge.icon} ${msg.quiz_badge.label}`;
+      badgeSpan.className = `quiz-user-badge badge-${badge.type}`;
+      badgeSpan.textContent = `${badge.icon} ${badge.label}`;
+      badgeSpan.title = badge.title || '';
       meta.appendChild(badgeSpan);
     }
 
@@ -772,10 +915,16 @@ export function appendMessageNode(msg, previousMsg) {
     author.title = `@${rawNick}`;
     label.appendChild(author);
 
-    if (msg.quiz_badge) {
+    const badge = msg.quiz_badge || (
+      isOwn
+        ? state.currentUser?.quiz_badge
+        : (userDirectory.get(senderNick)?.quiz_badge || null)
+    );
+    if (badge) {
       const badgeSpan = document.createElement('span');
-      badgeSpan.className = `quiz-user-badge badge-${msg.quiz_badge.type}`;
-      badgeSpan.textContent = `${msg.quiz_badge.icon} ${msg.quiz_badge.label}`;
+      badgeSpan.className = `quiz-user-badge badge-${badge.type}`;
+      badgeSpan.textContent = `${badge.icon} ${badge.label}`;
+      badgeSpan.title = badge.title || '';
       label.appendChild(badgeSpan);
     }
 
@@ -805,7 +954,7 @@ export function appendMessageNode(msg, previousMsg) {
   shell.className = 'message-shell';
   const bubble = document.createElement('div');
   bubble.className = 'msg-bubble markdown-body';
-  const reply = createReplyQuote(msg.reply);
+  const reply = createReplyQuote(msg.reply, row);
   if (reply) bubble.appendChild(reply);
 
   if (msg.content) {
@@ -828,9 +977,164 @@ export function appendMessageNode(msg, previousMsg) {
     bubble.appendChild(group);
   }
 
-  const actions = createMessageActions(msg);
-  shell.append(bubble, actions);
+  shell.appendChild(bubble);
   row.appendChild(shell);
+
+  let activeActions = null;
+  let removeTimer = null;
+  let hoverTimer = null;
+  let lastHoverPos = null;
+
+  const clearHoverTimer = () => {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+  };
+
+  const positionActions = (e) => {
+    clearHoverTimer();
+    if (removeTimer) {
+      clearTimeout(removeTimer);
+      removeTimer = null;
+    }
+    if (row.classList.contains('is-editing')) return;
+    if (activeActions && activeActions.classList.contains('has-open-menu')) return;
+
+    if (!activeActions) {
+      activeActions = createMessageActions(msg);
+      shell.appendChild(activeActions);
+      activeActions.addEventListener('mouseenter', () => {
+        clearHoverTimer();
+        if (removeTimer) {
+          clearTimeout(removeTimer);
+          removeTimer = null;
+        }
+      });
+      activeActions.addEventListener('mouseleave', scheduleRemoveActions);
+    }
+
+    const listEl = shell.closest('#message-list') || document.body;
+    const listRect = listEl.getBoundingClientRect();
+    const shellRect = shell.getBoundingClientRect();
+    const overlayWidth = activeActions.offsetWidth || (isOwn ? 245 : 210);
+    const overlayHeight = activeActions.offsetHeight || 38;
+
+    const cursorViewportX = e ? e.clientX : (isOwn ? (shellRect.right - 20) : (shellRect.left + 20));
+    const cursorViewportY = e ? e.clientY : (shellRect.top + 10);
+
+    const pad = 8;
+    const minViewportLeft = listRect.left + pad;
+    const maxViewportLeft = Math.max(minViewportLeft, listRect.right - pad - overlayWidth);
+    const idealViewportLeft = cursorViewportX - (overlayWidth / 2);
+    const clampedViewportLeft = Math.max(minViewportLeft, Math.min(idealViewportLeft, maxViewportLeft));
+    const left = clampedViewportLeft - shellRect.left;
+
+    let targetViewportTop = cursorViewportY - overlayHeight - 6;
+    if (targetViewportTop < listRect.top + 4) {
+      if (cursorViewportY + 14 + overlayHeight <= listRect.bottom - 4) {
+        targetViewportTop = cursorViewportY + 14;
+      } else {
+        targetViewportTop = listRect.top + 4;
+      }
+    }
+    const top = targetViewportTop - shellRect.top;
+
+    activeActions.style.left = `${Math.round(left)}px`;
+    activeActions.style.top = `${Math.round(top)}px`;
+    activeActions.style.right = 'auto';
+    activeActions.classList.add('is-active');
+  };
+
+  const scheduleRemoveActions = (e) => {
+    clearHoverTimer();
+    if (removeTimer) clearTimeout(removeTimer);
+    if (!activeActions) return;
+    if (activeActions.classList.contains('has-open-menu')) return;
+    if (e?.relatedTarget && (activeActions.contains(e.relatedTarget) || row.contains(e.relatedTarget))) {
+      return;
+    }
+    removeTimer = setTimeout(() => {
+      if (!activeActions) return;
+      if (activeActions.classList.contains('has-open-menu')) return;
+      activeActions.remove();
+      activeActions = null;
+      removeTimer = null;
+    }, 80);
+  };
+
+  // 1. Desktop Hover: wait 1.5 seconds before popping
+  const onRowMouseEnter = (e) => {
+    clearHoverTimer();
+    if (removeTimer) {
+      clearTimeout(removeTimer);
+      removeTimer = null;
+    }
+    if (row.classList.contains('is-editing')) return;
+    if (activeActions) return;
+
+    if (e.sourceCapabilities?.firesTouchEvents) return;
+
+    lastHoverPos = { clientX: e.clientX, clientY: e.clientY };
+    hoverTimer = setTimeout(() => {
+      hoverTimer = null;
+      positionActions(lastHoverPos);
+    }, 1500);
+  };
+
+  const onRowMouseMove = (e) => {
+    if (hoverTimer) {
+      lastHoverPos = { clientX: e.clientX, clientY: e.clientY };
+    }
+  };
+
+  const onRowMouseLeave = (e) => {
+    clearHoverTimer();
+    scheduleRemoveActions(e);
+  };
+
+  // 2. Mobile Tap: immediate show on tap
+  const onRowPointerDown = (e) => {
+    const isTouch = e.pointerType === 'touch' || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    if (!isTouch) return;
+
+    if (e.target.closest('button, a, .msg-action-btn, .message-reply-quote, .reaction-pill, .message-actions, input, textarea')) {
+      return;
+    }
+
+    clearHoverTimer();
+    if (activeActions) {
+      activeActions.remove();
+      activeActions = null;
+      return;
+    }
+
+    document.querySelectorAll('.message-actions').forEach(el => {
+      if (!el.classList.contains('has-open-menu')) el.remove();
+    });
+
+    positionActions(e);
+  };
+
+  const onDocPointerDown = (e) => {
+    if (activeActions && !row.contains(e.target)) {
+      if (!activeActions.classList.contains('has-open-menu')) {
+        activeActions.remove();
+        activeActions = null;
+      }
+    }
+  };
+  document.addEventListener('pointerdown', onDocPointerDown);
+
+  row.addEventListener('mouseenter', onRowMouseEnter);
+  row.addEventListener('mousemove', onRowMouseMove);
+  row.addEventListener('mouseleave', onRowMouseLeave);
+  row.addEventListener('pointerdown', onRowPointerDown);
+  row.addEventListener('focusin', () => {
+    clearHoverTimer();
+    if (!activeActions) positionActions(null);
+  });
+  row.addEventListener('focusout', scheduleRemoveActions);
 
   const reactionsRow = document.createElement('div');
   reactionsRow.className = 'message-reactions-row';
@@ -857,6 +1161,9 @@ export function renderMessages(messages = []) {
     appendMessageNode(msg, idx > 0 ? messages[idx - 1] : null);
   });
   scrollBottom();
+  requestAnimationFrame(() => {
+    scrollBottom();
+  });
 }
 
 
@@ -905,7 +1212,8 @@ export function openImageLightbox(src, title, meta, serverUrl) {
   if (titleEl) titleEl.textContent = title || '이미지 미리보기';
   if (metaEl) metaEl.textContent = meta || '';
   if (downloadLink) {
-    downloadLink.href = serverUrl || effectiveUrl;
+    const dlUrl = serverUrl || effectiveUrl;
+    downloadLink.href = dlUrl ? `${dlUrl}${dlUrl.includes('?') ? '&' : '?'}download=1` : '#';
     if (title) downloadLink.download = title;
   }
   modal.classList.remove('hidden');
@@ -929,9 +1237,16 @@ export function renderComposerPreviews() {
   const sendBtn = document.getElementById('send-btn');
 
   const reply = replyTargets.get(currentKey);
-  if (replyPreview) replyPreview.classList.toggle('hidden', !reply);
+  if (replyPreview) {
+    replyPreview.classList.toggle('hidden', !reply);
+    replyPreview.onclick = (e) => {
+      if (!e.target.closest('#reply-cancel')) {
+        jumpToReplyTarget(reply, null);
+      }
+    };
+  }
   if (reply) {
-    if (replyPreviewName) replyPreviewName.textContent = `↩ ${reply.nickname}`;
+    if (replyPreviewName) replyPreviewName.textContent = `↩ ${formatUserWithId(reply.nickname)}`;
     if (replyPreviewText) replyPreviewText.textContent = reply.content;
   }
 

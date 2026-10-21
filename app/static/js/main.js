@@ -26,6 +26,8 @@ import {
   replyTargets,
   pendingAttachments,
   clearAllPendingAttachments,
+  initReplyReturnButton,
+  hideReplyReturnButton,
 } from './chat.js';
 import { initWebSocket, sendWebSocketMessage, applyServerUnreadCounts } from './ws.js';
 import { isNearLatest } from './message_scroll.js';
@@ -241,11 +243,15 @@ async function switchConversation(type, id) {
         ...m,
         msgType: type === 'channel' ? 'chat' : 'dm'
       }));
-      renderMessages(messages);
       activeHasMore = Boolean(data.has_more);
       if (loadOlderBtn) {
         loadOlderBtn.classList.toggle('hidden', !data.has_more);
       }
+      renderMessages(messages);
+      scrollToLatest();
+      requestAnimationFrame(() => scrollToLatest());
+      setTimeout(() => scrollToLatest(), 60);
+
       const newestMessage = rawMessages.reduce((latest, message) => {
         const messageId = Number(String(message.message_id || '').replace(/^(public|dm):/, ''));
         return Number.isInteger(messageId) && messageId > latest ? messageId : latest;
@@ -257,6 +263,7 @@ async function switchConversation(type, id) {
 
 
   fetchActivePinnedMessages({ autoOpen: false });
+  hideReplyReturnButton();
 
   // Close mobile sidebar if open
   const sidebar = document.getElementById('sidebar');
@@ -1003,6 +1010,7 @@ function initApp() {
   const loadOlderBtn = document.getElementById('load-older-btn');
   if (loadOlderBtn) loadOlderBtn.addEventListener('click', loadOlderMessages);
   initMessageScroll();
+  initReplyReturnButton();
 
   const onLoginSuccess = async (user) => {
     const chatApp = document.getElementById('chat-app');

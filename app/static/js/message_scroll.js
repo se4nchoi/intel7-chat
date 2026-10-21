@@ -31,6 +31,13 @@ export function initMessageScroll() {
       if (wasNear) resetNewMessages();
     }, { passive: true });
 
+    list.addEventListener('load', (e) => {
+      if (e.target && e.target.tagName === 'IMG' && wasNear) {
+        list.scrollTop = list.scrollHeight;
+        resetNewMessages();
+      }
+    }, true);
+
     if (typeof ResizeObserver === 'function') {
       new ResizeObserver(() => {
         if (wasNear) {
