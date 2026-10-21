@@ -468,12 +468,21 @@ def create_cohort(slug: str, name: str):
                             (slug, name)).fetchone()
 
 
-def create_account(username: str, display_name: str, password: str):
+def create_account(username: str, display_name: str, password: str, *, require_change: bool = False):
+    """Create an account; administrator-issued temporary passwords require onboarding."""
+    values = (username, normalize_username(username), display_name, hash_secret(password))
     with connect() as conn:
+        if require_change:
+            return conn.execute(
+                """INSERT INTO hub_accounts (username,normalized_username,display_name,password_hash,must_change_password)
+                   VALUES (%s,%s,%s,%s,TRUE) RETURNING id,username,display_name,must_change_password""",
+                values,
+            ).fetchone()
+        # Keep the default creation path usable when adopting pre-onboarding databases.
         return conn.execute(
             """INSERT INTO hub_accounts (username,normalized_username,display_name,password_hash)
                VALUES (%s,%s,%s,%s) RETURNING id,username,display_name""",
-            (username, normalize_username(username), display_name, hash_secret(password)),
+            values,
         ).fetchone()
 
 
@@ -527,7 +536,7 @@ def create_channel(cohort_id: int, slug: str, name: str):
 def list_accounts():
     with connect() as conn:
         return conn.execute(
-            """SELECT a.id, a.username, a.display_name, a.is_admin, a.active, a.created_at,
+            """SELECT a.id, a.username, a.display_name, a.is_admin, a.active, a.created_at, a.must_change_password,
                       coalesce(json_agg(json_build_object('cohort_id', m.cohort_id, 'role', m.role))
                                FILTER (WHERE m.cohort_id IS NOT NULL), '[]') AS memberships
                FROM hub_accounts a LEFT JOIN hub_memberships m ON m.account_id=a.id AND m.active

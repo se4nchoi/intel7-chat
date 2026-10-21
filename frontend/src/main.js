@@ -1419,6 +1419,7 @@ function renderAccounts() {
     const where = account.is_admin ? '관리자' : account.memberships.map(m => `${cohortName.get(m.cohort_id) || `#${m.cohort_id}`} ${ROLE_LABEL[m.role] || m.role}`).join(', ') || '소속 없음';
     return el('li', { class: account.active ? '' : 'inactive' },
       el('span', { class: 'who', text: `${account.display_name} (@${account.username}) · ${where}`, title: where }),
+      account.must_change_password ? el('span', { class: 'tag', text: '첫 로그인 대기', title: '임시 비밀번호를 변경하면 수업에 참여할 수 있습니다.' }) : null,
       account.active ? null : el('span', { class: 'tag danger', text: '비활성' }),
       self ? null : el('button', { class: 'ghost', type: 'button', text: '비밀번호 재설정', onclick: () => resetPassword(account) }),
       self ? null : el('button', { class: account.active ? 'ghost danger-text' : 'ghost', type: 'button', text: account.active ? '비활성화' : '활성화',

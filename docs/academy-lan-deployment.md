@@ -1,6 +1,6 @@
 # Academy LAN deployment: one PC, separate services
 
-This is the deployment target for `edu/discord-piazza-ui`. Use a dedicated Linux
+This is the deployment target for `edu/madi`. Use a dedicated Linux
 PC on the academy network, with PostgreSQL, the Madi application, Caddy, and
 LiveKit as separate services. Students only need a browser. No home access or
 public internet dependency is intended for classroom operation. Dependency

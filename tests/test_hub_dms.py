@@ -30,6 +30,9 @@ def test_dm_is_private_and_reused(hub):
     admin.post("/hub/api/accounts", json={"username": "other", "display_name": "O", "password": PASSWORD}, headers=ORIGIN)
     admin.post(f"/hub/api/cohorts/{cohort_id}/memberships", json={"username": "other", "role": "student"}, headers=ORIGIN)
     other = login(app, "other")
+    assert other.post('/hub/api/me/password', json={
+        'current_password': PASSWORD, 'new_password': 'personal-pass-1234',
+    }, headers=ORIGIN).status_code == 204
     assert other.get(url).status_code == 404
     assert other.post(url, json={"body": "끼어들기"}, headers=ORIGIN).status_code == 404
     listed = teacher.get(f"/hub/api/cohorts/{cohort_id}/dms").json()

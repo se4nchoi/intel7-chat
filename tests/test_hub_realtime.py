@@ -69,7 +69,11 @@ def test_mention_match_is_literal(hub):
     admin.post(f"/hub/api/cohorts/{cohort_id}/memberships", json={"username": "kim_a", "role": "student"}, headers=ORIGIN)
     post(teacher, cohort_id, general, "@kimXa is someone else")
     post(teacher, cohort_id, general, "@kim_a this one is you")
-    counts = login(app, "kim_a").get(f"/hub/api/cohorts/{cohort_id}/unread").json()
+    reader = login(app, "kim_a")
+    assert reader.post('/hub/api/me/password', json={
+        'current_password': PASSWORD, 'new_password': 'personal-pass-1234',
+    }, headers=ORIGIN).status_code == 204
+    counts = reader.get(f"/hub/api/cohorts/{cohort_id}/unread").json()
     assert (counts[0]["unread"], counts[0]["mentions"]) == (2, 1)
 
 

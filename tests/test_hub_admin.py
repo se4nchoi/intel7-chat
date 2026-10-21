@@ -26,6 +26,9 @@ def test_only_admin_lists_accounts(hub):
     student = next(a for a in accounts if a["username"] == "student")
     assert student["active"] is True and student["memberships"] == [{"cohort_id": cohort_id, "role": "student"}]
     assert "password_hash" not in student
+    assert student["must_change_password"] is False
+    assert login(app, "student").get("/hub/api/me").json()["must_change_password"] is False
+    assert login(app, "admin_user").get("/hub/api/me").json()["must_change_password"] is False
 
 
 def test_disabling_account_ends_sessions_and_sockets(hub):

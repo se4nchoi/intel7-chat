@@ -100,14 +100,35 @@ def test_import_requires_admin_origin_and_bounded_batch(hub):
         assert admin.post('/hub/api/accounts/import/preview', json={'cohort_id': cid, 'rows': rows}, headers=ORIGIN).status_code == 422
 
 
-def test_imported_account_cannot_access_class_before_changing_temporary_password(hub):
+@pytest.mark.parametrize('source', ['manual', 'import'])
+@pytest.mark.parametrize('role', ['student', 'instructor'])
+def test_new_account_cannot_access_class_before_changing_temporary_password(hub, source, role):
     app, cid, channel = hub
     admin = login(app, 'admin_user')
-    data = roster(cid)
-    password = apply(admin, data, preview(admin, data)).json()['credentials'][0]['temporary_password']
+    if source == 'manual':
+        password = PASSWORD
+        response = admin.post('/hub/api/accounts', json={
+            'username': 'new_student', 'display_name': 'New learner', 'password': password,
+            'must_change_password': False,  # The server owns the onboarding policy.
+        }, headers=ORIGIN)
+        assert response.status_code == 201, response.text
+        assert response.json()['must_change_password'] is True
+        assert admin.post(f'/hub/api/cohorts/{cid}/memberships', json={
+            'username': 'new_student', 'role': role,
+        }, headers=ORIGIN).status_code == 201
+    else:
+        data = roster(cid, row('new_student', role))
+        password = apply(admin, data, preview(admin, data)).json()['credentials'][0]['temporary_password']
+    listed = lambda: next(a for a in admin.get('/hub/api/accounts').json() if a['username'] == 'new_student')
+    assert listed()['must_change_password'] is True
     client = TestClient(app, base_url='https://testserver')
     assert client.post('/hub/api/login', json={'username': 'new_student', 'password': password}, headers=ORIGIN).status_code == 200
     assert client.get('/hub/api/me').json()['must_change_password'] is True
+    # A fresh browser session still enters onboarding rather than bypassing it.
+    refreshed = TestClient(app, base_url='https://testserver')
+    assert refreshed.post('/hub/api/login', json={'username': 'new_student', 'password': password}, headers=ORIGIN).status_code == 200
+    assert refreshed.get('/hub/api/me').json()['must_change_password'] is True
+    assert refreshed.get('/hub/api/cohorts').status_code == 403
     for url in ('/hub/api/cohorts', f'/hub/api/cohorts/{cid}/members', f'/hub/api/cohorts/{cid}/channels/{channel}/messages'):
         assert client.get(url).status_code == 403
     assert client.post(f'/hub/api/cohorts/{cid}/channels/{channel}/messages', json={'body': 'bypass'}, headers=ORIGIN).status_code == 403
@@ -119,6 +140,8 @@ def test_imported_account_cannot_access_class_before_changing_temporary_password
     assert client.post(endpoint, json={'current_password': 'incorrect', 'new_password': 'new-pass'}, headers=ORIGIN).status_code == 400
     assert client.post(endpoint, json={'current_password': password, 'new_password': 'new-pass'}, headers=ORIGIN).status_code == 204
     assert client.get('/hub/api/me').json()['must_change_password'] is False
+    assert listed()['must_change_password'] is False
+    assert refreshed.get('/hub/api/me').status_code == 401  # Other sessions are revoked.
     assert client.get(f'/hub/api/cohorts/{cid}/members').status_code == 200
     client.post('/hub/api/logout', headers=ORIGIN)
     assert client.post('/hub/api/login', json={'username': 'new_student', 'password': password}, headers=ORIGIN).status_code == 401

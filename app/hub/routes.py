@@ -326,7 +326,7 @@ async def create_account(body: NewAccount, request: Request):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     try:
-        created = await asyncio.to_thread(db.create_account, username, body.display_name.strip(), body.password)
+        created = await asyncio.to_thread(db.create_account, username, body.display_name.strip(), body.password, require_change=True)
     except UniqueViolation:
         raise HTTPException(409, "Username already exists")
     log.info("account created by=%r account=%s user=%r", admin["username"], created["id"], created["username"])

@@ -1,19 +1,147 @@
-# BambooChat
+<p align="center">
+  <img src="docs/assets/madi-icon.svg" alt="Madi icon" width="72" height="72">
+</p>
+
+# 마디 · Madi
+
+A shared learning space for academy classes: live chat, course Q&A, class files, and account management in one browser.
+
+마디는 수강반별 대화와 질문·답변, 수업 자료를 함께 관리하는 학원용 학습 공간입니다. 학생은 질문하고 답변을 확인하며, 강사는 담당 반을 운영하고, 관리자는 계정과 수강반을 준비합니다.
+
+**Active branch:** `edu/madi`
+
+**Stack:** Python · FastAPI · PostgreSQL · WebSockets · JavaScript · Vite · uv
+
+[Local development](#local-development) · [Academy deployment](#academy-deployment) · [Architecture](#architecture) · [Verification](#verification) · [Legacy BambooChat](#legacy-bamboochat)
+
+![Madi Q&A board in the browser](docs/assets/madi-board.jpg)
+
+*Current Q&A interface in dark mode, captured in a browser with synthetic review accounts and content. The icon is the application's existing favicon.*
+
+## What Madi includes
+
+| Area | Current behavior |
+| --- | --- |
+| Class spaces | Cohort navigation, class channels, instructor/student roles, member lists, and light/dark themes with mobile navigation. |
+| Chat | Persistent channel messages and private one-to-one DMs, Markdown/code blocks, mentions, reactions, pins, editing/deletion, unread state, and older-message navigation. |
+| Q&A | Searchable, paginated questions; unanswered/instructor-pending/resolved filters; separate instructor/student answers; instructor endorsement; question editing, resolution, following, and attachments. |
+| Notifications | An account's new-answer and chat-mention inbox, unread filters, read controls, and links back to the relevant conversation/question. |
+| Files | Class-scoped uploads/downloads and a searchable, paginated file library. |
+| Administration | Account and cohort creation, membership/channel management, account activation, password reset, and cohort archive/reopen. |
+| Onboarding | Preview and atomically apply CSV/spreadsheet rosters; manually created and imported users change their temporary password before class access. Administrators can see pending first logins. |
+| Screen sharing | Optional LiveKit integration with instructor publishing and approved student presenters. Requires separately configured media services and classroom acceptance tests. |
+
+Chat, Q&A, onboarding, and administration can be developed with media disabled. Existing BambooChat accounts, SQLite history, games, and quizzes belong to the legacy application; `madi_run.py` uses its own PostgreSQL-backed academy state.
+
+## Local development
+
+Install a Python version supported by [pyproject.toml](pyproject.toml), uv, PostgreSQL, and Node.js supported by the pinned Vite version. Python is currently `>=3.10`; the frontend requires Node.js `^20.19.0 || >=22.12.0`.
+
+```powershell
+uv sync --locked
+cd frontend
+npm ci
+npm run build
+cd ..
+```
+
+The frontend is built into `frontend/dist/`; FastAPI serves it at `/hub`. Node is needed for building and frontend tests, not for serving classroom users.
+
+### This Windows development profile
+
+The prepared profile uses PostgreSQL on `127.0.0.1:55432`, a separate application database and disposable test database, and local HTTPS on port `8443`. Its private configuration is in ignored `data_dev/academy-local.json`. It starts no LiveKit or Caddy process.
+
+```powershell
+# Check configuration and built assets.
+.\scripts\start_academy_local.ps1 -Check
+
+# First setup only: choose the initial administrator's credentials.
+.\scripts\start_academy_local.ps1 -CreateAdmin
+
+# Start local HTTPS; stop the app with Ctrl+C.
+.\scripts\start_academy_local.ps1
+```
+
+Open **https://localhost:8443/hub**. The certificate must cover localhost and browser trust must be prepared separately. A fresh checkout needs its own local PostgreSQL cluster, database roles, configuration, and certificates; the launcher does not provision them. See the [Windows local setup guide](docs/academy-windows-local.md) for storage, commands, and stopping the database.
+
+### Run the academy application directly
+
+Load a private environment configuration first. Required values are `MADI_DATABASE_URL` (PostgreSQL) and `MADI_ALLOWED_HOSTS` (exact allowed hosts, without ports). Set upload/log locations for the host. The [environment template](deploy/academy/.env.example) lists deployment settings; replace its placeholders and leave the optional media settings unset when developing without media. Merely copying an environment file does not load it into the launcher.
+
+```powershell
+uv run --locked python madi_run.py --check
+uv run --locked python madi_run.py --create-admin
+uv run --locked python madi_run.py
+```
+
+`--check` validates configuration and the frontend build; it does not check PostgreSQL or media connectivity. `--create-admin` initializes/migrates the database and prompts for the first administrator. The normal launcher defaults to `127.0.0.1:8000` behind an HTTPS proxy. The Windows local profile instead serves the same academy application with direct TLS on `8443`.
+
+After signing in as administrator, create a cohort, add an instructor and channels, then create or import students. [Roster and first-login instructions](docs/madi-roster-onboarding.md) cover preview, credentials, and mandatory password changes. [Notifications](docs/madi-notifications.md) documents inbox and follow behavior.
+
+## Academy deployment
+
+The deployment target is a dedicated academy LAN host with PostgreSQL, Madi, an HTTPS proxy, and optional LiveKit services. The supplied service units target Linux. Follow the [academy deployment guide](docs/academy-lan-deployment.md); its templates require real host addresses, secrets, certificate trust, and firewall configuration.
+
+```text
+Browser ── HTTPS ──> Caddy ──> Madi (one worker) ──> PostgreSQL
+                         └──> LiveKit signaling
+Browser <──────── direct media ────────> LiveKit
+```
+
+Use one application worker while WebSocket registries are process-local. Keep database credentials, uploads, logs, and CA/private-key material outside Git. Back up PostgreSQL and uploaded files together; the [backup tools](app/hub/backup.py) support backup, verification, and restore.
+
+Screen sharing is implemented but remains dependent on deployment configuration and real client tests. This PC's setup and the latest UX pass did not validate SFU/LiveKit connectivity, classroom routing, or media capacity. [Classroom media routing](docs/classroom-media.md) covers independent classroom SFUs and cohorts that move between labs.
+
+## Architecture
+
+| Component | Entry points |
+| --- | --- |
+| Academy launcher | [madi_run.py](madi_run.py): configuration check, first-admin creation, and application startup. |
+| Application | [app/hub/application.py](app/hub/application.py): academy-only FastAPI app, middleware, frontend assets, and startup lifecycle. |
+| API and live events | [app/hub/routes.py](app/hub/routes.py): cohort-scoped HTTP routes and `/hub/ws/cohorts/{id}` sockets. |
+| Storage | [app/hub/db.py](app/hub/db.py), [migrations](app/hub/migrations/): PostgreSQL queries and versioned schema changes; uploaded bytes remain on disk. |
+| Browser UI | [frontend/index.html](frontend/index.html), [frontend/src](frontend/src/): Vite-built interface, routing, drafts, formatting, notifications, and media clients. |
+| Onboarding and notifications | [onboarding.py](app/hub/onboarding.py), [notifications.py](app/hub/notifications.py): atomic roster import and permission-scoped personal alerts. |
+| Deployment | [deploy/academy](deploy/academy/): environment, proxy, media, and service templates. |
+
+## Verification
+
+```powershell
+# Local Python checks; PostgreSQL integration tests skip without a disposable DB.
+uv run --locked python -m pytest -q
+
+# Prepared Windows profile: includes integrations against its disposable test DB.
+.\scripts\start_academy_local.ps1 -Test
+
+# Frontend tests and production build.
+cd frontend
+npm test
+npm run build
+cd ..
+```
+
+Database integration tests reset `hub_*` tables. Use only a disposable database for `MADI_TEST_DATABASE_URL`.
+
+Latest local verification (2026-10-21): **415 Python tests passed, 1 skipped**, **29 frontend tests passed**, production build and JavaScript syntax checks passed. Manually created student/instructor accounts were tested for mandatory onboarding, API/socket access restrictions, session revocation, and login after password change. Synthetic browser checks confirmed the pending badge and first-login screen. These results do not establish classroom media readiness.
+
+The [UX/UI review and implementation plan](docs/madi-ux-ui-review-plan-2026-10-21.md) records findings and acceptance checks. **Item 1 — consistent manual-account onboarding — is implemented.** The remaining proposed features are pending.
+
+## Legacy BambooChat
+
+<details>
+<summary><strong>BambooChat — original SQLite chat, quizzes, games, and operating instructions</strong></summary>
+
+The original application remains available through `run.py` and `dev_run.py`. It has separate configuration and data from Madi. The following reference describes that legacy application.
+
+### BambooChat
 
 A classroom LAN chat and learning application with persistent conversations, file sharing, daily quizzes, and multiplayer chess.
 
 BambooChat brings classroom communication and practice activities into one browser interface. Students can use channels and direct messages, share course files, and revisit conversation history. Administrators manage accounts, registration, moderation, and quiz content.
 
-The `edu/discord-piazza-ui` branch contains the Madi academy hub rework
-(PostgreSQL, a built frontend, and LiveKit screen sharing). For the single-PC,
-LAN-only deployment, start with the [academy setup guide](docs/academy-lan-deployment.md).
-The [prototype handoff](docs/prototype-handoff.md) preserves earlier development context.
-
 **Stack:** Python · FastAPI · WebSockets · SQLite · Jinja2 · JavaScript · uv
 
-[Architecture](#architecture) · [한국어 사용 및 운영 안내](#한국어-사용-및-운영-안내) · [Tests](#테스트와-의존성-감사)
-
-## Architecture
+#### Architecture
 
 The repository includes the browser interface, Python backend, persistent storage, and setup and administration tools.
 
@@ -29,13 +157,13 @@ Implementation highlights include persisted read state across sessions, account-
 
 **Deployment scope:** The app is designed for a trusted classroom LAN and uses HTTP. It does not encrypt browser-to-server traffic and should not be exposed through public internet port forwarding. Gemini quiz generation requires an API key and internet access; it sends the selected source PDF or text to the Gemini API.
 
-## 한국어 사용 및 운영 안내
+#### 한국어 사용 및 운영 안내
 
 교실 내부 LAN에서 사용하는 실시간 채팅 및 학습 플랫폼입니다. 계정 로그인, 영구 채팅 기록, 멘션과 답장 알림, Markdown, 1:1 DM, 파일 업로드, AI 기반 데일리 퀴즈(CBT), 실시간 멀티플레이 체스 대국 및 관리자 계정 관리를 지원합니다.
 
 > 이 서비스는 HTTP로 동작합니다. 같은 LAN의 트래픽은 암호화되지 않으므로 다른 곳에서 쓰는 비밀번호, 개인정보, 민감한 자료를 입력하거나 공유하지 마세요. 공개 인터넷 포트 포워딩에는 사용하지 않습니다.
 
-## 설치
+#### 설치
 
 필요 조건은 Windows와 [uv](https://docs.astral.sh/uv/)입니다.
 
@@ -47,7 +175,7 @@ uv sync --locked
 
 가상환경을 직접 만들거나 활성화할 필요는 없습니다.
 
-## 최초 실행
+#### 최초 실행
 
 ```powershell
 uv run --locked python run.py
@@ -70,19 +198,19 @@ uv run --locked python run.py --close-registration
 uv run --locked python run.py --open-registration
 ```
 
-## 개발 서버 실행 (dev_run.py)
+#### 개발 서버 실행 (dev_run.py)
 
 코드 수정 시 자동 리로드(hot-reload)나 포트/호스트 오버라이드가 필요한 개발 환경에서는 `dev_run.py`를 사용할 수 있습니다.
 
 ```powershell
-# 코드 변경 시 자동 재시작 활성화
+##### 코드 변경 시 자동 재시작 활성화
 uv run --locked python dev_run.py --reload
 
-# 포트 및 바인드 호스트 지정
+##### 포트 및 바인드 호스트 지정
 uv run --locked python dev_run.py --port 8080 --host 0.0.0.0 --reload
 ```
 
-## 학생 접속과 가입
+#### 학생 접속과 가입
 
 호스트 PC에서 표시된 주소를 학생 PC 브라우저에 입력합니다.
 
@@ -97,7 +225,7 @@ http://192.168.1.42:8000
 
 학생은 가입 코드로 계정을 한 번 만들고 이후 자신의 아이디/비밀번호로 로그인합니다. 아이디는 2~30자, 비밀번호는 5자 이상입니다. 아이디가 파일 소유권의 기준이므로 같은 사용자가 다른 교실 PC에서 로그인해도 자신이 올린 파일을 삭제할 수 있고, 다른 계정은 삭제할 수 없습니다. 관리자는 모든 파일을 삭제할 수 있습니다.
 
-## 닉네임과 계정 식별 (Identity)
+#### 닉네임과 계정 식별 (Identity)
 
 - **로그인 아이디 (`username`)**: 불변의 고유 계정 식별자입니다. 가입 후 변경되지 않으며, 파일 소유권, DM 전송, 권한 검사의 기준이 됩니다.
 - **표시 닉네임 (`display_name`)**: 화면에 보이는 이름입니다. 헤더의 닉네임 버튼을 클릭하여 언제든지 자유롭게 변경할 수 있습니다 (1~30자).
@@ -106,7 +234,7 @@ http://192.168.1.42:8000
   - `@` 자동완성 목록에서는 `닉네임 (@아이디)` 형태로 표시되며 선택 시 고유한 `@아이디`가 삽입됩니다.
   - `@닉네임`을 직접 입력하여 호출할 경우 해당 닉네임을 사용하는 활성 사용자가 매칭됩니다.
 
-## 다중 채널 (Multi-Channel) & 사이드바
+#### 다중 채널 (Multi-Channel) & 사이드바
 
 - **사이드바 구조 & 접기/펼치기**:
   - 사이드바가 `# 채널`, `💬 1:1 대화`, `👥 접속자` 3개 구역으로 구분됩니다.
@@ -122,7 +250,7 @@ http://192.168.1.42:8000
   - **기본 채널 보호**: 1번 기본 채널(`general`, `전체 채팅`)은 영구 보존되며 보관이나 삭제가 불가능하도록 시스템 레벨에서 보호됩니다.
   - **데이터 무결성 & 영구 삭제**: 채널 영구 삭제 시 해당 채널에 속한 메시지와 연결된 첨부파일(`message_attachments` 및 디스크 파일)을 트랜잭션으로 깨끗하게 정리하여 고아(Orphaned) 파일이 남지 않습니다.
 
-## 채팅 기능
+#### 채팅 기능
 
 - 공개 채널 채팅과 1:1 DM을 SQLite에 영구 저장합니다. DM 본문과 첨부 파일은 대화 당사자만 조회할 수 있습니다.
 - 채널/DM별 최근 메시지를 불러오며, 기록이 더 있으면 `↑ 이전 메시지 더 불러오기`로 50개씩 추가 페이징합니다.
@@ -154,7 +282,7 @@ http://192.168.1.42:8000
 - `?` 버튼 또는 `!도움` 명령으로 화면 내 기능 도움말을 엽니다.
 - 한 메시지에 파일을 최대 5개까지 첨부할 수 있으며 이미지 시그니처가 확인된 파일은 안전하게 미리 봅니다.
 
-## 실시간 체스 게임 (Real-time Chess)
+#### 실시간 체스 게임 (Real-time Chess)
 
 상단 헤더의 체스(`♟️`) 버튼을 통해 채팅방 내에서 학생들끼리 실시간으로 체스를 두고 관전할 수 있는 모듈입니다.
 
@@ -168,7 +296,7 @@ http://192.168.1.42:8000
 - **전적 통계 영구 기록**: 대국 종료 시 승/무/패 전적이 SQLite DB(`chess_player_stats`)에 영구 저장되어 방 및 프로필에 승률과 전적이 표시됩니다.
 - **연결 끊김 유예 (Grace Period)**: 페이지 새로고침이나 일시적 네트워크 단절 시 5초 동안 플레이어 자리를 안전하게 보존하여 즉각적인 몰수패를 방지합니다.
 
-## 교육용 데일리 퀴즈 & CBT 시스템 (Quiz & AI)
+#### 교육용 데일리 퀴즈 & CBT 시스템 (Quiz & AI)
 
 교실 수업과 연계하여 매일 복습 퀴즈를 풀고 전공 지식을 다질 수 있는 CBT 시스템입니다.
 
@@ -179,7 +307,7 @@ http://192.168.1.42:8000
 - **관리자 검토 & 문제 편집 도구**: AI가 생성한 문제나 오답을 관리자 화면에서 직접 검토, 수정, 승인할 수 있습니다.
 - **유연한 정답 판정 (Normalization)**: 띄어쓰기, 대소문자, 번호 표기(예: `1`, `1번`, `AND`)를 유연하게 비교 분석하여 억울한 오답을 방지합니다.
 
-## IP 대신 이름으로 접속
+#### IP 대신 이름으로 접속
 
 호스트 컴퓨터 이름을 확인합니다.
 
@@ -202,7 +330,7 @@ uv run --locked python run.py
 
 각 학생 PC의 hosts 파일을 수정하는 방식은 IP가 바뀔 때 21대를 다시 수정해야 하므로 권장하지 않습니다.
 
-## Windows 방화벽
+#### Windows 방화벽
 
 관리자 PowerShell에서 Private 네트워크의 로컬 서브넷만 허용합니다.
 
@@ -219,7 +347,7 @@ New-NetFirewallRule `
 
 Windows 네트워크 프로필이 `Private`인지 확인하세요. 라우터 포트 포워딩과 Public 프로필 허용 규칙은 만들지 않습니다.
 
-## 관리자 기능
+#### 관리자 기능
 
 관리자 계정으로 로그인하면 상단에 **관리** 버튼이 표시됩니다. 여기에서 다음 작업을 할 수 있습니다.
 
@@ -242,7 +370,7 @@ uv run --locked python run.py --reset-user-password admin
 
 비밀번호가 재설정되면 해당 계정의 기존 로그인 세션은 모두 종료됩니다.
 
-## `bamboochat.json` 설정 범위
+#### `bamboochat.json` 설정 범위
 
 | 키 | 설명 |
 |---|---|
@@ -261,7 +389,7 @@ uv run --locked python run.py --reset-user-password admin
 
 파일 1개 크기는 `CLASSROOM_MAX_FILE_MB`, 추가 호스트 이름은 `CLASSROOM_ALLOWED_HOSTS` 환경 변수로 설정합니다. 연결/메시지 속도 제한은 현재 코드의 안전 기본값을 사용합니다.
 
-## 데이터와 용량
+#### 데이터와 용량
 
 기록은 시간 경과로 자동 삭제되지 않습니다.
 
@@ -277,7 +405,7 @@ uv run --locked python run.py --reset-user-password admin
 
 공개 채팅, 1:1 DM, 파일 메타데이터는 SQLite에 영구 저장됩니다. 화면에는 최근 기록만 먼저 표시하며 상단의 이전 메시지 버튼으로 오래된 기록을 추가로 불러올 수 있습니다. DM 본문과 DM 첨부 파일은 발신자와 수신자만 조회할 수 있으며 관리자가 대화 당사자가 아니라면 DM 첨부 파일을 열 수 없습니다. 공개 메시지나 DM에서 파일을 지워도 채팅은 “삭제된 파일” 표시와 함께 남습니다.
 
-## 데이터베이스 마이그레이션과 백업/복구
+#### 데이터베이스 마이그레이션과 백업/복구
 
 BambooChat은 순차적이고 안전한 **버전 관리 마이그레이션 시스템**(`schema_version`)을 내장하고 있습니다.
 
@@ -285,19 +413,19 @@ BambooChat은 순차적이고 안전한 **버전 관리 마이그레이션 시�
 - **안전성 (트랜잭션 롤백)**: 마이그레이션 도중 오류가 발생하면 전체 변경 사항이 즉시 롤백되며 `schema_version`이 증가하지 않아 데이터베이스 오염을 방지합니다.
 - **기존 데이터 보존**: 구버전 데이터베이스(`v0`)가 존재하더라도 서버 시작 시 자동으로 최신 스키마로 업그레이드되며, 기존 사용자는 `display_name = username` 및 고유 `uuid`를 자동으로 부여받고 기존 메시지/파일/세션이 100% 보존됩니다.
 
-### 권장 백업 및 복구 절차
+##### 권장 백업 및 복구 절차
 
 앱을 업데이트하거나 서버 환경을 변경하기 전, 데이터 폴더의 `chat.db` 파일을 백업하세요.
 
 ```powershell
-# 1. 서버 중지 후 SQLite DB 백업
+##### 1. 서버 중지 후 SQLite DB 백업
 Copy-Item "$HOME\BambooChatData\chat.db" "$HOME\BambooChatData\chat.db.backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
 
-# 2. 만약 롤백이 필요한 경우 백업본 복원
+##### 2. 만약 롤백이 필요한 경우 백업본 복원
 Copy-Item "$HOME\BambooChatData\chat.db.backup_YYYYMMDD_HHMMSS" "$HOME\BambooChatData\chat.db" -Force
 ```
 
-## 파일 정책
+#### 파일 정책
 
 - `.gwx`, `.gxw`, PDF, PPTX와 알려지지 않은 수업용 확장자를 허용합니다.
 - 실행 파일과 HTML/스크립트처럼 활성 콘텐츠가 될 수 있는 확장자는 차단합니다.
@@ -306,7 +434,7 @@ Copy-Item "$HOME\BambooChatData\chat.db.backup_YYYYMMDD_HHMMSS" "$HOME\BambooCha
 - 업로드/다운로드/삭제 모두 로그인이 필요합니다.
 - 파일을 열기 전에 업로더와 용도를 확인하세요.
 
-## 적용된 보안 장치
+#### 적용된 보안 장치
 
 - Argon2id 비밀번호 해시와 무작위 서버 세션
 - HttpOnly, SameSite=Strict 로그인 쿠키
@@ -321,7 +449,7 @@ Copy-Item "$HOME\BambooChatData\chat.db.backup_YYYYMMDD_HHMMSS" "$HOME\BambooCha
 
 HTTP 자체는 암호화를 제공하지 않습니다. 가입 코드는 외부인의 무단 계정 생성을 줄이지만 네트워크 암호화 키가 아닙니다.
 
-## 운영 체크리스트
+#### 운영 체크리스트
 
 1. Windows PowerShell에서 서버 실행
 2. 표시된 주소가 현재 Ethernet IPv4인지 확인
@@ -335,7 +463,7 @@ HTTP 자체는 암호화를 제공하지 않습니다. 가입 코드는 외부�
 
 WSL2보다 Windows PowerShell에서 직접 실행하는 편이 LAN 접근 설정이 단순합니다.
 
-## 테스트와 의존성 감사
+#### 테스트와 의존성 감사
 
 단위/통합 테스트가 포함되어 있으며, 채널, DM, 권한, 보안 헤더, CBT 퀴즈 API, 실시간 체스 엔진 및 읽음 상태 동기화를 검증합니다.
 
@@ -352,7 +480,7 @@ node scripts/check_js_syntax.mjs
 
 의존성을 바꿀 때는 `uv add 패키지` 또는 `uv add --dev 패키지`를 사용하고 `pyproject.toml`과 `uv.lock`을 함께 커밋합니다.
 
-## 주요 파일
+#### 주요 파일
 
 ```text
 app/
@@ -375,3 +503,5 @@ pyproject.toml          # 패키지 의존성 정의 (FastAPI, python-chess 등)
 uv.lock                 # 패키지 버전 고정 락파일
 tests/                  # 테스트 모듈 (channels, chess, quiz, security 등)
 ```
+
+</details>
