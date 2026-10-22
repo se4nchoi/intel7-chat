@@ -83,6 +83,7 @@ try {
   await page.routeWebSocket('**/hub/ws/**', ws => ws.send(JSON.stringify({ type: 'presence', online: [account.id] })));
   await page.goto(base + '/hub');
   await page.locator('#academy-manage-btn').click();
+  await page.locator('[data-academy-task="roster"]').click();
   const source = 'username,display_name,role\nnew_student,New learner,student';
   await page.locator('#roster-source').fill(source);
   await page.locator('#roster-preview-btn').click();

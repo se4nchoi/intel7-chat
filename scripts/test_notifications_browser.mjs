@@ -55,7 +55,7 @@ try {
   const message = id => ({ id, channel_id: 1, username: 'teacher', display_name: 'Teacher', body: `@student message ${id}`, created_at: new Date().toISOString(), reactions: [] });
   const notices = [
     { id: 2, kind: 'mention', cohort_id: 1, cohort_slug: 'test-class', cohort_name: 'Test class', channel_id: 1, channel_kind: 'channel', channel_name: 'General', message_id: 1, actor_name: 'Teacher', excerpt: 'Old message mention', read_at: null, created_at: new Date().toISOString() },
-    { id: 1, kind: 'answer', cohort_id: 1, cohort_slug: 'test-class', cohort_name: 'Test class', question_id: 7, actor_name: 'Teacher', question_title: 'Notification question', excerpt: 'An answer', read_at: null, created_at: new Date().toISOString() },
+    { id: 1, kind: 'answer', cohort_id: 1, cohort_slug: 'test-class', cohort_name: 'Test class', question_id: 7, answer_id: 11, actor_name: 'Teacher', question_title: 'Notification question', excerpt: 'An answer', read_at: null, created_at: new Date().toISOString() },
   ];
   let following = true, unavailable = false, socket, holdFollow = false, followHeld;
   const heldFollow = new Promise(resolve => { followHeld = resolve; });
@@ -87,6 +87,7 @@ try {
       return route.fulfill({ json: { following } });
     }
     if (path.endsWith('/questions/page')) return route.fulfill({ json: { items: [question], total: 1, has_more: false } });
+    if (path.endsWith('/questions/7/answers')) return route.fulfill({ json: [{ id: 11, username: 'teacher', display_name: 'Teacher', role: 'instructor', body: 'An answer', created_at: new Date().toISOString() }] });
     if (path.endsWith('/questions/7')) return route.fulfill({ json: question });
     if (path.endsWith('/messages')) return route.fulfill({ json: url.searchParams.has('around') ? [message(1)] : Array.from({ length: 100 }, (_, index) => message(index + 2)) });
     if (path.endsWith('/read')) return route.fulfill({ status: 204 });
@@ -100,6 +101,9 @@ try {
   await page.locator('#notifications-btn').click();
   await page.locator('.notification-link').filter({ hasText: 'Notification question' }).click();
   await page.locator('#post-view').waitFor({ state: 'visible' });
+  await page.locator('#answer-11').waitFor({ state: 'visible' });
+  assert.match(page.url(), /\?answer=11#post-7$/);
+  assert.equal(await page.locator('#answer-11').evaluate(node => document.activeElement === node), true);
   await page.waitForFunction(() => document.querySelector('#post-follow').getAttribute('aria-pressed') === 'true');
   holdFollow = true;
   await page.locator('#post-follow').click();

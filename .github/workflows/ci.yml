@@ -2,12 +2,30 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, edu/madi]
   pull_request:
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: madi_test
+          POSTGRES_USER: madi_test
+          POSTGRES_PASSWORD: madi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U madi_test -d madi_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      MADI_TEST_DATABASE_URL: postgresql://madi_test:madi_test@127.0.0.1:5432/madi_test
     steps:
       - uses: actions/checkout@v4
 
@@ -17,6 +35,13 @@ jobs:
 
       - name: Check JavaScript syntax
         run: node scripts/check_js_syntax.mjs
+
+      - name: Test and build Madi frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
 
       - uses: astral-sh/setup-uv@v6
         with:
@@ -28,6 +53,11 @@ jobs:
 
       - name: Install Python dependencies
         run: uv sync --locked --dev
+
+      - name: Install PostgreSQL client for backup/restore tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
 
       - name: Run tests
         run: uv run --locked python -m pytest -q

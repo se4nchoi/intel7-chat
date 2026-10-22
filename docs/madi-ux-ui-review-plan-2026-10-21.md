@@ -1,6 +1,6 @@
 # Madi UX/UI review and implementation plan — 2026-10-21
 
-Status (2026-10-22): Slice 1 / U01–U04 is complete. Slice 2 / U05 and U07 is implemented with frontend tests and a production build; browser verification remains. U06 and U08–U10 remain pending.
+Status (2026-10-22): U01–U09 are implemented in code. Recent slices still need disposable-database, browser, and academy-network acceptance; U10 remains planned. See [pilot readiness](madi-pilot-readiness-2026-10-22.md).
 Reviewed branch: `edu/discord-piazza-ui`, based on `381b625`; continued as `edu/madi` with the local setup, dependency, and U01 changes.
 
 ## Recommendation

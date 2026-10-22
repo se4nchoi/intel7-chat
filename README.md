@@ -124,7 +124,9 @@ Database integration tests reset `hub_*` tables. Use only a disposable database 
 
 Latest local verification (2026-10-22): **416 Python tests passed, 1 skipped**, **33 frontend tests passed**, production build and JavaScript syntax checks passed. Browser checks on synthetic data confirmed accurate roster counts, errors-only review, correction recovery, persistent field labels, and preservation of form errors and inputs through controlled live-update disconnect/recovery. Isolated 390px light/dark control previews confirmed Korean accessible names and 44px touch targets; this was not a full mobile-app or real screen-reader test. These results do not establish classroom media readiness.
 
-The [UX/UI review and implementation plan](docs/madi-ux-ui-review-plan-2026-10-21.md) records findings and acceptance checks. **Slice 1 (U01–U04) is implemented:** consistent onboarding, accurate roster preview, named compact controls, and a persistent connection banner separate from dialog errors. U05–U10 remain proposed features.
+The subsequent Windows checkout ran **329 Python tests with 101 PostgreSQL cases skipped** because its disposable test database is not installed, **40 frontend tests**, the production build, and five disposable loopback browser smokes with mocked APIs. The smokes cover notification targeting, roster onboarding, presenter handoff, queue navigation, and draft composition; they do not establish real database, LAN, or LiveKit readiness. See [pilot readiness](docs/madi-pilot-readiness-2026-10-22.md).
+
+The [UX/UI review and implementation plan](docs/madi-ux-ui-review-plan-2026-10-21.md) records findings and acceptance checks. U01–U09 are implemented in code, with browser/database verification still needed for recent slices; scoped chat search (U10) is planned. The [pilot-readiness checklist](docs/madi-pilot-readiness-2026-10-22.md) tracks the release gates separately from feature work.
 
 
 ## Legacy BambooChat
