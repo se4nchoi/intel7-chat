@@ -105,6 +105,7 @@
           <h2 id="channel-heading" tabindex="-1">채널을 선택하세요</h2>
           <span id="chat-cohort" class="topic muted"></span>
           <div class="topbar-actions">
+            <button id="message-search-toggle" class="ghost" type="button" aria-label="현재 대화 검색" aria-expanded="false" aria-controls="message-search-panel"><span aria-hidden="true">⌕</span><span class="label"> 검색</span></button>
             <button id="pins-toggle" class="ghost" aria-label="고정 메시지" aria-pressed="false" aria-controls="pins-panel"><span aria-hidden="true">📌</span><span class="label"> 고정</span><span id="pins-count" class="count-chip hidden" aria-hidden="true"></span></button>
             <button id="stage-toggle" class="ghost" aria-label="화면 공유 패널" aria-pressed="false" aria-controls="stage"><span aria-hidden="true">🖥</span><span class="label"> 화면 공유</span><span id="media-request-count" aria-live="polite"></span></button>
             <button id="members-toggle" class="ghost" aria-label="멤버 목록" aria-pressed="true" aria-controls="member-list"><span aria-hidden="true">👥</span><span class="label"> 멤버</span></button>
@@ -135,6 +136,16 @@
             <section id="pins-panel" class="pins-panel hidden" aria-label="고정된 메시지">
               <h3>📌 고정된 메시지</h3>
               <ul id="pins-list"></ul>
+            </section>
+            <section id="message-search-panel" class="message-search-panel hidden" aria-label="현재 대화 검색">
+              <form id="message-search-form" class="message-search-form" role="search">
+                <label for="message-search-input">현재 대화 검색</label>
+                <div class="message-search-controls"><input id="message-search-input" type="search" maxlength="200" placeholder="메시지 내용 (2자 이상)" autocomplete="off" required><button type="submit">검색</button><button id="message-search-close" type="button" aria-label="검색 닫기">닫기</button></div>
+              </form>
+              <p id="message-search-state" class="muted" role="status" aria-live="polite">메시지 내용을 검색하세요.</p>
+              <ul id="message-search-results" class="message-search-results"></ul>
+              <button id="message-search-more" class="hidden" type="button">이전 검색 결과 더 보기</button>
+              <button id="message-search-latest" class="hidden" type="button">최신 대화로</button>
             </section>
             <div class="messages-wrap">
               <div id="chat-state" class="region-state hidden" role="status"></div>

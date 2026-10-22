@@ -428,6 +428,18 @@ async def messages(cohort_id: int, channel_id: int, request: Request, after: int
     return await asyncio.to_thread(db.messages, channel_id, after, before, around)
 
 
+@router.get("/api/cohorts/{cohort_id}/channels/{channel_id}/messages/search")
+async def search_messages(cohort_id: int, channel_id: int, request: Request,
+                          q: str = Query(..., max_length=200), before: int | None = Query(None, ge=1)):
+    account, _ = await _cohort(request, cohort_id)
+    if not await asyncio.to_thread(db.channel, cohort_id, channel_id, account["id"]):
+        raise HTTPException(404, "Channel not found")
+    query = q.strip()
+    if len(query) < 2:
+        raise HTTPException(400, "Search term must contain at least 2 characters")
+    return await asyncio.to_thread(db.search_messages, channel_id, query, before)
+
+
 class MediaStart(BaseModel):
     classroom_id: str = Field(min_length=1, max_length=40)
 

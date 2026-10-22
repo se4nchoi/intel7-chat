@@ -23,6 +23,7 @@ const pendingForms = new Set();
 let cohortRequest = 0, boardRefreshTimer, questionRequest = 0, fileRequest = 0;
 let notificationPoll, notificationDebounce, notificationRequest = 0;
 let followMutation = null, questionFollowRequest = 0;
+let messageSearchRequest = 0, messageSearchQuery = '', messageSearchCursor = null;
 const inbox = { owner: null, items: [], cursor: null, unread: 0, total: 0, loading: false, more: false };
 const state = {
   account: null, cohorts: [], cohort: null, channel: null, socket: null,
@@ -210,6 +211,7 @@ function updateControls() {
 }
 function resetContent() {
   saveDrafts(); $('message-input').value = ''; $('answer-form').elements.body.value = '';
+  resetMessageSearch();
   $('question-form').reset(); selectedQuestionFiles = []; uploadedQuestionFiles = new WeakMap(); renderSelectedQuestionFiles();
   setDraftPreview('question', false, false); setDraftPreview('answer', false, false);
   clearTimeout(boardRefreshTimer); questionRequest++; fileRequest++;
@@ -477,6 +479,7 @@ function renderMembers() {
 }
 async function selectChannel(channel, historyMode = 'push') {
   saveDrafts();
+  resetMessageSearch();
   const epoch = state.epoch, channelEpoch = ++state.channelEpoch, cohort = state.cohort;
   await leaveMedia();
   if (epoch !== state.epoch || channelEpoch !== state.channelEpoch) return;
@@ -537,8 +540,15 @@ function flushHolding() {
 }
 function applyChannelEvent(event) {
   if (event.type === 'message') receive(event.message);
-  else if (event.type === 'message_deleted') removeMessage(event.id);
-  else if (event.type === 'message_edited') updateMessage(event.message);
+  else if (event.type === 'message_deleted') { removeMessage(event.id); $('message-search-results').querySelector(`[data-search-id="${event.id}"]`)?.remove(); }
+  else if (event.type === 'message_edited') {
+    updateMessage(event.message);
+    const result = $('message-search-results').querySelector(`[data-search-id="${event.message.id}"]`);
+    if (result) {
+      if (!event.message.body.toLocaleLowerCase().includes(messageSearchQuery.toLocaleLowerCase())) result.remove();
+      else result.querySelector('.excerpt').textContent = plainExcerpt(event.message.body);
+    }
+  }
   else if (event.type === 'reactions') { const message = state.messageMap.get(event.message_id); if (message) updateMessage({ ...message, reactions: event.reactions }); }
   else if (event.type === 'message_pinned') { updateMessage(event.message); loadPins().catch(() => {}); }
 }
@@ -684,7 +694,7 @@ function appendMessage(message) {
   if (actions) row.append(actions);
   box.append(row);
   state.lastMessage = message;
-  if (nearBottom || message.username === state.account?.username) box.scrollTop = box.scrollHeight;
+  if ((nearBottom && $('history-latest').classList.contains('hidden')) || message.username === state.account?.username) box.scrollTop = box.scrollHeight;
   else if (state.historyLoaded) { state.newBelow += 1; showJump(); }
 }
 function showJump() {
@@ -787,12 +797,15 @@ async function jumpTo(messageId) {
   let row = $('messages').querySelector(`[data-message-id="${messageId}"]`);
   if (!row) {
     const cohort = state.cohort, channel = state.channel, epoch = state.channelEpoch;
+    state.holding = [];
     try {
       const rows = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages?around=${messageId}`);
       if (epoch !== state.channelEpoch) return;
-      renderHistory(rows); $('history-more').classList.remove('hidden'); $('history-latest').classList.remove('hidden');
+      $('history-latest').classList.remove('hidden');
+      renderHistory(rows); $('history-more').classList.remove('hidden');
       row = $('messages').querySelector(`[data-message-id="${messageId}"]`);
-    } catch { regionState('chat-state', 'error', '고정 메시지를 불러오지 못했습니다.', () => jumpTo(messageId)); return; }
+    } catch { if (epoch === state.channelEpoch) regionState('chat-state', 'error', '메시지를 불러오지 못했습니다.', () => jumpTo(messageId)); return; }
+    finally { if (epoch === state.channelEpoch) flushHolding(); }
   }
   if (!row) { regionState('chat-state', 'error', '삭제되었거나 접근할 수 없는 메시지입니다.'); return; }
   row.scrollIntoView({ block: 'center', behavior: 'instant' }); row.focus({ preventScroll: true });
@@ -819,6 +832,64 @@ $('pins-toggle').addEventListener('click', event => {
   event.currentTarget.setAttribute('aria-pressed', String(!hidden));
   if (!hidden) loadPins().catch(error => status(error.message, true));
 });
+function resetMessageSearch() {
+  messageSearchRequest++;
+  messageSearchQuery = ''; messageSearchCursor = null;
+  $('message-search-input').value = '';
+  $('message-search-results').replaceChildren();
+  $('message-search-state').textContent = '메시지 내용을 검색하세요.';
+  $('message-search-more').classList.add('hidden');
+  $('message-search-latest').classList.add('hidden');
+  $('message-search-panel').classList.add('hidden');
+  $('message-search-toggle').setAttribute('aria-expanded', 'false');
+}
+function toggleMessageSearch(show) {
+  if (!state.channel) return;
+  $('message-search-panel').classList.toggle('hidden', !show);
+  $('message-search-toggle').setAttribute('aria-expanded', String(show));
+  if (show) $('message-search-input').focus();
+  else $('message-search-toggle').focus();
+}
+async function loadMessageSearch(more = false) {
+  const query = $('message-search-input').value.trim();
+  if (query.length < 2) { $('message-search-state').textContent = '검색어를 2자 이상 입력하세요.'; $('message-search-input').focus(); return; }
+  const cohort = state.cohort, channel = state.channel, epoch = state.channelEpoch;
+  if (!cohort || !channel) return;
+  const append = more && query === messageSearchQuery;
+  if (!append) {
+    messageSearchQuery = query; messageSearchCursor = null;
+    $('message-search-results').replaceChildren();
+  }
+  const cursor = append ? messageSearchCursor : null;
+  if (append && !cursor) return;
+  const request = ++messageSearchRequest;
+  $('message-search-state').textContent = '검색 중…';
+  $('message-search-more').disabled = true;
+  try {
+    const params = new URLSearchParams({ q: query });
+    if (cursor) params.set('before', cursor);
+    const page = await api(`/cohorts/${cohort.id}/channels/${channel.id}/messages/search?${params}`);
+    if (request !== messageSearchRequest || epoch !== state.channelEpoch) return;
+    messageSearchCursor = page.next_before;
+    for (const message of page.items) $('message-search-results').append(el('li', { dataset: { searchId: message.id } },
+      el('button', { type: 'button', onclick: () => { void jumpTo(message.id); } },
+        el('strong', { text: message.display_name || message.username }),
+        el('small', { text: stamp(message.created_at) }),
+        el('span', { class: 'excerpt', text: plainExcerpt(message.body) }))));
+    const count = $('message-search-results').childElementCount;
+    $('message-search-state').textContent = count ? `${count}개 결과 표시${page.has_more ? ' · 이전 결과 있음' : ''}` : '검색 결과가 없습니다.';
+    $('message-search-more').classList.toggle('hidden', !page.has_more);
+    $('message-search-latest').classList.remove('hidden');
+  } catch (error) {
+    if (request === messageSearchRequest && epoch === state.channelEpoch) $('message-search-state').textContent = `검색 실패: ${error.message}`;
+  } finally { if (request === messageSearchRequest) $('message-search-more').disabled = false; }
+}
+$('message-search-toggle').addEventListener('click', () => toggleMessageSearch($('message-search-panel').classList.contains('hidden')));
+$('message-search-close').addEventListener('click', () => toggleMessageSearch(false));
+$('message-search-panel').addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); toggleMessageSearch(false); } });
+$('message-search-form').addEventListener('submit', event => { event.preventDefault(); void loadMessageSearch(); });
+$('message-search-more').addEventListener('click', () => { void loadMessageSearch(true); });
+$('message-search-latest').addEventListener('click', () => { $('history-latest').click(); });
 function startEditMessage(message, row) {
   if (row.classList.contains('editing')) return;
   const body = row.querySelector('.msg-body'), original = [...body.childNodes];

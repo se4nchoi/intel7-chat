@@ -343,6 +343,19 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .pin-item { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 6px 8px; border-radius: 8px; }
 .pin-item:hover { background: var(--hover); }
 .pin-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message-search-panel { flex: none; max-height: min(46vh, 440px); overflow-y: auto; border-bottom: 1px solid var(--border); padding: 12px 16px; background: var(--panel, var(--bg)); }
+.message-search-form { display: grid; gap: 7px; }
+.message-search-form label { font-size: 13px; font-weight: 650; }
+.message-search-controls { display: flex; flex-wrap: wrap; gap: 6px; }
+.message-search-controls input { flex: 1; min-width: 130px; }
+.message-search-controls button, #message-search-more, #message-search-latest { min-height: 36px; }
+#message-search-state { margin: 8px 0; font-size: 13px; }
+.message-search-results { list-style: none; display: grid; gap: 4px; padding: 0; margin: 8px 0; }
+.message-search-results button { display: grid; gap: 3px; width: 100%; padding: 7px 9px; border: 0; border-radius: 8px; text-align: left; background: transparent; }
+.message-search-results button:hover, .message-search-results button:focus-visible { background: var(--hover); }
+.message-search-results small { color: var(--muted); }
+.message-search-results .excerpt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 800px) { .message-search-panel { padding: 10px 12px; } .message-search-controls button, #message-search-more, #message-search-latest { min-height: 44px; } }
 .msg.flash { animation: flash 1.6s ease; }
 @keyframes flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .msg.flash { animation: none; outline: 2px solid var(--accent); } }

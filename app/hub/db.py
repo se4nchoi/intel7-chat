@@ -259,6 +259,24 @@ def messages(channel_id: int, after: int | None = None, before: int | None = Non
                             (channel_id,)).fetchall()[::-1]
 
 
+def search_messages(channel_id: int, query: str, before: int | None = None, limit: int = 30):
+    """Search one authorized conversation; callers must check channel access first."""
+    pattern = '%' + _like_literal(query) + '%'
+    where = 'm.channel_id=%s AND m.deleted_at IS NULL AND m.body ILIKE %s'
+    params = [channel_id, pattern]
+    if before is not None:
+        where += ' AND m.id<%s'
+        params.append(before)
+    with connect() as conn:
+        rows = conn.execute(f"""SELECT m.id, m.body, m.created_at, a.username, a.display_name
+                                FROM hub_messages m JOIN hub_accounts a ON a.id=m.author_id
+                                WHERE {where} ORDER BY m.id DESC LIMIT %s""",
+                            [*params, limit + 1]).fetchall()
+    more = len(rows) > limit
+    items = rows[:limit]
+    return {'items': items, 'has_more': more, 'next_before': items[-1]['id'] if more else None}
+
+
 def add_message(channel_id: int, account_id: int, body: str):
     from app.hub import notifications
     with connect() as conn:
