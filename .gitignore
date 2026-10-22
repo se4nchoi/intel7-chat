@@ -34,3 +34,6 @@ traefik/
 
 # Local TLS keys and certificates carried over from the community checkout
 certs/
+
+# Local disposable preview and diagnostic fixtures
+.runtime-tmp/

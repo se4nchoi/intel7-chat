@@ -1,6 +1,6 @@
 # Madi UX/UI review and implementation plan — 2026-10-21
 
-Status: review complete; U01 (manual-account onboarding) implemented and verified. All other feature slices remain pending.
+Status (2026-10-22): Slice 1 / U01–U04 implemented and verified. U05–U10 remain pending.
 Reviewed branch: `edu/discord-piazza-ui`, based on `381b625`; continued as `edu/madi` with the local setup, dependency, and U01 changes.
 
 ## Recommendation
@@ -138,10 +138,19 @@ Acceptance: administrators cannot search nonparticipant DMs; removed memberships
 - Exercise slow/failed HTTP requests and local chat reconnects. Keep draft/credential handling and read-state isolation as regression invariants.
 - No SFU, LiveKit, firewall, certificate-distribution, or classroom capacity change is necessary for slices 1–4A. Media end-to-end acceptance remains outside this plan.
 
-## Current completion state
+## Current completion state — 2026-10-22
 
-U01 is implemented: manual account creation sets the existing first-login requirement, the admin list exposes pending onboarding, and the form explains the temporary-password flow. Existing accounts, bootstrap-admin behavior, and the reset-password policy are preserved. No new schema migration is required.
+Slice 1 (U01–U04) is implemented. U05–U10 remain planned.
 
-Verification: 415 Python tests passed / 1 Windows-specific skip; 29 frontend tests passed; production build and JavaScript syntax checks passed. Regression coverage includes manual/CSV creation for students and instructors, blocked cohort APIs/sockets, other-session revocation, completed onboarding, unchanged legacy accounts, and pre-onboarding database migration adoption. Browser checks on synthetic data confirmed the pending badge and mandatory first-login screen.
+- **U01:** manual account creation requires first-login password change; the administrator list exposes pending onboarding. Existing accounts, bootstrap-admin behavior, and reset policy are preserved.
+- **U02:** preview action totals exclude invalid rows and return `total_rows` and `invalid_rows`. The UI shows blocking-row counts, an errors-only view, and data-record numbering (excluding header/blank records; quoted multiline cells remain one record). Any invalid row still blocks the entire atomic batch. Corrected previews must be reviewed again.
+- **U03:** pins, sharing-panel and member controls retain explicit Korean accessible names when their visible text is hidden. Decorative emoji are hidden from accessibility names; pin totals are a separate description. Compact header controls have 44px minimum touch targets. Account/cohort creation fields now have persistent visible labels.
+- **U04:** cohort socket state uses a persistent application banner with a retry action and a deduplicated polite announcement. Reconnects/recovery never use the currently open dialog's error region. Form validation errors target their owning dialog and have independent notification timers. Leaving a cohort clears the connection banner.
 
-Evidence: ignored `data_dev/ux-pass-20261021/madi-item1-pending-onboarding.jpg` and `madi-item1-manual-first-login.jpg`. No real roster or administrator was created. U02–U10 remain planned; implementation stops here pending the user's next instruction.
+Verification: **416 Python tests passed / 1 Windows-specific skip; 33 frontend tests passed; production build and JavaScript syntax checks passed.** The full PostgreSQL suite ran only against the configured disposable test database. Added regressions cover valid-vs-invalid action totals, atomic rejection and corrected application, CSV data-record numbering, retry callback replacement, deduplicated announcements, and connection recovery state.
+
+Browser checks used the existing synthetic review database (`madi_ux_20261021`) and loopback-only review app. Previewing one existing member, one valid new row and one duplicate showed `검토한 3행 · 신규 1명 · 이미 배정 1명 · 오류 1행`; errors-only retained row number 3. Correcting the duplicate exposed the apply action; no real roster was applied. A malformed roster's validation error and typed input remained through a forced disconnect and recovery, and the banner cleared after recovery without clearing that error. The HTTP review fixture substituted a controlled socket transport to exercise presentation independently of the production endpoint's HTTPS-only Origin policy; socket authorization remains covered by backend tests.
+
+The browser viewport override did not apply, so targeted responsive checks used the actual built control/form markup and CSS inside isolated 390px frames in both themes. Accessible names remained Korean with visible labels hidden, and all three header controls measured 44×44px. This does not complete the full role/theme/viewport matrix, actual phone-keyboard checks, or real screen-reader acceptance.
+
+Evidence: this chat's visualization folder contains `madi-roster-errors.jpg` and `madi-compact-controls.jpg`. The disposable fixture scripts are ignored under `.runtime-tmp/`. No real academy accounts, community data, certificate trust, SFU/LiveKit services, or classroom network settings were modified. No schema migration was needed.

@@ -63,6 +63,8 @@ def test_invalid_rows_block_entire_import_and_report_each_error(hub):
     data = roster(cid, row('valid_new'), row('VALID_NEW'), row('bad name'), row('teacher'), row('disabled_account'), row('admin_user'), row('wrong_role', 'admin'), row('blank_name', name='   '))
     plan = preview(admin, data)
     assert not plan['valid']
+    assert plan['counts'] == {'create': 1, 'enroll': 0, 'unchanged': 0}
+    assert plan['total_rows'] == 8 and plan['invalid_rows'] == 7
     assert all(r['errors'] for r in plan['rows'][1:])
     assert apply(admin, data, plan).status_code == 400
     with db.connect() as conn:
@@ -199,3 +201,23 @@ def test_admin_password_reset_preserves_pending_first_login(hub):
     assert response.status_code == 200
     changed = db.authenticate(credential['username'], response.json()['temporary_password'])
     assert changed['must_change_password'] is True
+
+
+def test_preview_counts_only_valid_actions_and_does_not_partially_apply(hub):
+    from app.hub import db
+    app, cid, _ = hub
+    admin = login(app, 'admin_user')
+    data = roster(cid, row('student'), row('new_learner'), row('NEW_LEARNER'))
+    plan = preview(admin, data)
+    assert plan['counts'] == {'create': 1, 'enroll': 0, 'unchanged': 1}
+    assert plan['total_rows'] == 3 and plan['invalid_rows'] == 1
+    assert [r['row'] for r in plan['rows']] == [1, 2, 3]
+    assert not plan['valid'] and plan['rows'][2]['errors']
+    assert apply(admin, data, plan).status_code == 400
+    assert db.authenticate('new_learner', PASSWORD) is None
+    corrected = roster(cid, row('student'), row('new_learner'))
+    valid = preview(admin, corrected)
+    assert valid['total_rows'] == 2 and valid['invalid_rows'] == 0 and valid['valid']
+    applied = apply(admin, corrected, valid)
+    assert applied.status_code == 201
+    assert applied.json()['counts'] == valid['counts']

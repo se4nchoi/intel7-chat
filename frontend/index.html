@@ -91,6 +91,10 @@
     <div id="scrim" class="scrim" aria-hidden="true"></div>
 
     <main class="content">
+      <div id="connection-banner" class="connection-banner hidden" aria-label="실시간 업데이트 연결 상태" role="region">
+        <span id="connection-message"></span><button id="connection-retry" type="button" class="ghost hidden">지금 다시 연결</button>
+      </div>
+      <span id="connection-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
       <section id="empty-space" class="empty hidden">
         <button class="icon-btn menu-btn" aria-label="메뉴 열기">☰</button>
         <h2 id="empty-heading">선택된 수강반이 없습니다</h2>
@@ -103,9 +107,9 @@
           <h2 id="channel-heading" tabindex="-1">채널을 선택하세요</h2>
           <span id="chat-cohort" class="topic muted"></span>
           <div class="topbar-actions">
-            <button id="pins-toggle" class="ghost" aria-pressed="false" aria-controls="pins-panel">📌<span class="label"> 고정</span><span id="pins-count" class="count-chip hidden"></span></button>
-            <button id="stage-toggle" class="ghost" aria-pressed="false" aria-controls="stage">🖥<span class="label"> 화면 공유</span><span id="media-request-count" aria-live="polite"></span></button>
-            <button id="members-toggle" class="ghost" aria-pressed="true" aria-controls="member-list">👥<span class="label"> 멤버</span></button>
+            <button id="pins-toggle" class="ghost" aria-label="고정 메시지" aria-pressed="false" aria-controls="pins-panel"><span aria-hidden="true">📌</span><span class="label"> 고정</span><span id="pins-count" class="count-chip hidden" aria-hidden="true"></span></button>
+            <button id="stage-toggle" class="ghost" aria-label="화면 공유 패널" aria-pressed="false" aria-controls="stage"><span aria-hidden="true">🖥</span><span class="label"> 화면 공유</span><span id="media-request-count" aria-live="polite"></span></button>
+            <button id="members-toggle" class="ghost" aria-label="멤버 목록" aria-pressed="true" aria-controls="member-list"><span aria-hidden="true">👥</span><span class="label"> 멤버</span></button>
           </div>
         </header>
         <div class="chat-body">
@@ -277,8 +281,8 @@
         </section>
         <section id="admin-card" class="hidden">
           <p class="muted">관리자는 계정과 수강반을 만들고, 강사는 담당 수강반의 구성원과 채널을 관리합니다.</p>
-          <form id="account-form"><h3>새 계정</h3><input name="username" aria-label="아이디" placeholder="아이디" required><input name="display_name" aria-label="표시 이름" placeholder="표시 이름" required><input name="password" type="password" aria-label="임시 비밀번호" autocomplete="new-password" placeholder="임시 비밀번호" minlength="5" required><small class="muted">새 계정은 첫 로그인 때 임시 비밀번호를 변경해야 수업에 참여할 수 있습니다.</small><label class="check-label"><input id="enroll-new-account" type="checkbox">현재 수강반에도 추가</label><label id="new-account-role-label">수강반 역할<select id="new-account-role"><option value="student">수강생</option><option value="instructor">강사</option></select></label><button>계정 만들기</button></form>
-          <form id="cohort-form"><h3>새 수강반</h3><input name="slug" aria-label="수강반 주소 ID (영문 소문자·숫자·하이픈)" placeholder="수강반 주소 ID (영문 소문자·숫자·하이픈)" required><input name="name" aria-label="수강반 이름" placeholder="수강반 이름" required><button>수강반 만들기</button></form>
+          <form id="account-form"><h3>새 계정</h3><label>아이디<input name="username" aria-label="아이디" placeholder="아이디" required></label><label>표시 이름<input name="display_name" aria-label="표시 이름" placeholder="표시 이름" required></label><label>임시 비밀번호<input name="password" type="password" aria-label="임시 비밀번호" autocomplete="new-password" placeholder="임시 비밀번호" minlength="5" required></label><small class="muted">새 계정은 첫 로그인 때 임시 비밀번호를 변경해야 수업에 참여할 수 있습니다.</small><label class="check-label"><input id="enroll-new-account" type="checkbox">현재 수강반에도 추가</label><label id="new-account-role-label">수강반 역할<select id="new-account-role"><option value="student">수강생</option><option value="instructor">강사</option></select></label><button>계정 만들기</button></form>
+          <form id="cohort-form"><h3>새 수강반</h3><label>수강반 주소 ID (영문 소문자·숫자·하이픈)<input name="slug" aria-label="수강반 주소 ID (영문 소문자·숫자·하이픈)" placeholder="수강반 주소 ID (영문 소문자·숫자·하이픈)" required></label><label>수강반 이름<input name="name" aria-label="수강반 이름" placeholder="수강반 이름" required></label><button>수강반 만들기</button></form>
           <section id="roster-card" class="roster-card" aria-labelledby="roster-title">
             <h3 id="roster-title">명단으로 계정 가져오기</h3>
             <p class="muted">CSV 파일을 선택하거나 Excel·스프레드시트에서 제목 행과 함께 복사해 붙여 넣으세요. 한 번에 최대 100명입니다.</p>

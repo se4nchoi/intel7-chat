@@ -520,3 +520,12 @@ button.member:hover .dm-hint, button.member:focus-visible .dm-hint { visibility:
 #post-follow[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 @media (max-width: 480px) { .notification { flex-wrap: wrap; } .notification-link { flex-basis: 100%; } .notification-read { margin-left: auto; } .notifications-body { padding: 0 12px 16px; } }
 @media (max-width: 800px) { .dialog-status { padding: 10px 16px; } .region-state { margin: 10px 12px; } }
+
+/* Compact controls keep a usable touch target when labels are hidden. */
+@media (max-width: 800px) {
+  .topbar-actions button { min-width: 44px; min-height: 44px; }
+}
+
+.connection-banner { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--accent-soft); color: var(--text); font-size: 13px; }
+.connection-banner button { flex: none; min-height: 36px; }
+@media (max-width: 800px) { .connection-banner { flex-wrap: wrap; padding: 10px 12px; } .connection-banner button { min-height: 44px; } }

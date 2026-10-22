@@ -3,10 +3,11 @@ import { api, cohortSocket, fileDownloadUrl, uploadFile } from './api.js';
 import { readRoute, spaceUrl } from './navigation.js';
 import { renderRich } from './format.js';
 import { DraftStore } from './drafts.js';
-import { parseRoster, credentialsCsv } from './roster.js';
+import { parseRoster, credentialsCsv, rosterPreviewSummary } from './roster.js';
 import { notificationUrl } from './notification-links.js';
 import { ClassroomMedia } from './media.js';
 import { ClassroomSession } from './classroom-session.js';
+import { ConnectionStatus } from './connection-status.js';
 
 const $ = id => document.getElementById(id);
 const ROLE_LABEL = { admin: '관리자', instructor: '강사', student: '수강생', member: '구성원' };
@@ -32,26 +33,32 @@ const state = {
 };
 
 /* ---------- small helpers ---------- */
-let statusTimer;
-function status(message, error = false) {
-  clearTimeout(statusTimer);
-  const dialog = document.querySelector('dialog[open]');
-  let target = $('status');
+const statusTimers = new WeakMap();
+const connectionStatus = new ConnectionStatus({ root: $('connection-banner'), message: $('connection-message'),
+  retry: $('connection-retry'), announcement: $('connection-announcement') });
+function status(message, error = false, owner = null) {
+  const dialog = owner ? owner.closest('dialog') : document.querySelector('dialog[open]');
+  let target = dialog?.querySelector('.dialog-status') || $('status');
+  const clear = node => {
+    clearTimeout(statusTimers.get(node)); statusTimers.delete(node); node.replaceChildren();
+    if (node !== $('status')) node.classList.add('hidden');
+  };
   if (!message) {
-    $('status').replaceChildren();
-    document.querySelectorAll('.dialog-status').forEach(node => { node.replaceChildren(); node.classList.add('hidden'); });
+    if (owner) clear(target);
+    else { clear($('status')); document.querySelectorAll('.dialog-status').forEach(clear); }
     return;
   }
-  if (dialog) {
-    target = dialog.querySelector('.dialog-status');
-    if (!target) { target = el('div', { class: 'dialog-status', role: 'alert' }); dialog.querySelector('.dialog-head').after(target); }
+  if (dialog && target === $('status')) {
+    target = el('div', { class: 'dialog-status', role: 'alert' }); dialog.querySelector('.dialog-head').after(target);
   }
+  clearTimeout(statusTimers.get(target));
   target.textContent = error ? errorMessage(message) : message;
   target.classList.remove('hidden');
   target.classList.toggle('error', error);
-  if (error) target.append(el('button', { type: 'button', class: 'icon-btn', 'aria-label': '알림 닫기', text: '×', onclick: () => { target.replaceChildren(); if (target !== $('status')) target.classList.add('hidden'); } }));
-  if (!error || !dialog) statusTimer = setTimeout(() => { target.replaceChildren(); if (target !== $('status')) target.classList.add('hidden'); }, error ? 10000 : 4000);
+  if (error) target.append(el('button', { type: 'button', class: 'icon-btn', 'aria-label': '알림 닫기', text: '×', onclick: () => clear(target) }));
+  if (!error || !dialog) statusTimers.set(target, setTimeout(() => clear(target), error ? 10000 : 4000));
 }
+
 function regionState(id, kind = '', message = '', retry) {
   const node = $(id);
   node.className = `region-state${message ? '' : ' hidden'}${kind === 'error' ? ' error' : ''}`;
@@ -115,6 +122,7 @@ function formValues(form) { return Object.fromEntries(new FormData(form)); }
 function closeChat() {
   clearTimeout(state.reconnectTimer); state.reconnectTimer = null; state.reconnectNow = null;
   const socket = state.socket; state.socket = null; socket?.close();
+  connectionStatus.set('idle');
 }
 const narrowNav = matchMedia('(max-width: 800px)');
 let navOpener;
@@ -595,16 +603,18 @@ function connectChat(cohort, retry = 0) {
   const epoch = state.epoch;
   const current = () => epoch === state.epoch;
   const socket = cohortSocket(cohort.id); state.socket = socket;
+  connectionStatus.set(navigator.onLine === false ? 'offline' : retry ? 'reconnecting' : 'connecting');
   let opened = false;
   socket.onmessage = event => { if (state.socket === socket) handleEvent(JSON.parse(event.data)); };
   socket.onopen = async () => {
+    if (state.socket !== socket || !current()) return;
     opened = true;
     queueNotificationRefresh();
     try {
       await Promise.all([state.space === 'board' ? (retry ? refreshBoard() : Promise.resolve()) : catchUp(), loadUnread()]);
-      if (retry && state.socket === socket) status('채팅에 다시 연결되었습니다.');
+      if (state.socket === socket && current()) connectionStatus.set('connected');
     } catch (error) {
-      if (state.socket === socket) { status(error.message, true); socket.close(); }
+      if (state.socket === socket) { socket.close(); }
     }
   };
   socket.onclose = async event => {
@@ -623,16 +633,17 @@ function connectChat(cohort, retry = 0) {
     if (!current()) return;
     const next = opened ? 1 : retry + 1;
     const delay = Math.min(30000, 500 * 2 ** next) * (0.75 + Math.random() / 2);
-    status('채팅 연결이 끊겼습니다. 다시 연결하는 중…', true);
     const reconnect = () => {
       clearTimeout(state.reconnectTimer); state.reconnectTimer = null; state.reconnectNow = null;
       if (current()) connectChat(cohort, next);
     };
     state.reconnectTimer = setTimeout(reconnect, delay); state.reconnectNow = reconnect;
+    connectionStatus.set(navigator.onLine === false ? 'offline' : 'reconnecting', reconnect);
   };
 }
 // Skip the wait when the network or the tab comes back.
 addEventListener('online', () => state.reconnectNow?.());
+window.addEventListener('offline', () => { if (state.cohort) connectionStatus.set('offline', state.reconnectNow); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { state.reconnectNow?.(); if (state.space === 'board') void refreshBoard().catch(() => {}); else if (state.historyLoaded) ackRead(true); } });
 function appendMessage(message) {
   const box = $('messages');
@@ -751,6 +762,7 @@ async function loadPins() {
 function renderPins() {
   const count = state.pins.length;
   $('pins-count').textContent = String(count); $('pins-count').classList.toggle('hidden', !count);
+  $('pins-toggle').setAttribute('aria-description', `${count}개`);
   $('pins-list').replaceChildren(...(count ? state.pins.map(pin => el('li', {},
     el('button', { type: 'button', class: 'pin-item', onclick: () => jumpTo(pin.id) },
       el('strong', { text: pin.display_name || pin.username }), el('small', { class: 'muted', text: ` · ${stamp(pin.created_at)}` }),
@@ -1223,13 +1235,13 @@ function handleForm(id, action) {
     if (pendingForms.has(id)) return;
     const form = event.currentTarget, account = state.account;
     const button = form.querySelector('button[type=submit], button:not([type])');
-    pendingForms.add(id); form.setAttribute('aria-busy', 'true'); status('');
+    pendingForms.add(id); form.setAttribute('aria-busy', 'true'); status('', false, form);
     if (button) button.disabled = true;
     const epoch = state.epoch;
     try {
       await action(form);
       if (!['message-form', 'answer-form', 'question-form', 'roster-form'].includes(id) && (epoch === state.epoch || id === 'login-form')) form.reset();
-    } catch (error) { if (id === 'first-login-form') regionState('first-login-status', 'error', error.message); else if (account === state.account || id === 'login-form') status(error.message, true); }
+    } catch (error) { if (id === 'first-login-form') regionState('first-login-status', 'error', error.message); else if (account === state.account || id === 'login-form') status(error.message, true, form); }
     finally { pendingForms.delete(id); form.removeAttribute('aria-busy'); if (button) button.disabled = false; updateControls(); }
   });
 }
@@ -1541,14 +1553,27 @@ handleForm('roster-form', async () => {
   if (account !== state.account || $('roster-source').value !== source || $('roster-cohort').value !== cohortId) return;
   rosterPlan = { ...plan, input: rows, source };
   const action = { create: '신규 생성·배정', enroll: '기존 계정 배정', unchanged: '이미 배정됨' };
+  const body = el('tbody');
+  const shown = el('p', { class: 'muted small', role: 'status' });
+  const errorsOnly = el('input', { type: 'checkbox', id: 'roster-errors-only', disabled: !plan.invalid_rows });
+  const renderRows = () => {
+    const rows = errorsOnly.checked ? plan.rows.filter(row => row.errors.length) : plan.rows;
+    body.replaceChildren(...rows.map(row => el('tr', { class: row.errors.length ? 'roster-error' : '' },
+      ...[row.row, row.username, row.display_name, ROLE_LABEL[row.role] || row.role,
+        row.errors.length ? row.errors.join(' ') : action[row.action]].map(text => el('td', { text: String(text) })))));
+    shown.textContent = `${rows.length} / ${plan.total_rows}행 표시`;
+  };
+  errorsOnly.addEventListener('change', renderRows);
+  renderRows();
   $('roster-preview').replaceChildren(
-    el('p', { text: `${plan.cohort.name} · 신규 ${plan.counts.create}명 / 기존 계정 배정 ${plan.counts.enroll}명 / 이미 배정 ${plan.counts.unchanged}명` }),
-    el('p', { text: plan.valid ? '아래 내용을 확인하고 적용하세요. 기존 계정의 표시 이름과 비밀번호는 바꾸지 않습니다.' : '표시된 오류를 수정한 뒤 다시 미리 확인하세요.' }),
-    el('p', { class: 'muted small', text: '표가 잘리면 좌우로 움직여 전체 내용을 확인하세요.' }),
+    el('p', { text: rosterPreviewSummary(plan) }),
+    el('p', { class: plan.valid ? '' : 'notice', text: plan.valid
+      ? '아래 내용을 확인하고 적용하세요. 기존 계정의 표시 이름과 비밀번호는 바꾸지 않습니다.'
+      : `오류 ${plan.invalid_rows}행이 있어 전체 명단을 적용할 수 없습니다. 오류를 모두 수정한 뒤 다시 미리 확인하세요.` }),
+    el('label', { class: 'check-label' }, errorsOnly, '오류 행만 보기'), shown,
+    el('p', { class: 'muted small', text: '행 번호는 제목·빈 행을 제외한 데이터 순서입니다. 따옴표 안의 줄바꿈은 같은 데이터 행입니다. 표는 좌우로 움직여 확인할 수 있습니다.' }),
     el('div', { class: 'roster-table-wrap', tabindex: '0', role: 'region', 'aria-label': '명단 미리보기' },
-      el('table', {}, el('thead', {}, el('tr', {}, ...['행', '아이디', '이름', '역할', '처리'].map(text => el('th', { scope: 'col', text })))),
-        el('tbody', {}, ...plan.rows.map(row => el('tr', { class: row.errors.length ? 'roster-error' : '' },
-          ...[row.row, row.username, row.display_name, ROLE_LABEL[row.role] || row.role, row.errors.length ? row.errors.join(' ') : action[row.action]].map(text => el('td', { text: String(text) }))))))));
+      el('table', {}, el('thead', {}, el('tr', {}, ...['데이터 행', '아이디', '이름', '역할', '처리'].map(text => el('th', { scope: 'col', text })))), body)));
   $('roster-preview').classList.remove('hidden'); $('roster-apply').classList.toggle('hidden', !plan.valid);
 });
 $('roster-apply').addEventListener('click', async () => {

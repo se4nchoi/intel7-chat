@@ -19,6 +19,8 @@ inst01,박강사,instructor
 
 `username`, `display_name` 제목은 필수다. 열 순서를 바꿀 수 있고, `role` 열을 생략하거나 비워 두면 `student`로 처리한다. `학생`/`수강생`, `강사`도 역할 값으로 사용할 수 있다. 쉼표가 있는 이름은 `"김, 학생"`처럼 CSV 인용 규칙을 따른다. 비밀번호 열은 받지 않는다.
 
+미리보기 요약의 신규·배정·이미 배정 인원에는 **오류가 없는 행만** 포함된다. 오류가 한 행이라도 있으면 전체 명단 적용이 차단된다. **오류 행만 보기**로 수정할 행을 모아 확인할 수 있다. 행 번호는 제목 행과 빈 행을 제외한 데이터 순서이며, 따옴표 안의 줄바꿈은 같은 데이터 행으로 센다.
+
 ## 처리 규칙
 
 - **신규 계정:** 계정마다 임의 임시 비밀번호를 생성하고 선택한 반에 배정한다. 관리자는 학생·강사 역할을 배정할 수 있지만, 전역 관리자 계정은 이 흐름으로 만들 수 없다.
@@ -46,6 +48,7 @@ inst01,박강사,instructor
 스키마 `0010_account_onboarding.sql`은 `must_change_password`를 기본 `FALSE`로 추가한다. Madi 시작 시 기존 마이그레이션 절차로 적용된다.
 
 - 관리자 API: `POST /hub/api/accounts/import/preview`, `POST /hub/api/accounts/import`. 본문은 `cohort_id`, `rows`이고 적용에는 미리보기 응답의 `revision`도 필요하다. 행은 `username`, `display_name`, `role`이다.
+- 미리보기 응답의 `counts`는 오류 없는 행의 작업별 인원이다. `total_rows`는 전체 데이터 행 수, `invalid_rows`는 오류가 있는 행 수다. 적용은 `valid: true`인 미리보기와 최신 `revision`이 있어야 가능하다.
 - 프런트엔드 파서/내보내기: `frontend/src/roster.js`, `npm --prefix frontend test`.
 - 백엔드 회귀: 별도 폐기 가능한 `MADI_TEST_DATABASE_URL`을 설정한 뒤 `python -m pytest tests/test_hub_onboarding.py`. 테스트는 해당 DB의 `hub_*` 테이블을 초기화하므로 실제 개발·운영 DB를 지정하면 안 된다.
 - 브라우저 회귀: 빌드 후 `node scripts/test_onboarding_browser.mjs`. Playwright/Chrome이 필요하고, 기존 Academy 브라우저 검사와 같은 `PLAYWRIGHT_MODULE_PATH`, `MADI_BROWSER_CHANNEL`, `MADI_TEST_PYTHON` 설정을 사용한다. 자체 임시 서버와 모의 API를 사용하여 DB에 접근하지 않는다.

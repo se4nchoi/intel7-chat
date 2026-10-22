@@ -66,7 +66,7 @@ try {
     if (path.endsWith('/accounts/import/preview')) {
       const { rows, cohort_id } = route.request().postDataJSON();
       assert.equal(cohort_id, 1);
-      return route.fulfill({ json: { cohort, valid: true, revision: 'reviewed-version', counts: { create: 1, enroll: 0, unchanged: 0 }, rows: rows.map((r, i) => ({ ...r, row: i + 1, action: 'create', errors: [] })) } });
+      return route.fulfill({ json: { cohort, valid: true, revision: 'reviewed-version', total_rows: rows.length, invalid_rows: 0, counts: { create: 1, enroll: 0, unchanged: 0 }, rows: rows.map((r, i) => ({ ...r, row: i + 1, action: 'create', errors: [] })) } });
     }
     if (path.endsWith('/accounts/import')) {
       assert.equal(route.request().postDataJSON().revision, 'reviewed-version'); imported++;

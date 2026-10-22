@@ -48,8 +48,10 @@ def _plan(conn, cohort_id, rows, *, lock=False):
                         'display_name': existing['display_name'] if existing else name,
                         'role': role, 'action': action, 'errors': errors})
     revision = hashlib.sha256(json.dumps([cohort, rows, accounts, sorted(memberships.values(), key=lambda m: m['account_id'])], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-    counts = {action: sum(p['action'] == action for p in planned) for action in ('create', 'enroll', 'unchanged')}
-    return {'cohort': cohort, 'rows': planned, 'counts': counts, 'valid': not any(p['errors'] for p in planned), 'revision': revision}
+    counts = {action: sum(p['action'] == action and not p['errors'] for p in planned) for action in ('create', 'enroll', 'unchanged')}
+    invalid_rows = sum(bool(p['errors']) for p in planned)
+    return {'cohort': cohort, 'rows': planned, 'counts': counts, 'total_rows': len(planned),
+            'invalid_rows': invalid_rows, 'valid': not invalid_rows, 'revision': revision}
 
 
 def preview(cohort_id, rows):

@@ -24,7 +24,7 @@ export function parseRoster(source) {
   if (!headers.includes('username') || !headers.includes('display_name') || new Set(headers).size !== headers.length || headers.some(h => !['username', 'display_name', 'role'].includes(h))) throw new Error('첫 행은 username,display_name,role 형식이어야 합니다. role은 생략할 수 있습니다.');
   if (!table.length || table.length > 100) throw new Error('한 번에 1~100명까지 가져올 수 있습니다.');
   return table.map((cells, i) => {
-    if (cells.length !== headers.length) throw new Error(`${i + 2}행의 열 개수를 확인해 주세요.`);
+    if (cells.length !== headers.length) throw new Error(`${i + 1}번째 데이터 행의 열 개수를 확인해 주세요. (제목 행 제외)`);
     const data = Object.fromEntries(headers.map((h, index) => [h, cells[index].trim()]));
     data.role = ({ '수강생': 'student', '학생': 'student', '강사': 'instructor' })[data.role] || data.role || 'student';
     return data;
@@ -34,4 +34,9 @@ export function parseRoster(source) {
 export function credentialsCsv(credentials, { spreadsheetSafe = true } = {}) {
   const cell = value => '"' + (spreadsheetSafe ? String(value).replace(/^[=+@-]/, "'$&") : String(value)).replaceAll('"', '""') + '"';
   return '\uFEFF' + [['username', 'display_name', 'temporary_password'], ...credentials.map(c => [c.username, c.display_name, c.temporary_password])].map(row => row.map(cell).join(',')).join('\r\n');
+}
+
+// Counts describe valid planned actions only; any invalid row blocks the batch.
+export function rosterPreviewSummary(plan) {
+  return `${plan.cohort.name} · 검토한 ${plan.total_rows}행 · 신규 ${plan.counts.create}명 · 기존 계정 배정 ${plan.counts.enroll}명 · 이미 배정 ${plan.counts.unchanged}명 · 오류 ${plan.invalid_rows}행`;
 }
