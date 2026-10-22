@@ -379,11 +379,18 @@ def find_mentions(content: str, users: Optional[list[dict]] = None,
                                 "display_name": display_name})
     return matches
 
-def with_mentions(message: dict, users: Optional[list[dict]] = None) -> dict:
+def with_mentions(message: dict, users: Optional[list[dict]] = None, *, is_admin: bool = True) -> dict:
     result = dict(message)
     mentions = find_mentions(result.get("content", ""), users, result.get("author_id"))
     result["mentions"] = mentions
     result["mentioned_user_ids"] = [mention["user_id"] for mention in mentions]
+    if result.get("is_hidden") and not is_admin:
+        result["content"] = ""
+        result["attachment"] = None
+        result["attachments"] = []
+        result["attachment_removed"] = False
+        result["mentions"] = []
+        result["mentioned_user_ids"] = []
     if result.get("author_id") and "quiz_badge" not in result:
         result["quiz_badge"] = get_user_quiz_badge(result["author_id"])
     return result
@@ -599,7 +606,7 @@ async def websocket_endpoint(ws: WebSocket):
         public_history = public_candidates[-PUBLIC_HISTORY_PAGE_SIZE:]
         for message in public_history:
             await ws.send_initial_text(json.dumps(
-                {"type":"chat", "history":True, **with_mentions(message, users)}, ensure_ascii=False
+                {"type":"chat", "history":True, **with_mentions(message, users, is_admin=info.role == "admin")}, ensure_ascii=False
             ))
         dm_candidates = get_recent_direct_messages(info.user_id, DM_HISTORY_PAGE_SIZE + 1)
         dm_groups: Dict[str, list[dict]] = defaultdict(list)

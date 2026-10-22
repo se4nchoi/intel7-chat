@@ -3,7 +3,7 @@
 // ============================================================
 
 import { state } from './state.js';
-import { copyText, renderMarkdown, showToast } from './utils.js';
+import { copyText, escapeHtml, renderMarkdown, showToast } from './utils.js';
 import {
   fetchLeaderboard,
   handleLeaderboardInvalidated,
@@ -27,10 +27,14 @@ import {
   setStatusLabel,
   getEditingMySetId,
   setEditingMySetId,
+  setAdminQuizSearch,
+  setAdminQuizCategory,
+  toggleAdminQuizFlaggedOnly,
 } from './quiz_admin.js';
 
 
 let todayQuizzes = [];
+let adminQuizSearchTimer = null;
 let currentQuizIndex = 0;
 let userQuizStats = null;
 let currentSelectedOption = null;
@@ -478,12 +482,12 @@ export function renderSolvedHistoryAccordion() {
 
       const myAns = document.createElement('div');
       myAns.className = 'cbt-hist-ans-item';
-      myAns.innerHTML = `<strong>제출한 답안:</strong> <span class="user-ans ${q.is_correct ? 'correct' : 'wrong'}">${q.user_answer || '(미입력)'}</span>`;
+      myAns.innerHTML = `<strong>제출한 답안:</strong> <span class="user-ans ${q.is_correct ? 'correct' : 'wrong'}">${escapeHtml(q.user_answer || '(미입력)')}</span>`;
 
       const correctAns = document.createElement('div');
       correctAns.className = 'cbt-hist-ans-item';
       const cText = Array.isArray(q.correct_answers) ? q.correct_answers.join(', ') : (q.correct_answers || '');
-      correctAns.innerHTML = `<strong>올바른 정답:</strong> <span class="correct-ans">${cText}</span>`;
+      correctAns.innerHTML = `<strong>올바른 정답:</strong> <span class="correct-ans">${escapeHtml(cText)}</span>`;
 
       answersRow.append(myAns, correctAns);
       detail.appendChild(answersRow);
@@ -1331,7 +1335,7 @@ export function initQuizListeners() {
       if (adminQuizSearchClear) adminQuizSearchClear.classList.toggle('hidden', !val);
       clearTimeout(adminQuizSearchTimer);
       adminQuizSearchTimer = setTimeout(() => {
-        adminQuizSearch = val.trim();
+        setAdminQuizSearch(val.trim());
         fetchAdminQuizzes();
       }, 250);
     });
@@ -1341,22 +1345,23 @@ export function initQuizListeners() {
     adminQuizSearchClear.addEventListener('click', () => {
       if (adminQuizSearchInput) adminQuizSearchInput.value = '';
       adminQuizSearchClear.classList.add('hidden');
-      adminQuizSearch = '';
+      setAdminQuizSearch('');
       fetchAdminQuizzes();
     });
   }
 
   if (adminQuizCatFilter) {
     adminQuizCatFilter.addEventListener('change', (e) => {
-      adminQuizCategory = e.target.value;
+      setAdminQuizCategory(e.target.value);
       fetchAdminQuizzes();
     });
   }
 
   if (adminQuizFlaggedToggle) {
     adminQuizFlaggedToggle.addEventListener('click', () => {
-      adminQuizFlaggedOnly = !adminQuizFlaggedOnly;
-      adminQuizFlaggedToggle.classList.toggle('active', adminQuizFlaggedOnly);
+      const active = toggleAdminQuizFlaggedOnly();
+      adminQuizFlaggedToggle.classList.toggle('active', active);
+      fetchAdminQuizzes();
       fetchAdminQuizzes();
     });
   }

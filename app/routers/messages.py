@@ -103,7 +103,18 @@ async def api_hide_message(message_id: int, request: Request):
         raise HTTPException(404, "메시지를 찾을 수 없습니다.")
     users = list_mentionable_users()
     enriched = main.with_mentions(updated, users)
-    await main.broadcast({"type": "message_hidden", "message": enriched, "is_hidden": hidden})
+    student_msg = main.with_mentions(updated, users, is_admin=False)
+    chan = get_channel_by_id(updated["channel_id"])
+    allowed_ids = set(get_group_dm_member_ids(updated["channel_id"])) if (chan and chan.get("is_dm_group")) else None
+    admin_payload = json.dumps({"type": "message_hidden", "message": enriched, "is_hidden": hidden}, ensure_ascii=False)
+    student_payload = json.dumps({"type": "message_hidden", "message": student_msg, "is_hidden": hidden}, ensure_ascii=False)
+    for target_ws, info in list(main.connected_clients.items()):
+        if allowed_ids is not None and info.user_id not in allowed_ids:
+            continue
+        try:
+            await target_ws.send_text(admin_payload if info.role == "admin" else student_payload)
+        except Exception:
+            pass
     return enriched
 
 
@@ -123,12 +134,17 @@ async def api_move_message(message_id: int, request: Request):
     target_chan = get_channel_by_id(to_channel_id)
     if not target_chan:
         raise HTTPException(404, "대상 채널을 찾을 수 없습니다.")
+    if target_chan.get("is_dm_group"):
+        raise HTTPException(400, "그룹 대화로는 메시지를 이동할 수 없습니다.")
     if target_chan.get("archived"):
         raise HTTPException(400, "보관된 채널로는 메시지를 이동할 수 없습니다.")
     current_msg = get_message_by_id(message_id)
     if not current_msg:
         raise HTTPException(404, "메시지를 찾을 수 없습니다.")
     from_channel_id = current_msg["channel_id"]
+    source_chan = get_channel_by_id(from_channel_id)
+    if source_chan and source_chan.get("is_dm_group"):
+        raise HTTPException(400, "그룹 대화의 메시지는 이동할 수 없습니다.")
     if from_channel_id == to_channel_id:
         raise HTTPException(400, "이미 해당 채널에 위치한 메시지입니다.")
     updated = move_message_channel(message_id, to_channel_id)
@@ -476,7 +492,9 @@ async def api_unpin_message(conv_type: str, conv_id: str, message_id: int, reque
 async def api_messages(request: Request):
     main.request_user(request)
     users = list_mentionable_users()
-    return [main.with_mentions(message, users) for message in get_recent_messages()]
+    user = main.request_user(request)
+    users = list_mentionable_users()
+    return [main.with_mentions(message, users, is_admin=user["role"] == "admin") for message in get_recent_messages()]
 
 
 @router.get("/api/search")
@@ -513,7 +531,7 @@ async def public_message_history(request: Request, before_id: Optional[int] = No
     has_more = len(messages) > main.PUBLIC_HISTORY_PAGE_SIZE
     messages = messages[-main.PUBLIC_HISTORY_PAGE_SIZE:]
     users = await asyncio.to_thread(list_mentionable_users)
-    return {"messages": [main.with_mentions(message, users) for message in messages],
+    return {"messages": [main.with_mentions(message, users, is_admin=user["role"] == "admin") for message in messages],
             "has_more": has_more}
 
 

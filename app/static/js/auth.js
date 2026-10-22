@@ -77,6 +77,11 @@ export function hideAuthModal() {
 export function showNicknameHint() {
   const nicknameHintPopover = document.getElementById('nickname-hint-popover');
   if (!nicknameHintPopover || !state.currentUser) return;
+  try {
+    const key = `bamboochat_hint_nick_${state.currentUser.id}`;
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, '1');
+  } catch { /* ignore */ }
   if (nicknameHintTimer) clearTimeout(nicknameHintTimer);
   nicknameHintPopover.classList.remove('hidden');
   nicknameHintTimer = setTimeout(() => {
@@ -101,6 +106,11 @@ export function hideNicknameHint(triggerNext = false) {
 export function showQuizHint() {
   const quizHintPopover = document.getElementById('quiz-hint-popover');
   if (!quizHintPopover || !state.currentUser) return;
+  try {
+    const key = `bamboochat_hint_quiz_${state.currentUser.id}`;
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, '1');
+  } catch { /* ignore */ }
   if (quizHintTimer) clearTimeout(quizHintTimer);
   quizHintPopover.classList.remove('hidden');
   quizHintTimer = setTimeout(() => {

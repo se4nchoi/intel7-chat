@@ -286,12 +286,12 @@ function renderOmRoomList(rooms) {
   grid.innerHTML = rooms.map(r => `
     <div class="om-room-card" data-room-id="${r.id}">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-weight:700;font-size:15px;color:#fde68a;">${r.title}</span>
+        <span style="font-weight:700;font-size:15px;color:#fde68a;">${escapeHtml(r.title)}</span>
         <span style="font-size:11px;background:rgba(245,158,11,0.15);color:#fcd34d;padding:2px 8px;border-radius:6px;">⏱️ ${r.time_minutes}분</span>
       </div>
       <div style="font-size:12.5px;color:var(--om-muted);display:flex;justify-content:space-between;">
-        <span>黑: ${r.black || '대기 중'}</span>
-        <span>白: ${r.white || '대기 중'}</span>
+        <span>黑: ${escapeHtml(r.black || '대기 중')}</span>
+        <span>白: ${escapeHtml(r.white || '대기 중')}</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--om-muted);">
         <span>관전 ${r.spectator_count}명</span>
@@ -774,9 +774,9 @@ function appendOmChat(sender, text, timeStr) {
   const div = document.createElement('div');
   div.className = 'chess-chat-item';
   div.innerHTML = `
-    <span class="chess-chat-time" style="color:var(--om-muted);">${timeStr}</span>
-    <span class="chess-chat-sender" style="color:#fde68a;font-weight:600;">${sender}:</span>
-    <span class="chess-chat-body">${text}</span>
+    <span class="chess-chat-time" style="color:var(--om-muted);">${escapeHtml(timeStr)}</span>
+    <span class="chess-chat-sender" style="color:#fde68a;font-weight:600;">${escapeHtml(sender)}:</span>
+    <span class="chess-chat-body">${escapeHtml(text)}</span>
   `;
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;

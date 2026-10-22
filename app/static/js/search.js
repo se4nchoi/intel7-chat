@@ -6,6 +6,11 @@ let searchHintTimer = null;
 export function showSearchHint() {
   const popover = document.getElementById('search-hint-popover');
   if (!popover || !state.currentUser) return;
+  try {
+    const key = `bamboochat_hint_search_${state.currentUser.id}`;
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, '1');
+  } catch { /* ignore */ }
   if (searchHintTimer) clearTimeout(searchHintTimer);
   popover.classList.remove('hidden');
   searchHintTimer = setTimeout(() => popover.classList.add('hidden'), 7000);

@@ -308,10 +308,10 @@ export function closeGlobalNotificationModal() {
 
 export function updateConversationNotificationUI() {
   const isMuted = isConversationMuted(state.activeRoom.type, state.activeRoom.id);
-  const convNotifRoomName = document.getElementById('conv-notif-room-name');
-  const convNotifStatusDesc = document.getElementById('conv-notif-status-desc');
-  const convNotifStatusIcon = document.getElementById('conv-notif-status-icon');
-  const convNotifToggleBtn = document.getElementById('conv-notif-toggle-btn');
+  const convNotifRoomName = document.getElementById('conv-notification-status-title') || document.getElementById('conv-notif-room-name');
+  const convNotifStatusDesc = document.getElementById('conv-notification-status-desc') || document.getElementById('conv-notif-status-desc');
+  const convNotifStatusIcon = document.getElementById('conv-notification-status-icon') || document.getElementById('conv-notif-status-icon');
+  const convNotifToggleBtn = document.getElementById('conv-notification-toggle-btn') || document.getElementById('conv-notif-toggle-btn');
   const convMuteBtn = document.getElementById('conv-mute-btn');
 
   if (convMuteBtn) {

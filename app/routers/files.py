@@ -111,7 +111,7 @@ async def download_file(attachment_id: str, request: Request):
     record = get_attachment_record(attachment_id)
     if not record:
         raise HTTPException(404, "파일을 찾을 수 없습니다.")
-    if not attachment_is_visible_to_user(attachment_id, user["id"]):
+    if not attachment_is_visible_to_user(attachment_id, user["id"], is_admin=user["role"] == "admin"):
         raise HTTPException(404, "파일을 찾을 수 없습니다.")
     path = main.attachment_path(record["stored_name"])
     if not path.is_file():

@@ -299,12 +299,12 @@ function renderJgRoomList(rooms) {
   grid.innerHTML = rooms.map(r => `
     <div class="jg-room-card" data-room-id="${r.id}">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-weight:700;font-size:15px;color:#a7f3d0;">${r.title}</span>
+        <span style="font-weight:700;font-size:15px;color:#a7f3d0;">${escapeHtml(r.title)}</span>
         <span style="font-size:11px;background:rgba(52,211,153,0.15);color:#6ee7b7;padding:2px 8px;border-radius:6px;">⏱️ ${r.time_minutes}분</span>
       </div>
       <div style="font-size:12.5px;color:var(--jg-muted);display:flex;justify-content:space-between;">
-        <span>楚: ${r.cho || '대기 중'}</span>
-        <span>漢: ${r.han || '대기 중'}</span>
+        <span>楚: ${escapeHtml(r.cho || '대기 중')}</span>
+        <span>漢: ${escapeHtml(r.han || '대기 중')}</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--jg-muted);">
         <span>관전 ${r.spectator_count}명</span>
@@ -827,9 +827,9 @@ function appendJgChat(sender, text, timeStr) {
   const div = document.createElement('div');
   div.className = 'chess-chat-item';
   div.innerHTML = `
-    <span class="chess-chat-time" style="color:var(--jg-muted);">${timeStr}</span>
-    <span class="chess-chat-sender" style="color:#a7f3d0;font-weight:600;">${sender}:</span>
-    <span class="chess-chat-body">${text}</span>
+    <span class="chess-chat-time" style="color:var(--jg-muted);">${escapeHtml(timeStr)}</span>
+    <span class="chess-chat-sender" style="color:#a7f3d0;font-weight:600;">${escapeHtml(sender)}:</span>
+    <span class="chess-chat-body">${escapeHtml(text)}</span>
   `;
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;

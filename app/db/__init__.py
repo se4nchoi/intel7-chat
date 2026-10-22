@@ -135,6 +135,7 @@ from app.db.migrations import (
     _migrate_v26,
     _migrate_v27,
     _migrate_v28,
+    _migrate_v29,
     _run_migrations,
     _set_schema_version,
     init_db,
@@ -260,6 +261,7 @@ __all__ = [
     "_migrate_v26",
     "_migrate_v27",
     "_migrate_v28",
+    "_migrate_v29",
     "_MIGRATIONS",
     "_run_migrations",
     # quiz_data

@@ -24,7 +24,9 @@ def _attachment_public(row: sqlite3.Row | Dict[str, Any] | None) -> Optional[Dic
     }
 
 
-def attachment_is_visible_to_user(attachment_id: str, user_id: int) -> bool:
+def attachment_is_visible_to_user(
+    attachment_id: str, user_id: int, is_admin: bool = False
+) -> bool:
     with get_connection() as conn:
         dm_rows = conn.execute(
             """SELECT dm.sender_user_id, dm.recipient_user_id
@@ -33,9 +35,43 @@ def attachment_is_visible_to_user(attachment_id: str, user_id: int) -> bool:
             WHERE dma.attachment_id=?""",
             (attachment_id,),
         ).fetchall()
-    if not dm_rows:
-        return True
-    return any(user_id in {row["sender_user_id"], row["recipient_user_id"]} for row in dm_rows)
+        if dm_rows and any(
+            user_id in {row["sender_user_id"], row["recipient_user_id"]} for row in dm_rows
+        ):
+            return True
+
+        msg_rows = conn.execute(
+            """SELECT m.channel_id, m.is_hidden, COALESCE(c.is_dm_group, 0) AS is_dm_group
+            FROM message_attachments ma
+            JOIN messages m ON m.id=ma.message_id
+            LEFT JOIN channels c ON c.id=m.channel_id
+            WHERE ma.attachment_id=?""",
+            (attachment_id,),
+        ).fetchall()
+        for row in msg_rows:
+            if row["is_hidden"] and not is_admin:
+                continue
+            if row["is_dm_group"]:
+                member = conn.execute(
+                    "SELECT 1 FROM group_dm_members WHERE channel_id=? AND user_id=?",
+                    (row["channel_id"], user_id),
+                ).fetchone()
+                if member:
+                    return True
+            else:
+                return True
+
+        if dm_rows or msg_rows:
+            return False
+
+        att_row = conn.execute(
+            "SELECT uploader_user_id FROM attachments WHERE id=?",
+            (attachment_id,),
+        ).fetchone()
+        if not att_row:
+            return False
+        uploader_id = att_row["uploader_user_id"]
+        return is_admin or uploader_id is None or uploader_id == user_id
 
 
 def save_attachment(metadata: Dict[str, Any]) -> Dict[str, Any]:

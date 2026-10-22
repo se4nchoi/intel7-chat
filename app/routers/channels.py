@@ -164,5 +164,5 @@ async def channel_message_history(channel_id: int, request: Request, before_id: 
     has_more = len(messages) > main.PUBLIC_HISTORY_PAGE_SIZE
     messages = messages[-main.PUBLIC_HISTORY_PAGE_SIZE:]
     users = await asyncio.to_thread(list_mentionable_users)
-    return {"messages": [main.with_mentions(message, users) for message in messages],
+    return {"messages": [main.with_mentions(message, users, is_admin=user["role"] == "admin") for message in messages],
             "has_more": has_more}

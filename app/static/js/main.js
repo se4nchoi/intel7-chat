@@ -30,7 +30,7 @@ import {
   hideReplyReturnButton,
 } from './chat.js';
 import { initWebSocket, sendWebSocketMessage, applyServerUnreadCounts } from './ws.js';
-import { isNearLatest } from './message_scroll.js';
+import { isNearLatest, scrollToLatest } from './message_scroll.js';
 import { initSearchListeners, showSearchHint } from './search.js';
 import { fetchActivePinnedMessages, initPinsListeners } from './pins.js';
 import {
@@ -784,11 +784,12 @@ function initApp() {
   const globalNotificationModalCancel = document.getElementById('global-notification-modal-cancel');
   const convNotificationModalClose = document.getElementById('conv-notification-modal-close');
   const convNotificationModalCancel = document.getElementById('conv-notification-modal-cancel');
-  const convNotificationToggleBtn = document.getElementById('conv-notif-toggle-btn');
+  const convNotificationToggleBtn = document.getElementById('conv-notification-toggle-btn') || document.getElementById('conv-notif-toggle-btn');
   const soundModeInputs = document.querySelectorAll('input[name="sound-mode"]');
   const soundVolumeSlider = document.getElementById('sound-volume-slider');
   const soundTestBtn = document.getElementById('sound-test-btn');
   const desktopNotifToggleBtn = document.getElementById('desktop-notif-toggle-btn');
+  const desktopNotifTestBtn = document.getElementById('desktop-notif-test-btn');
   const snoozeButtons = document.querySelectorAll('.snooze-btn');
   const snoozeResumeBtn = document.getElementById('snooze-resume-btn');
 
@@ -861,6 +862,12 @@ function initApp() {
     soundTestBtn.addEventListener('click', () => playNotificationSound(true));
   }
 
+  if (desktopNotifTestBtn) {
+    desktopNotifTestBtn.addEventListener('click', () => {
+      showDesktopNotification({ title: 'BambooChat 테스트 알림', body: '데스크톱 알림이 정상적으로 작동합니다.' });
+      showToast('테스트 알림을 전송했습니다.', 'info');
+    });
+  }
   if (desktopNotifToggleBtn) {
     desktopNotifToggleBtn.addEventListener('click', async () => {
       const { hasSupport, permission } = checkDesktopNotificationContext();

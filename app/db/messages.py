@@ -690,6 +690,28 @@ def get_recent_messages(
         msg_ids = [row["id"] for row in rows]
         items = _message_attachments(conn, msg_ids)
         reactions = get_reactions_for_messages(conn, "channel", msg_ids, current_user_id)
+        from app.db.games import get_user_quiz_badges_map
+        author_ids = list({row["user_id"] for row in rows if row["user_id"]})
+        badges_map = get_user_quiz_badges_map(author_ids) if author_ids else {}
+        pinned_ids = {
+            r[0]
+            for r in conn.execute(
+                "SELECT message_id FROM pinned_messages WHERE conversation_type='channel' AND conversation_id=?",
+                (str(channel_id),),
+            ).fetchall()
+        }
+        return [
+            {
+                **_message_public(
+                    row,
+                    items[row["id"]],
+                    reactions.get(row["id"], []),
+                    is_pinned=(row["id"] in pinned_ids),
+                ),
+                "quiz_badge": badges_map.get(row["user_id"]) if row["user_id"] else None,
+            }
+            for row in rows
+        ]
         pinned_ids = {
             r[0]
             for r in conn.execute(

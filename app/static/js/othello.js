@@ -322,8 +322,8 @@ function renderOthLobbyRooms(rooms) {
 
   grid.innerHTML = rooms.map(room => {
     const isPlaying = room.game_started && !room.result;
-    const bName = room.black || '<span style="color:var(--oth-muted);opacity:0.6;">(비어있음)</span>';
-    const wName = room.white || '<span style="color:var(--oth-muted);opacity:0.6;">(비어있음)</span>';
+    const bName = room.black ? escapeHtml(room.black) : '<span style="color:var(--oth-muted);opacity:0.6;">(비어있음)</span>';
+    const wName = room.white ? escapeHtml(room.white) : '<span style="color:var(--oth-muted);opacity:0.6;">(비어있음)</span>';
     const specCount = room.spectator_count || 0;
 
     return `

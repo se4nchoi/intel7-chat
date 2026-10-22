@@ -38,7 +38,7 @@ export async function fetchLeaderboard(period = 'weekly', category = '') {
 }
 
 export function handleLeaderboardInvalidated() {
-  const activeNav = document.querySelector('.quiz-nav-btn.active')?.dataset.nav;
+  const activeNav = (document.querySelector('.cbt-nav-item.active') || document.querySelector('.quiz-nav-btn.active'))?.dataset.nav;
   if (activeNav === 'leaderboard') {
     fetchLeaderboard(currentLeaderboardPeriod, currentLeaderboardCategory);
   }

@@ -469,6 +469,7 @@ class OmokManager(BaseTurnBasedGameManager):
             self._complete_game(room, {"type": "resign", "winner": "w", "desc": "흑(黑) 기권으로 인한 백(白) 승리"})
         elif room["white"] and str(room["white"]["id"]) == user_id:
             self._complete_game(room, {"type": "resign", "winner": "b", "desc": "백(白) 기권으로 인한 흑(黑) 승리"})
+        await self.broadcast_lobby()
         await self.broadcast_room(room_id)
 
     async def send_room_chat(self, user: dict, room_id: str, text: str) -> None:

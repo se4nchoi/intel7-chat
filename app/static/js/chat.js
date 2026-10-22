@@ -203,7 +203,8 @@ export function createAttachmentRemovedNotice(attachment) {
 
 export function createAttachmentEntry(attachment) {
   const entry = document.createElement('div');
-  entry.className = 'attachment-entry';
+  entry.className = 'attachment-entry msg-attachment';
+  if (attachment.id != null) entry.dataset.attachmentId = String(attachment.id);
   if (attachment.removed) {
     entry.appendChild(createAttachmentRemovedNotice(attachment));
     return entry;
@@ -994,7 +995,13 @@ export function appendMessageNode(msg, previousMsg) {
   shell.className = 'message-shell';
   const bubble = document.createElement('div');
   bubble.className = 'msg-bubble markdown-body';
-  const reply = createReplyQuote(msg.reply, row);
+  if (msg.is_hidden && state.currentUser?.role !== 'admin') {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'hidden-msg-placeholder';
+    placeholder.textContent = '🙈 관리자에 의해 숨겨진 메시지입니다';
+    bubble.appendChild(placeholder);
+  } else {
+    const reply = createReplyQuote(msg.reply, row);
   if (reply) bubble.appendChild(reply);
 
   if (msg.content) {
@@ -1010,6 +1017,7 @@ export function appendMessageNode(msg, previousMsg) {
     bubble.appendChild(group);
   }
 
+  }
   shell.appendChild(bubble);
   row.appendChild(shell);
 
@@ -1034,6 +1042,7 @@ export function appendMessageNode(msg, previousMsg) {
       removeTimer = null;
     }
     if (row.classList.contains('is-editing') || messageActionsBlocked() || (e?.buttons & 1)) return;
+    if (activeActions && !activeActions.isConnected) activeActions = null;
     if (activeActions && activeActions.classList.contains('has-open-menu')) return;
 
     if (!activeActions) {
@@ -1109,6 +1118,7 @@ export function appendMessageNode(msg, previousMsg) {
       removeTimer = null;
     }
     if (row.classList.contains('is-editing') || messageActionsBlocked() || (e.buttons & 1)) return;
+    if (activeActions && !activeActions.isConnected) activeActions = null;
     if (activeActions) return;
 
     if (e.sourceCapabilities?.firesTouchEvents) return;
@@ -1181,7 +1191,7 @@ export function appendMessageNode(msg, previousMsg) {
       }
     }
   };
-  document.addEventListener('pointerdown', onDocPointerDown);
+  // Global pointerdown cleanup is handled once in initMessageSelectionGuard()
 
   row.addEventListener('mouseenter', onRowMouseEnter);
   row.addEventListener('mousemove', onRowMouseMove);
@@ -1618,6 +1628,9 @@ export function initChatListeners(onSendMessage) {
         strike: ['~~', '~~', '취소선 텍스트'],
         code: ['`', '`', '코드'],
         codeblock: ['```\n', '\n```', '코드 블록'],
+        link: ['[', '](https://)', '링크 텍스트'],
+        quote: ['> ', '', '인용문'],
+        bullet: ['- ', '', '목록 항목'],
       };
 
       if (wrapMap[action]) {
@@ -1643,6 +1656,24 @@ export function initChatListeners(onSendMessage) {
     });
 
     msgInput.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+        const key = event.key.toLowerCase();
+        const shortcutMap = {
+          b: !event.shiftKey ? 'bold' : null,
+          i: !event.shiftKey ? 'italic' : null,
+          x: event.shiftKey ? 'strike' : null,
+          k: !event.shiftKey ? 'link' : null,
+        };
+        const action = shortcutMap[key];
+        if (action && markdownToolbar) {
+          const btn = markdownToolbar.querySelector(`[data-markdown="${action}"]`);
+          if (btn) {
+            event.preventDefault();
+            btn.click();
+            return;
+          }
+        }
+      }
       if (!event.isComposing && (event.key === 'Enter' && !event.shiftKey)) {
         event.preventDefault();
         onSendMessage();
@@ -1794,6 +1825,34 @@ export function updateMessageHiddenInDOM(hiddenMsg, isHidden) {
   if (!row) return;
   const hidden = Boolean(isHidden ?? hiddenMsg.is_hidden);
   row.classList.toggle('hidden-msg', hidden);
+  const model = messageModels.get(row) || hiddenMsg;
+  Object.assign(model, hiddenMsg, { is_hidden: hidden });
+  messageModels.set(row, model);
+  const bubble = row.querySelector('.msg-bubble');
+  if (bubble && !row.classList.contains('is-editing') && state.currentUser?.role !== 'admin') {
+    bubble.replaceChildren();
+    if (hidden) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'hidden-msg-placeholder';
+      placeholder.textContent = '🙈 관리자에 의해 숨겨진 메시지입니다';
+      bubble.appendChild(placeholder);
+    } else {
+      const reply = createReplyQuote(model.reply, row);
+      if (reply) bubble.appendChild(reply);
+      if (model.content) {
+        const markdown = document.createElement('div');
+        renderMessageText(markdown, model, bubble);
+        bubble.appendChild(markdown);
+      }
+      const attachments = normaliseMessageAttachments(model);
+      if (attachments.length) {
+        const group = document.createElement('div');
+        group.className = 'message-attachments';
+        attachments.forEach(attachment => group.appendChild(createAttachmentEntry(attachment)));
+        bubble.appendChild(group);
+      }
+    }
+  }
 
   const meta = row.querySelector('.msg-meta') || row.querySelector('.dm-label');
   let badge = meta?.querySelector('.hidden-indicator-badge');

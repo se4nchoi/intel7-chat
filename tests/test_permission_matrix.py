@@ -148,7 +148,6 @@ def test_deactivated_account_loses_http_access(world):
     assert call(world, "carol", "GET", "/api/history/public").status_code == 401
 
 
-@pytest.mark.xfail(strict=True, reason="Hidden messages are sent to students with full content; hiding is client-side only.")
 def test_hidden_channel_message_content_is_withheld_from_students(world):
     call(world, "admin", "POST", "/api/messages/{channel_msg_id}/hide", json={"hidden": True})
     response = call(world, "carol", "GET", "/api/history/public")

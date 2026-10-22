@@ -527,7 +527,17 @@ class JanggiManager(BaseTurnBasedGameManager):
         board: JanggiBoard = room["board"]
         score = board.calculate_score()
         winner = score["leading"]
+        user_id = str(user["id"])
+        is_cho = room["cho"] and str(room["cho"]["id"]) == user_id
+        is_han = room["han"] and str(room["han"]["id"]) == user_id
+        if not (is_cho or is_han):
+            await self._send_error(user, "대국자만 점수 판정을 요청할 수 있습니다.")
+            return
+        if len(room.get("move_history", [])) < 20 and board.consecutive_passes < 1 and not board.is_bikjang():
+            await self._send_error(user, "점수 판정은 최소 20수(10턴) 이상 진행된 후에만 요청할 수 있습니다.")
+            return
         desc = f"점수판정: 초 {score['cho']}점 vs 한 {score['han']}점 ({'초' if winner == 'cho' else '한'} 판정승)"
+        await self.broadcast_lobby()
         self._complete_game(room, {"type": "score", "winner": winner, "desc": desc})
         await self.broadcast_room(room_id)
 
@@ -541,6 +551,7 @@ class JanggiManager(BaseTurnBasedGameManager):
             self._complete_game(room, {"type": "resign", "winner": "han", "desc": "초(楚) 기권으로 인한 한(漢) 승리"})
         elif room["han"] and str(room["han"]["id"]) == user_id:
             self._complete_game(room, {"type": "resign", "winner": "cho", "desc": "한(漢) 기권으로 인한 초(楚) 승리"})
+        await self.broadcast_lobby()
         await self.broadcast_room(room_id)
 
     async def send_room_chat(self, user: dict, room_id: str, text: str) -> None:

@@ -1576,6 +1576,17 @@ kbd {
   background: rgba(239, 68, 68, 0.04);
 }
 
+.hidden-msg-placeholder {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+}
+
 .msg-row.highlight-flash .msg-bubble {
   animation: highlightFlash 2s cubic-bezier(0.16, 1, 0.3, 1);
 }

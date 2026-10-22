@@ -745,6 +745,7 @@ def get_user_quiz_badges_map(user_ids: List[int]) -> Dict[int, Optional[Dict[str
             f"""SELECT u.id AS user_id,
                        COALESCE(st.total_score, 0) AS total_score,
                        COALESCE(st.current_streak, 0) AS current_streak,
+                       st.last_solved_date AS last_solved_date,
                        COALESCE(u.quiz_badge_selection, 'score') AS badge_selection
                 FROM users u LEFT JOIN user_quiz_stats st ON st.user_id=u.id
                 WHERE u.id IN ({placeholders})""",

@@ -3,7 +3,7 @@
 // ============================================================
 
 import { state } from './state.js';
-import { showToast } from './utils.js';
+import { escapeHtml, showToast } from './utils.js';
 import { applyTitlesToInputs, fetchCategoriesSummary, getCategoryIcon } from './quiz.js';
 
 let editingMySetId = null;
@@ -12,6 +12,12 @@ export const setEditingMySetId = (v) => { editingMySetId = v; };
 let adminQuizSearch = '';
 let adminQuizCategory = '';
 let adminQuizFlaggedOnly = false;
+export const setAdminQuizSearch = (v) => { adminQuizSearch = v; };
+export const setAdminQuizCategory = (v) => { adminQuizCategory = v; };
+export const toggleAdminQuizFlaggedOnly = () => {
+  adminQuizFlaggedOnly = !adminQuizFlaggedOnly;
+  return adminQuizFlaggedOnly;
+};
 let currentFlagTargetQuiz = null;
 
 export function notebookPromptLegacy(expertise) {
@@ -497,8 +503,8 @@ export async function fetchAdminQuizzes() {
 
       const meta = document.createElement('div');
       meta.className = 'admin-quiz-item-meta';
-      meta.innerHTML = `<strong>#${q.id}</strong> · <span class="badge">${q.category}</span> · ${q.difficulty} · ${q.question_type}`;
-      if (q.author_name) meta.innerHTML += ` · 출제: ${q.author_name}`;
+      meta.innerHTML = `<strong>#${escapeHtml(q.id)}</strong> · <span class="badge">${escapeHtml(q.category)}</span> · ${escapeHtml(q.difficulty)} · ${escapeHtml(q.question_type)}`;
+      if (q.author_name) meta.innerHTML += ` · 출제: ${escapeHtml(q.author_name)}`;
 
       if (q.open_flags_count > 0) {
         const flagIndicator = document.createElement('span');
