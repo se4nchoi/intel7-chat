@@ -222,6 +222,10 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .answer-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .endorsed-mark { color: var(--ok); font-weight: 700; font-size: 12px; }
 .answer-form textarea { min-height: 110px; }
+.queue-sort { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 10px; }
+.queue-sort button { padding: 4px 8px; font-size: 12px; }
+.queue-sort button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.queue-age { color: var(--muted); }
 .draft-tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .draft-tools button { font-size: 12px; padding: 5px 10px; }
 .draft-tools button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }

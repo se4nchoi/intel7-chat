@@ -688,9 +688,10 @@ async def mark_read(cohort_id: int, channel_id: int, body: ReadMark, request: Re
 @router.get("/api/cohorts/{cohort_id}/questions/page")
 async def questions_page(cohort_id: int, request: Request, search: str = Query('', max_length=200),
                          filter: str = Query('all', pattern=r'^(all|mine|resolved|unanswered|no-instructor)$'),
-                         before: int | None = Query(None, ge=1)):
+                         before: int | None = Query(None, ge=1),
+                         sort: str = Query('newest', pattern=r'^(newest|oldest)$')):
     account, _ = await _cohort(request, cohort_id)
-    return await asyncio.to_thread(db.questions_page, cohort_id, account['id'], search.strip(), filter, before)
+    return await asyncio.to_thread(db.questions_page, cohort_id, account['id'], search.strip(), filter, before, sort=sort)
 
 
 @router.get("/api/cohorts/{cohort_id}/questions/{question_id}")

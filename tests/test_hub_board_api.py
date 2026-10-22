@@ -395,6 +395,29 @@ def test_questions_page_search_totals_and_old_direct_links(hub):
     assert student.get(base + '/page', params={'filter': 'unknown'}).status_code == 422
 
 
+def test_instructor_queue_oldest_cursor_covers_equal_timestamps_and_new_posts(hub):
+    from app.hub import db
+    app, cid, _ = hub
+    teacher = login(app, 'teacher')
+    with db.connect() as conn:
+        aid = conn.execute("SELECT id FROM hub_accounts WHERE username='student'").fetchone()['id']
+        ids = [row['id'] for row in conn.execute("""INSERT INTO hub_questions(cohort_id,author_id,title,body,created_at)
+            SELECT %s,%s,'Queue ' || n,'Body',timestamp '2026-01-01 09:00:00+00'
+            FROM generate_series(1,70) n RETURNING id""", (cid, aid))]
+    url = f'/hub/api/cohorts/{cid}/questions/page'
+    page = teacher.get(url, params={'filter': 'no-instructor', 'sort': 'oldest'}).json()
+    assert [row['id'] for row in page['items']] == sorted(ids)[:30]
+    seen = [row['id'] for row in page['items']]
+    with db.connect() as conn:
+        new_id = conn.execute("""INSERT INTO hub_questions(cohort_id,author_id,title,body)
+            VALUES (%s,%s,'New queue item','Body') RETURNING id""", (cid, aid)).fetchone()['id']
+    while page['has_more']:
+        page = teacher.get(url, params={'filter': 'no-instructor', 'sort': 'oldest', 'before': page['next_before']}).json()
+        seen.extend(row['id'] for row in page['items'])
+    assert seen == sorted([*ids, new_id])
+    assert teacher.get(url, params={'sort': 'random'}).status_code == 422
+
+
 def test_file_cursor_covers_equal_timestamps_without_duplicates(hub):
     from app.hub import db
     app, cid, _ = hub

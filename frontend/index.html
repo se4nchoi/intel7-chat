@@ -177,6 +177,11 @@
           <button data-filter="mine" aria-pressed="false">내 질문</button>
           <button data-filter="resolved" aria-pressed="false">해결됨</button>
         </div>
+        <div id="queue-sort" class="queue-sort hidden" role="group" aria-label="강사 답변 대기 순서">
+          <span class="muted small">대기 순서</span>
+          <button type="button" data-queue-sort="oldest" aria-pressed="true">오래된 순</button>
+          <button type="button" data-queue-sort="newest" aria-pressed="false">최신 순</button>
+        </div>
         <ul id="question-list" class="feed"></ul>
         <p id="question-count" class="muted small" role="status"></p><button id="questions-more" class="hidden" type="button">질문 더 보기</button>
       </div>
@@ -187,6 +192,7 @@
               <p id="post-meta" class="post-meta"></p>
               <div class="post-tools">
                 <button id="post-follow" class="ghost" type="button" aria-pressed="false" disabled>알림 설정 불러오는 중</button>
+                <button id="post-next-queue" class="ghost hidden" type="button">다음 대기 질문 →</button>
                 <button id="post-resolve" class="ghost hidden" type="button">해결됨으로 표시</button>
                 <button id="post-edit" class="ghost hidden" type="button">질문 수정</button>
                 <button id="post-delete" class="ghost danger-text hidden" type="button">질문 삭제</button>

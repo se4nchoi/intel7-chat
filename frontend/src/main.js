@@ -7,6 +7,7 @@ import { parseRoster, credentialsCsv, rosterPreviewSummary } from './roster.js';
 import { notificationUrl, readAnswerTarget } from './notification-links.js';
 import { plainExcerpt } from './excerpt.js';
 import { questionFileError, mergeQuestionFiles, formatFileSize, insertCodeFence } from './composer.js';
+import { waitingAge, nextQueueQuestion } from './question-queue.js';
 import { ClassroomMedia } from './media.js';
 import { ClassroomSession } from './classroom-session.js';
 import { ConnectionStatus } from './connection-status.js';
@@ -30,8 +31,8 @@ const state = {
   channelList: [], unread: new Map(), online: new Set(), members: [], holding: null, historyLoaded: false, ackTimer: null,
   messageMap: new Map(), pins: [], dms: [], newBelow: 0,
   mediaAvailable: null, accounts: [], managementTab: 'personal', academyTask: 'accounts',
-  questionCursor: null, questionTotal: 0, boardStats: null, fileCursor: null, fileItems: [], fileSearch: '', fileTotal: 0,
-  questions: [], question: null, filter: 'all', search: '', boardView: 'home', fileCount: null,
+  questionCursor: null, questionHasMore: false, questionTotal: 0, boardStats: null, fileCursor: null, fileItems: [], fileSearch: '', fileTotal: 0,
+  questions: [], question: null, filter: 'all', queueSort: 'oldest', search: '', boardView: 'home', fileCount: null,
 };
 
 /* ---------- small helpers ---------- */
@@ -219,7 +220,7 @@ function resetContent() {
   closeChat(); void leaveMedia().catch(error => status(error.message, true));
   state.channel = null; state.question = null; state.questions = []; state.lastMessage = null; state.lastSeenId = 0; state.fileCount = null;
   state.channelList = []; state.unread = new Map(); state.online = new Set(); state.members = []; state.holding = null; state.historyLoaded = false;
-  state.messageMap = new Map(); state.pins = []; state.dms = []; state.newBelow = 0; state.questionCursor = null; state.boardStats = null; state.fileItems = []; state.fileCursor = null; renderPins();
+  state.messageMap = new Map(); state.pins = []; state.dms = []; state.newBelow = 0; state.questionCursor = null; state.questionHasMore = false; state.boardStats = null; state.fileItems = []; state.fileCursor = null; renderPins();
   clearTimeout(state.ackTimer); updateTitle();
   for (const id of ['channel-list', 'messages', 'question-list', 'instructor-answers', 'student-answers', 'file-list', 'member-list', 'board-stats']) $(id).replaceChildren();
   $('channel-heading').textContent = '채널을 선택하세요';
@@ -888,6 +889,7 @@ $('stage-toggle').addEventListener('click', event => {
 function boardUrl(view, questionId) {
   const url = new URL(spaceUrl(state.cohort.slug, 'board'), location.origin);
   if (state.filter !== 'all') url.searchParams.set('filter', state.filter);
+  if (state.queueSort === 'newest') url.searchParams.set('sort', 'newest');
   if (state.search) url.searchParams.set('q', state.search);
   if (view === 'files' || view === 'compose') url.searchParams.set('view', view);
   if (view === 'files' && state.fileSearch) url.searchParams.set('file', state.fileSearch);
@@ -903,6 +905,7 @@ async function loadBoard() {
   const epoch = state.epoch;
   const { questionId: postId, answerId } = readAnswerTarget(url.search, url.hash);
   state.filter = Object.hasOwn(FILTERS, url.searchParams.get('filter')) ? url.searchParams.get('filter') : 'all';
+  state.queueSort = url.searchParams.get('sort') === 'newest' ? 'newest' : 'oldest';
   state.search = (url.searchParams.get('q') || '').slice(0, 200); $('post-search').value = state.search;
   state.fileSearch = (url.searchParams.get('file') || '').slice(0, 200); $('file-search').value = state.fileSearch;
   if (url.searchParams.get('view') === 'files') { showBoardView('files', { navigate: false }); await loadFiles(); return; }
@@ -921,7 +924,7 @@ async function loadBoard() {
 async function loadQuestions({ reset = true, quiet = false } = {}) {
   const epoch = state.epoch, cohort = state.cohort, request = ++questionRequest;
   if (!cohort) return;
-  const params = new URLSearchParams({ search: state.search, filter: state.filter });
+  const params = new URLSearchParams({ search: state.search, filter: state.filter, sort: state.filter === 'no-instructor' && isManager() ? state.queueSort : 'newest' });
   if (!reset && state.questionCursor) params.set('before', state.questionCursor);
   if (!quiet) regionState('board-state', 'loading', '질문을 불러오고 있습니다…');
   $('questions-more').disabled = true;
@@ -931,7 +934,7 @@ async function loadQuestions({ reset = true, quiet = false } = {}) {
     const items = Array.isArray(data) ? data : data.items;
     state.questions = reset ? items : [...new Map([...state.questions, ...items].map(q => [q.id, q])).values()];
     state.questionTotal = data.total ?? items.length; state.boardStats = data.stats || null;
-    state.questionCursor = data.next_before || null;
+    state.questionCursor = data.next_before || null; state.questionHasMore = !!data.has_more;
     $('questions-more').classList.toggle('hidden', !data.has_more);
     $('question-count').textContent = `${state.questionTotal}개 중 ${state.questions.length}개 표시`;
     regionState('board-state'); renderFeed(); renderStats();
@@ -961,6 +964,22 @@ async function refreshBoard() {
   regionState('board-update');
 }
 $('questions-more').addEventListener('click', () => loadQuestions({ reset: false }));
+$('post-next-queue').addEventListener('click', async event => {
+  if (state.filter !== 'no-instructor' || !isManager() || !state.question) return;
+  const button = event.currentTarget, cohort = state.cohort, currentId = state.question.id;
+  button.disabled = true;
+  try {
+    let next = nextQueueQuestion(state.questions, currentId);
+    if (!next && state.questionHasMore) {
+      await loadQuestions({ reset: false });
+      if (cohort !== state.cohort || state.question?.id !== currentId) return;
+      next = nextQueueQuestion(state.questions, currentId);
+    }
+    if (next) await selectQuestion(next);
+    else status(state.questionHasMore ? '다음 질문을 불러오지 못했습니다. 다시 시도해 주세요.' : '대기 중인 질문의 마지막입니다.');
+  } catch (error) { status(error.message, true); }
+  finally { button.disabled = false; }
+});
 const FILTERS = {
   all: () => true,
   unanswered: q => !q.resolved && Number(q.answer_count) === 0,
@@ -987,6 +1006,7 @@ function renderFeed() {
         q.resolved ? el('span', { class: 'tag', text: '✓ 해결됨' }) : null,
         q.instructor_answered ? el('span', { class: 'tag instructor', text: '🎓 강사 답변' }) : null,
         q.endorsed ? el('span', { class: 'endorsed-mark', text: '✓ 인정됨' }) : null,
+        state.filter === 'no-instructor' ? el('span', { class: 'queue-age', text: `· ${waitingAge(q.created_at)}`, title: stamp(q.created_at) }) : null,
         answers === 0 && !q.resolved ? el('span', { class: 'tag danger', text: '미답변' }) : el('span', { text: `답변 ${answers}` }),
         el('span', { text: `· ${q.display_name || q.username}` })));
     nodes.push(el('li', { class: `feed-item${answers === 0 && !q.resolved ? ' unanswered' : ''}` }, button));
@@ -1007,6 +1027,9 @@ function renderStats() {
 function syncFilterButtons() {
   for (const button of document.querySelectorAll('.filters button')) button.setAttribute('aria-pressed', String(button.dataset.filter === state.filter));
   for (const button of document.querySelectorAll('[data-board-filter]')) button.setAttribute('aria-current', String(state.boardView === 'home' && button.dataset.boardFilter === state.filter));
+  $('queue-sort').classList.toggle('hidden', state.filter !== 'no-instructor' || !isManager());
+  for (const button of document.querySelectorAll('[data-queue-sort]')) button.setAttribute('aria-pressed', String(button.dataset.queueSort === state.queueSort));
+  $('post-next-queue').classList.toggle('hidden', state.filter !== 'no-instructor' || state.boardView !== 'post' || !isManager());
 }
 function selectBoardFilter(filter) {
   state.filter = filter; showBoardView('home'); closeNav(); syncFilterButtons(); void loadQuestions();
@@ -1015,6 +1038,10 @@ function selectBoardFilter(filter) {
 for (const button of document.querySelectorAll('.filters button, [data-board-filter]')) {
   button.addEventListener('click', () => selectBoardFilter(button.dataset.filter || button.dataset.boardFilter));
 }
+for (const button of document.querySelectorAll('[data-queue-sort]')) button.addEventListener('click', () => {
+  if (state.queueSort === button.dataset.queueSort) return;
+  state.queueSort = button.dataset.queueSort; syncFilterButtons(); writeBoardUrl(state.boardView, state.question?.id, true); void loadQuestions();
+});
 let questionSearchTimer;
 $('post-search').addEventListener('input', event => { state.search = event.target.value.slice(0, 200); clearTimeout(questionSearchTimer); questionSearchTimer = setTimeout(() => { writeBoardUrl('home', null, true); void loadQuestions(); }, 250); });
 $('board-back').addEventListener('click', () => { showBoardView('home'); void loadQuestions(); });
@@ -1046,12 +1073,15 @@ async function selectQuestion(question, updateUrl = true, { quiet = false, answe
   $('answer-draft-status').textContent = $('answer-form').elements.body.value ? '이 탭에 저장한 답변 초안을 불러왔습니다.' : '';
   setDraftPreview('answer', false);
   if (!quiet) showBoardView('post', { navigate: false });
+  syncFilterButtons();
   if (updateUrl) writeBoardUrl('post', question.id);
   $('board-heading').textContent = question.title;
   $('post-title').textContent = question.title;
   $('post-meta').replaceChildren(...[avatar(question.display_name || question.username, question.username, true),
     el('strong', { text: question.display_name || question.username }), roleTag(question.role),
-    el('span', { text: `· ${stamp(question.created_at)}` }), el('span', { text: `· 질문 #${question.id}` })].filter(Boolean));
+    el('span', { text: `· ${stamp(question.created_at)}` }),
+    state.filter === 'no-instructor' ? el('span', { class: 'queue-age', text: `· ${waitingAge(question.created_at)}` }) : null,
+    el('span', { text: `· 질문 #${question.id}` })].filter(Boolean));
   $('post-body').replaceChildren(...[renderBody(el('span'), question.body), editedMark(question)].filter(Boolean));
   $('post-delete').classList.toggle('hidden', !canDelete(question));
   $('post-resolve').classList.toggle('hidden', !canDelete(question));

@@ -318,7 +318,9 @@ def question_detail(cohort_id: int, question_id: int):
         return conn.execute(QUESTION_SELECT + " WHERE q.cohort_id=%s AND q.id=%s AND q.deleted_at IS NULL " + QUESTION_GROUP, (cohort_id, question_id)).fetchone()
 
 
-def questions_page(cohort_id: int, account_id: int, search: str = '', filter_name: str = 'all', before: int | None = None, limit: int = 30):
+def questions_page(cohort_id: int, account_id: int, search: str = '', filter_name: str = 'all', before: int | None = None, limit: int = 30, sort: str = 'newest'):
+    if sort not in {'newest', 'oldest'}:
+        raise ValueError('Invalid question sort')
     where = " q.cohort_id=%s AND q.deleted_at IS NULL "
     params = [cohort_id]
     filters = {'all': 'TRUE', 'mine': 'q.author_id=%s', 'resolved': 'q.resolved_at IS NOT NULL',
@@ -339,9 +341,10 @@ def questions_page(cohort_id: int, account_id: int, search: str = '', filter_nam
             count(*) FILTER (WHERE q.resolved_at IS NOT NULL) AS resolved
             FROM hub_questions q WHERE q.cohort_id=%s AND q.deleted_at IS NULL""", (cohort_id,)).fetchone()
         if before is not None:
-            where += ' AND q.id<%s'
+            where += ' AND q.id' + ('<' if sort == 'newest' else '>') + '%s'
             params.append(before)
-        rows = conn.execute(QUESTION_SELECT + ' WHERE ' + where + QUESTION_GROUP + ' ORDER BY q.id DESC LIMIT %s', [*params, limit + 1]).fetchall()
+        direction = 'DESC' if sort == 'newest' else 'ASC'
+        rows = conn.execute(QUESTION_SELECT + ' WHERE ' + where + QUESTION_GROUP + f' ORDER BY q.id {direction} LIMIT %s', [*params, limit + 1]).fetchall()
     more = len(rows) > limit
     items = rows[:limit]
     return {'items': items, 'total': total, 'stats': stats, 'has_more': more, 'next_before': items[-1]['id'] if more else None}

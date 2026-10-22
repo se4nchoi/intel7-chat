@@ -140,7 +140,7 @@ Acceptance: administrators cannot search nonparticipant DMs; removed memberships
 
 ## Current completion state — 2026-10-22
 
-Slice 1 (U01–U04) is implemented. U05–U08 are implemented in code with browser verification pending; U09–U10 remain planned.
+Slice 1 (U01–U04) is implemented. U05–U08 are implemented in code with browser verification pending; U09 is in progress, and U10 remains planned.
 
 - **U01:** manual account creation requires first-login password change; the administrator list exposes pending onboarding. Existing accounts, bootstrap-admin behavior, and reset policy are preserved.
 - **U02:** preview action totals exclude invalid rows and return `total_rows` and `invalid_rows`. The UI shows blocking-row counts, an errors-only view, and data-record numbering (excluding header/blank records; quoted multiline cells remain one record). Any invalid row still blocks the entire atomic batch. Corrected previews must be reviewed again.
@@ -174,3 +174,9 @@ Verification: 38 frontend unit tests, Vite production build, and `git diff --che
 ### Slice 3B progress note — 2026-10-22
 
 Academy management now separates Accounts, Cohorts, and Roster tasks inside the existing permission-gated dialog. The roster workflow shows its current step and target cohort during input, preview, and credential distribution; switching tasks is disabled while an import is applying. Account search remains with the Accounts task. The cohort setup checklist reads saved channels and memberships from the API and links directly to channel, instructor, and roster actions without enrolling anyone automatically. Password and channel setup fields now retain visible labels. Responsive and keyboard/browser verification remain open before considering U08 release-ready.
+
+### Slice 4A implementation note — 2026-10-22
+
+The existing instructor-answer-pending filter now supports explicit oldest/newest ordering, elapsed waiting time, and navigation to the next waiting question. The API validates the sort value and uses unique question-ID cursor comparisons in the chosen direction; repeated timestamps cannot tie or skip rows, and new questions arriving during paging do not reorder previously loaded rows. No schema/index migration was needed for this sequence-based queue.
+
+Verification: 40 frontend tests, Vite build, and Python syntax checks passed. A disposable PostgreSQL integration test was added for equal timestamps, concurrent insertion, and invalid sort values, but it has not run here because `MADI_TEST_DATABASE_URL` is not configured. Live queue navigation, archived-cohort read-only behavior, and responsive browser checks remain before U09 is release-ready.
