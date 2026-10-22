@@ -18,6 +18,12 @@ jobs:
       - name: Check JavaScript syntax
         run: node scripts/check_js_syntax.mjs
 
+      - name: Test code snippets and drag selection
+        run: node --experimental-vm-modules scripts/test_code_snippets.mjs
+
+      - name: Test file transfer completion
+        run: node --experimental-vm-modules scripts/test_file_transfers.mjs
+
       - name: Test screen-sharing connection lifecycle
         run: node --experimental-vm-modules scripts/test_screenshare.mjs
 

@@ -169,6 +169,13 @@
   gap: 5px;
 }
 .msg-meta .nick { font-weight: 600; color: var(--text); }
+.msg-edited-badge, .edited-indicator {
+  margin-left: 5px;
+  font-size: .65rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 
 .msg-bubble {
   padding: 8px 13px;
@@ -361,6 +368,8 @@
   height: 19px;
   display: block;
 }
+.msg-action-copy-btn { width: auto; min-width: 48px; padding: 0 8px; font-size: .78rem; font-weight: 600; }
+.message-selection-active .message-actions { opacity: 0 !important; visibility: hidden; pointer-events: none !important; animation: none; }
 
 /* Discord More Options Dropdown Menu */
 .msg-more-menu-popover {
@@ -427,6 +436,9 @@
   font-size: 0.9rem;
   opacity: 0.9;
 }
+.msg-format-heading { margin-top: 4px; padding: 8px 10px 4px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: .7rem; }
+.msg-more-menu-item[aria-checked="true"] { color: #9ab8ff; }
+.message-plain-text { white-space: pre-wrap; }
 
 .code-copy-btn {
   border: 1px solid var(--border);
@@ -768,26 +780,65 @@ button.reaction-picker-emoji-btn.active,
 .msg-row.attention-for-me .msg-bubble {
   box-shadow: 0 1px 8px rgba(0, 0, 0, .16);
 }
+.code-snippet-group {
+  width: min(620px, 68vw);
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  --code-surface: #2b2d35;
+  --code-text: #e3e3e8;
+  --code-muted: #b6b8c2;
+}
+.msg-row .msg-bubble.code-message { padding: 0; background: transparent; }
+.code-snippet-tools { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 10px; color: var(--text-muted); font-size: .76rem; }
 .code-block {
   position: relative;
-  margin: .35rem 0;
+  margin: 0 0 16px;
+  min-width: 0;
+  border: 0;
+  border-radius: 16px;
+  background: var(--code-surface);
+  color: var(--code-text);
+  overflow: hidden;
 }
+.code-block:last-child { margin-bottom: 0; }
+.code-block-header { padding: 14px 18px 0; }
+.code-language { font-size: .95rem; font-weight: 600; }
 .code-block pre {
-  background: rgba(0, 0, 0, .38);
-  border: 1px solid rgba(255, 255, 255, .06);
-  border-radius: 8px;
-  max-width: min(620px, 68vw);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  max-width: 100%;
   overflow-x: auto;
-  padding: 12px;
+  padding: 16px 18px 20px;
   white-space: pre;
+  color: var(--code-text);
+  font-size: .8rem;
+  line-height: 1.7;
 }
-.code-block pre code { background: transparent; padding: 0; }
-.code-copy-btn {
-  position: absolute;
-  right: 6px;
-  top: 6px;
-  z-index: 1;
+.code-block pre code { background: transparent; padding: 0; color: inherit; font-size: inherit; }
+.code-block-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; padding: 4px 12px 4px 18px; border-top: 3px solid var(--bg); color: var(--code-muted); font-size: .72rem; }
+.code-block-footer .code-copy-btn, .code-copy-all-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-left: auto;
+  flex: none;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
 }
+.code-block-footer .code-copy-btn:hover, .code-copy-all-btn:hover { background: rgba(255, 255, 255, .08); color: var(--code-text); }
+.code-copy-btn svg, .code-copy-all-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.code-copy-btn:focus-visible, .code-copy-all-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.code-snippet-notes { white-space: pre-wrap; color: var(--text-muted); font-size: .8rem; }
 
 .message-reply-quote {
   background: rgba(0, 0, 0, .2);

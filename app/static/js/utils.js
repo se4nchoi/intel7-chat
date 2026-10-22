@@ -2,6 +2,8 @@
 // Utilities Module: Formatting, Toast, Markdown & Helpers
 // ============================================================
 
+import { parseCodeSnippets, codeLanguageLabel, splitShellCommands } from './code_snippets.js';
+
 export function showToast(message, type = 'info') {
   const toastRegion = document.getElementById('toast-region');
   if (!toastRegion) return;
@@ -113,36 +115,12 @@ export function appendParagraph(container, lines) {
   container.appendChild(paragraph);
 }
 
-export function renderMarkdown(container, source) {
-  container.replaceChildren();
+function renderMarkdownText(container, source) {
   const lines = String(source || '').split('\n');
   let index = 0;
   while (index < lines.length) {
     if (!lines[index].trim()) {
       index += 1;
-      continue;
-    }
-    if (lines[index].trimStart().startsWith('```')) {
-      index += 1;
-      const codeLines = [];
-      while (index < lines.length && !lines[index].trimStart().startsWith('```')) {
-        codeLines.push(lines[index]);
-        index += 1;
-      }
-      if (index < lines.length) index += 1;
-      const wrapper = document.createElement('div');
-      wrapper.className = 'code-block';
-      const copy = document.createElement('button');
-      copy.type = 'button';
-      copy.className = 'code-copy-btn';
-      copy.textContent = '복사';
-      copy.addEventListener('click', () => copyText(codeLines.join('\n'), '코드를 복사했습니다.'));
-      const pre = document.createElement('pre');
-      const code = document.createElement('code');
-      code.textContent = codeLines.join('\n');
-      pre.appendChild(code);
-      wrapper.append(copy, pre);
-      container.appendChild(wrapper);
       continue;
     }
     if (/^\s*[-+•]\s+/.test(lines[index])) {
@@ -170,7 +148,6 @@ export function renderMarkdown(container, source) {
     const paragraphLines = [];
     while (
       index < lines.length && lines[index].trim() &&
-      !lines[index].trimStart().startsWith('```') &&
       !/^\s*[-+•]\s+/.test(lines[index]) &&
       !/^\s*>\s?/.test(lines[index])
     ) {
@@ -178,6 +155,119 @@ export function renderMarkdown(container, source) {
       index += 1;
     }
     appendParagraph(container, paragraphLines);
+  }
+}
+
+function snippetCopyButton(text, label, className = 'code-copy-btn', visibleLabel = '') {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  const copyPath = 'M9 5h10v14H9z M15 5V2H5v14h4';
+  path.setAttribute('d', copyPath);
+  icon.appendChild(path);
+  button.appendChild(icon);
+  if (visibleLabel) {
+    const textLabel = document.createElement('span');
+    textLabel.textContent = visibleLabel;
+    button.appendChild(textLabel);
+  }
+  let resetTimer;
+  button.addEventListener('click', async () => {
+    if (!await copyText(text, '코드를 복사했습니다.')) return;
+    clearTimeout(resetTimer);
+    path.setAttribute('d', 'm5 12 4 4L19 6');
+    button.setAttribute('aria-label', '복사됨');
+    button.title = '복사됨';
+    resetTimer = setTimeout(() => {
+      path.setAttribute('d', copyPath);
+      button.setAttribute('aria-label', label);
+      button.title = label;
+    }, 1600);
+  });
+  return button;
+}
+
+function createCodeCard(snippet, text, payload, commandNumber = 0) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'code-block';
+  const header = document.createElement('div');
+  header.className = 'code-block-header';
+  const label = document.createElement('span');
+  label.className = 'code-language';
+  label.textContent = /^(?:bash|sh|shell|zsh)$/i.test(snippet.language)
+    ? snippet.language.toLowerCase() : codeLanguageLabel(snippet.language);
+  header.appendChild(label);
+  const pre = document.createElement('pre');
+  const code = document.createElement('code');
+  code.textContent = text;
+  pre.appendChild(code);
+  const footer = document.createElement('div');
+  footer.className = 'code-block-footer';
+  const hint = document.createElement('span');
+  hint.textContent = commandNumber ? `명령어 ${commandNumber}` : codeLanguageLabel(snippet.language);
+  footer.append(hint, snippetCopyButton(payload,
+    commandNumber ? `명령 ${commandNumber} 복사` : snippet.language ? `${label.textContent} 코드 복사` : '코드 복사'));
+  wrapper.append(header, pre, footer);
+  return wrapper;
+}
+
+function appendCodeSnippet(container, snippet) {
+  const group = document.createElement('div');
+  group.className = 'code-snippet-group';
+  const shellCommands = /^(?:bash|sh|shell|zsh)$/i.test(snippet.language);
+  const rows = shellCommands ? splitShellCommands(snippet.code) : [{ type: 'code', text: snippet.code }];
+  const commandCount = rows.filter(item => item.type === 'command').length;
+  if (commandCount > 1) {
+    const tools = document.createElement('div');
+    tools.className = 'code-snippet-tools';
+    const count = document.createElement('span');
+    count.textContent = `명령어 ${commandCount}개`;
+    tools.append(count, snippetCopyButton(snippet.code, '전체 명령어 복사', 'code-copy-all-btn', '전체 복사'));
+    group.appendChild(tools);
+  }
+  const comments = [];
+  let commandNumber = 0;
+  for (const item of rows) {
+    if (item.type === 'comment') {
+      comments.push(item.text);
+      continue;
+    }
+    const displayText = [...comments.splice(0), item.text].join('\n');
+    group.appendChild(createCodeCard(snippet, displayText, item.text,
+      item.type === 'command' ? ++commandNumber : 0));
+  }
+  if (comments.length) {
+    const notes = document.createElement('pre');
+    notes.className = 'code-snippet-notes';
+    const code = document.createElement('code');
+    code.textContent = comments.join('\n');
+    notes.appendChild(code);
+    group.appendChild(notes);
+  }
+  container.appendChild(group);
+}
+
+export function renderMarkdown(container, source, format = 'auto') {
+  container.replaceChildren();
+  if (format === 'text') {
+    const plain = document.createElement('div');
+    plain.className = 'message-plain-text';
+    plain.textContent = String(source ?? '');
+    container.appendChild(plain);
+    return;
+  }
+  const parts = format === 'code' || format === 'commands'
+    ? [{ type: 'code', code: String(source ?? ''), language: format === 'commands' ? 'shell' : '', detected: false }]
+    : parseCodeSnippets(source);
+  for (const part of parts) {
+    if (part.type === 'code') appendCodeSnippet(container, part);
+    else renderMarkdownText(container, part.text);
   }
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   const textNodes = [];

@@ -295,6 +295,22 @@ def test_file_magic_controls_preview_and_download_requires_login():
     assert downloaded.status_code == 200
     assert downloaded.headers["content-type"].startswith("image/png")
 
+
+def test_korean_pdf_upload_and_download_preserve_filename_and_bytes():
+    client, _ = session_client("pdf-transfer")
+    filename = "PhysicalAI_Studio_1_Windows수업.pdf"
+    body = b"%PDF-1.7\n" + bytes(range(256)) * 1024
+    response = upload(client, filename, body)
+    assert response.status_code == 201
+    attachment = response.json()
+    assert attachment["name"] == filename
+    assert attachment["size"] == len(body)
+    downloaded = client.get(attachment["url"] + "?download=1")
+    assert downloaded.status_code == 200
+    assert downloaded.content == body
+    assert "attachment" in downloaded.headers["content-disposition"]
+    assert quote(filename) in downloaded.headers["content-disposition"]
+
 def test_account_ownership_works_across_clients_and_blocks_other_accounts():
     owner, owner_user = session_client("owner")
     other, _ = session_client("other")

@@ -4,6 +4,9 @@
 
 import { state } from './state.js';
 import { renderMarkdown, highlightMentions, formatTime, formatBytes, showToast, copyText } from './utils.js';
+import { initMessageSelectionGuard, messageActionsBlocked } from './message_selection.js';
+import { getMessageFormat, setMessageFormat } from './message_format.js';
+import { refreshStorageWarning } from './auth.js';
 import { openReactionPicker, renderMessageReactions, toggleReaction, closeReactionPicker } from './reactions.js';
 import { toggleMessagePin } from './pins.js';
 import { displayNickname, userDirectory } from './dm.js';
@@ -18,6 +21,7 @@ let mentionUsers = [];
 let mentionMatches = [];
 let mentionActiveIndex = 0;
 let mentionRange = null;
+const messageModels = new WeakMap();
 
 const MAX_PARALLEL_UPLOADS = 2;
 
@@ -448,6 +452,7 @@ export function openMessageMoreMenu(msg, anchorBtn, actionsContainer) {
   const isAdmin = state.currentUser?.role === 'admin';
 
   const popover = document.createElement('div');
+  const messageRow = anchorBtn.closest('.msg-row');
   popover.className = 'msg-more-menu-popover';
   popover.setAttribute('role', 'menu');
 
@@ -463,6 +468,7 @@ export function openMessageMoreMenu(msg, anchorBtn, actionsContainer) {
       onClick();
     });
     popover.appendChild(item);
+    return item;
   };
 
   // Pin / Unpin
@@ -473,6 +479,23 @@ export function openMessageMoreMenu(msg, anchorBtn, actionsContainer) {
     addItem('텍스트 복사', '📋', () => {
       copyText(msg.content, '메시지 내용이 복사되었습니다.');
     });
+    const heading = document.createElement('div');
+    heading.className = 'msg-format-heading';
+    heading.textContent = '내 화면 표시';
+    popover.appendChild(heading);
+    const selectedFormat = getMessageFormat(msg, state.currentUser?.id);
+    for (const [mode, label] of [['auto', '자동 감지'], ['code', '코드로 보기'],
+      ['commands', '명령어로 보기 (줄별)'], ['text', '일반 텍스트로 보기']]) {
+      const item = addItem(label, mode === selectedFormat ? '✓' : '', () => {
+        const row = messageRow;
+        const content = row?.querySelector('.message-content');
+        if (!content || row.classList.contains('is-editing')) return;
+        setMessageFormat(msg, state.currentUser?.id, mode);
+        renderMessageText(content, msg, row.querySelector('.msg-bubble'));
+      });
+      item.setAttribute('role', 'menuitemradio');
+      item.setAttribute('aria-checked', String(mode === selectedFormat));
+    }
   }
 
   // Forward / Quote
@@ -508,6 +531,21 @@ export function createMessageActions(msg) {
   const myNick = state.currentUser ? state.currentUser.username : '';
   const isOwn = isChat ? msg.nickname === myNick : msg.from_nick === myNick;
   const myUserId = state.currentUser ? Number(state.currentUser.id) : null;
+
+  // Copy is the primary action; copy the original message, not UI labels.
+  if (msg.content) {
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'msg-action-btn msg-action-copy-btn';
+    copyBtn.textContent = '복사';
+    copyBtn.title = '메시지 복사';
+    copyBtn.setAttribute('aria-label', '메시지 복사');
+    copyBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      void copyText(msg.content, '메시지 내용이 복사되었습니다.');
+    });
+    actions.appendChild(copyBtn);
+  }
 
   // 1. Quick reaction buttons (matching Discord: 👌, ✅, 👍)
   const QUICK_REACTIONS = ['👌', '✅', '👍'];
@@ -674,7 +712,7 @@ export function startInlineMessageEdit(msg) {
   if (row.classList.contains('is-editing')) return;
 
   const originalContent = msg.content || '';
-  const originalHtml = bubble.innerHTML;
+  const originalNodes = [...bubble.childNodes];
 
   row.classList.add('is-editing');
   bubble.replaceChildren();
@@ -712,7 +750,7 @@ export function startInlineMessageEdit(msg) {
 
   const cancelEdit = () => {
     row.classList.remove('is-editing');
-    bubble.innerHTML = originalHtml;
+    bubble.replaceChildren(...originalNodes);
   };
 
   const autoResize = () => {
@@ -750,23 +788,9 @@ export function startInlineMessageEdit(msg) {
       msg.content = newContent;
       msg.edited_at = new Date().toISOString();
       row.classList.remove('is-editing');
-      bubble.replaceChildren();
-      const markdown = document.createElement('div');
-      renderMarkdown(markdown, newContent);
-      highlightMentions(markdown, msg.mentions);
-      const editedBadge = document.createElement('span');
-      editedBadge.className = 'msg-edited-badge';
-      editedBadge.textContent = '(수정됨)';
-      markdown.appendChild(editedBadge);
-      bubble.appendChild(markdown);
-
-      const attachments = normaliseMessageAttachments(msg);
-      if (attachments.length) {
-        const group = document.createElement('div');
-        group.className = 'message-attachments';
-        attachments.forEach(attachment => group.appendChild(createAttachmentEntry(attachment)));
-        bubble.appendChild(group);
-      }
+      bubble.replaceChildren(...originalNodes);
+      const markdown = bubble.querySelector('.message-content');
+      if (markdown) renderMessageText(markdown, msg, bubble);
 
       showToast('메시지가 수정되었습니다.', 'success');
     } catch (err) {
@@ -803,6 +827,21 @@ export function startInlineMessageEdit(msg) {
       textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
     } catch {}
   });
+}
+
+function renderMessageText(container, msg, bubble) {
+  container.classList.add('message-content');
+  const format = getMessageFormat(msg, state.currentUser?.id);
+  renderMarkdown(container, msg.content, format);
+  if (format === 'auto') highlightMentions(container, msg.mentions);
+  bubble?.classList.toggle('code-message', !msg.reply && container.children.length === 1
+    && container.firstElementChild.classList.contains('code-snippet-group'));
+  if (msg.edited_at) {
+    const badge = document.createElement('span');
+    badge.className = 'msg-edited-badge';
+    badge.textContent = '(수정됨)';
+    container.appendChild(badge);
+  }
 }
 
 export function appendMessageNode(msg, previousMsg) {
@@ -846,6 +885,7 @@ export function appendMessageNode(msg, previousMsg) {
   }
 
   const row = document.createElement('article');
+  messageModels.set(row, msg);
   row.className = `msg-row ${isChat ? (isOwn ? 'own' : 'other') : (isOwn ? 'dm-own' : 'dm-recv')}`;
   row.classList.toggle('grouped', isGrouped);
   row.dataset.messageType = isChat ? 'chat' : 'dm';
@@ -959,14 +999,7 @@ export function appendMessageNode(msg, previousMsg) {
 
   if (msg.content) {
     const markdown = document.createElement('div');
-    renderMarkdown(markdown, msg.content);
-    highlightMentions(markdown, msg.mentions);
-    if (msg.edited_at) {
-      const editedBadge = document.createElement('span');
-      editedBadge.className = 'msg-edited-badge';
-      editedBadge.textContent = '(수정됨)';
-      markdown.appendChild(editedBadge);
-    }
+    renderMessageText(markdown, msg, bubble);
     bubble.appendChild(markdown);
   }
   const attachments = normaliseMessageAttachments(msg);
@@ -979,6 +1012,8 @@ export function appendMessageNode(msg, previousMsg) {
 
   shell.appendChild(bubble);
   row.appendChild(shell);
+
+  initMessageSelectionGuard();
 
   let activeActions = null;
   let removeTimer = null;
@@ -998,7 +1033,7 @@ export function appendMessageNode(msg, previousMsg) {
       clearTimeout(removeTimer);
       removeTimer = null;
     }
-    if (row.classList.contains('is-editing')) return;
+    if (row.classList.contains('is-editing') || messageActionsBlocked() || (e?.buttons & 1)) return;
     if (activeActions && activeActions.classList.contains('has-open-menu')) return;
 
     if (!activeActions) {
@@ -1020,8 +1055,9 @@ export function appendMessageNode(msg, previousMsg) {
     const overlayWidth = activeActions.offsetWidth || (isOwn ? 245 : 210);
     const overlayHeight = activeActions.offsetHeight || 38;
 
-    const cursorViewportX = e ? e.clientX : (isOwn ? (shellRect.right - 20) : (shellRect.left + 20));
-    const cursorViewportY = e ? e.clientY : (shellRect.top + 10);
+    // Anchor to the message edge instead of chasing the text-selection cursor.
+    const cursorViewportX = shellRect.right - overlayWidth / 2;
+    const cursorViewportY = shellRect.top;
 
     const pad = 8;
     const minViewportLeft = listRect.left + pad;
@@ -1072,7 +1108,7 @@ export function appendMessageNode(msg, previousMsg) {
       clearTimeout(removeTimer);
       removeTimer = null;
     }
-    if (row.classList.contains('is-editing')) return;
+    if (row.classList.contains('is-editing') || messageActionsBlocked() || (e.buttons & 1)) return;
     if (activeActions) return;
 
     if (e.sourceCapabilities?.firesTouchEvents) return;
@@ -1085,6 +1121,14 @@ export function appendMessageNode(msg, previousMsg) {
   };
 
   const onRowMouseMove = (e) => {
+    if (messageActionsBlocked() || (e.buttons & 1)) {
+      clearHoverTimer();
+      if (activeActions && !activeActions.classList.contains('has-open-menu')) {
+        activeActions.remove();
+        activeActions = null;
+      }
+      return;
+    }
     if (hoverTimer) {
       lastHoverPos = { clientX: e.clientX, clientY: e.clientY };
     }
@@ -1095,15 +1139,26 @@ export function appendMessageNode(msg, previousMsg) {
     scheduleRemoveActions(e);
   };
 
-  // 2. Mobile Tap: immediate show on tap
+  // Wait for a short tap to finish so scrolling and long-press selection stay native.
+  let touchStart = null;
   const onRowPointerDown = (e) => {
     const isTouch = e.pointerType === 'touch' || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-    if (!isTouch) return;
-
-    if (e.target.closest('button, a, .msg-action-btn, .message-reply-quote, .reaction-pill, .message-actions, input, textarea')) {
+    touchStart = isTouch && !e.target.closest('button, a, .message-reply-quote, .reaction-pill, .message-actions, input, textarea')
+      ? { x: e.clientX, y: e.clientY, time: e.timeStamp } : null;
+    if (messageActionsBlocked()) {
+      clearHoverTimer();
+      if (activeActions && !activeActions.classList.contains('has-open-menu')) {
+        activeActions.remove();
+        activeActions = null;
+      }
       return;
     }
-
+  };
+  const onRowPointerUp = (e) => {
+    const start = touchStart;
+    touchStart = null;
+    if (!start || messageActionsBlocked() || e.timeStamp - start.time > 300
+        || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) return;
     clearHoverTimer();
     if (activeActions) {
       activeActions.remove();
@@ -1132,6 +1187,8 @@ export function appendMessageNode(msg, previousMsg) {
   row.addEventListener('mousemove', onRowMouseMove);
   row.addEventListener('mouseleave', onRowMouseLeave);
   row.addEventListener('pointerdown', onRowPointerDown);
+  row.addEventListener('pointerup', onRowPointerUp);
+  row.addEventListener('pointercancel', () => { touchStart = null; });
   row.addEventListener('focusin', () => {
     clearHoverTimer();
     if (!activeActions) positionActions(null);
@@ -1724,21 +1781,11 @@ export function updateMessageInDOM(editedMsg) {
   if (!editedMsg?.message_id) return;
   const row = document.querySelector(`.msg-row[data-message-id="${editedMsg.message_id}"]`);
   if (!row) return;
+  const model = messageModels.get(row) || editedMsg;
+  Object.assign(model, editedMsg);
   const bubble = row.querySelector('.msg-bubble');
-  if (bubble) {
-    renderMarkdown(bubble, editedMsg.content || '');
-    highlightMentions(bubble, editedMsg.mentions);
-  }
-  if (editedMsg.edited_at) {
-    let editedBadge = row.querySelector('.edited-indicator');
-    if (!editedBadge) {
-      editedBadge = document.createElement('span');
-      editedBadge.className = 'edited-indicator';
-      editedBadge.textContent = '(수정됨)';
-      const meta = row.querySelector('.msg-meta') || row.querySelector('.dm-label');
-      if (meta) meta.appendChild(editedBadge);
-    }
-  }
+  const content = row.querySelector('.message-content');
+  if (content && !row.classList.contains('is-editing')) renderMessageText(content, model, bubble);
 }
 
 export function updateMessageHiddenInDOM(hiddenMsg, isHidden) {
