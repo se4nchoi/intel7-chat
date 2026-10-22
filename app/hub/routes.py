@@ -21,11 +21,11 @@ from app.auth import normalize_username, validate_password, validate_username
 from app.hub import db, onboarding, notifications
 from app.hub.logs import log
 from app.hub.settings import settings, classrooms
+from app.hub.uploads import safe_filename
 
 router = APIRouter(prefix="/hub", tags=["madi"])
 COOKIE = "madi_session"
 FRONTEND_BUILD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-ALLOWED_FILE_SUFFIXES = {".txt", ".md", ".pdf", ".csv", ".png", ".jpg", ".jpeg", ".docx", ".pptx", ".xlsx"}
 # One socket per open cohort page, carrying every channel's events, mapped to
 # the session cookie and account that opened it. Access is re-checked before
 # every delivery, so a revoked or expired session, or a removed membership,
@@ -811,9 +811,10 @@ async def files(cohort_id: int, request: Request):
 async def upload_file(cohort_id: int, request: Request, upload: UploadFile = File(...)):
     _same_origin(request)
     account, _ = await _cohort(request, cohort_id)
-    name = Path(upload.filename or "").name
-    if not name or Path(name).suffix.lower() not in ALLOWED_FILE_SUFFIXES:
-        raise HTTPException(400, "Unsupported file type")
+    try:
+        name = safe_filename(upload.filename)
+    except ValueError as exc:
+        raise HTTPException(415, str(exc)) from exc
     content = await upload.read(10485761)
     if not 0 < len(content) <= 10485760:
         raise HTTPException(413, "Files must be between 1 byte and 10 MB")

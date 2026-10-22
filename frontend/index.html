@@ -71,8 +71,6 @@
       <nav id="board-nav" class="task-nav hidden" aria-label="게시판 탐색">
         <button data-board-filter="all" type="button">전체 질문</button>
         <button data-board-filter="mine" type="button">내 질문</button>
-        <button data-board-filter="no-instructor" type="button">강사 답변 대기</button>
-        <button data-board-filter="resolved" type="button">해결된 질문</button>
         <button id="files-link" type="button">자료실</button>
       </nav>
       <nav class="task-nav management-links" aria-label="관리">
@@ -214,7 +212,10 @@
             </section>
             <form id="answer-form" class="answer-form">
               <label>답변 작성<textarea name="body" maxlength="5000" placeholder="답변을 입력하세요" required></textarea></label>
-              <div class="form-actions"><button class="primary">답변 등록</button></div>
+              <div class="draft-tools"><button type="button" id="answer-write" aria-pressed="true">작성</button><button type="button" id="answer-preview" aria-pressed="false">미리보기</button><button type="button" id="answer-code" class="ghost">코드 블록</button></div>
+              <div id="answer-preview-body" class="draft-preview answer-body hidden" aria-label="답변 미리보기"></div>
+              <p id="answer-draft-status" class="muted small" role="status"></p>
+              <div class="form-actions"><button type="button" id="answer-discard" class="ghost danger-text">초안 버리기</button><button class="primary">답변 등록</button></div>
             </form>
           </article>
 
@@ -223,10 +224,13 @@
             <form id="question-form">
               <label>제목<input name="title" maxlength="200" placeholder="한 줄로 요약해 주세요" required></label>
               <label>내용<textarea name="body" maxlength="5000" rows="10" placeholder="무엇을 시도했고, 어떤 결과가 나왔는지 자세히 적어 주세요" required></textarea></label>
-              <label>첨부파일 <input id="question-files" type="file" multiple accept=".txt,.md,.pdf,.csv,.png,.jpg,.jpeg,.docx,.pptx,.xlsx"></label>
-              <small class="muted">최대 5개, 각 10MB. 첨부 자료는 같은 수강반 구성원에게 공개됩니다.</small>
+              <div class="draft-tools"><button type="button" id="question-write" aria-pressed="true">작성</button><button type="button" id="question-preview" aria-pressed="false">미리보기</button><button type="button" id="question-code" class="ghost">코드 블록</button></div>
+              <div id="question-preview-body" class="draft-preview post-body hidden" aria-label="질문 내용 미리보기"></div>
+              <label>첨부파일 <input id="question-files" type="file" multiple></label>
+              <small class="muted">PLC 파일(.gwx, .gxw)과 일반 수업 자료를 공유할 수 있습니다. 실행 파일·웹 페이지는 제외, 최대 5개·각 10MB. 같은 수강반 구성원에게 공개됩니다.</small>
+              <ul id="question-selected-files" class="selected-files" aria-label="선택한 첨부파일"></ul>
               <p id="question-draft-status" class="muted small" role="status"></p>
-              <div class="form-actions"><button type="button" id="compose-cancel" class="ghost">취소</button><button class="primary">질문 등록</button></div>
+              <div class="form-actions"><button type="button" id="compose-cancel" class="ghost">초안 보관하고 닫기</button><button type="button" id="question-discard" class="ghost danger-text">초안 버리기</button><button class="primary">질문 등록</button></div>
             </form>
           </section>
 
@@ -235,7 +239,7 @@
             <h2>공유 자료</h2>
             <form id="file-form" class="file-form">
               <label>파일 선택<input type="file" name="upload" required></label>
-              <span class="muted">문서·이미지·텍스트, 파일당 최대 10MB</span>
+              <span class="muted">PLC 파일을 포함한 수업 자료, 파일당 최대 10MB · 실행 파일·웹 페이지 제외</span>
               <button class="primary">파일 올리기</button>
             </form>
             <label>자료 검색<input id="file-search" type="search" maxlength="200" placeholder="파일 이름 또는 올린 사람"></label>
@@ -275,16 +279,29 @@
       </nav>
       <div id="management-status" class="dialog-status hidden" role="alert"></div>
       <div class="management-body">
+      <nav id="academy-task-nav" class="academy-task-nav hidden" aria-label="학원 관리 작업">
+        <button data-academy-task="accounts" type="button">계정</button>
+        <button data-academy-task="cohorts" type="button">수강반</button>
+        <button data-academy-task="roster" type="button">명단 가져오기</button>
+      </nav>
+      <h3 id="academy-task-title" class="academy-task-title hidden" tabindex="-1"></h3>
       <div class="management-grid">
         <section id="self-card">
-          <form id="password-form"><h3>내 비밀번호 변경</h3><input name="current_password" type="password" aria-label="현재 비밀번호" placeholder="현재 비밀번호" autocomplete="current-password" required><input name="new_password" type="password" aria-label="새 비밀번호 (5자 이상)" placeholder="새 비밀번호 (5자 이상)" autocomplete="new-password" minlength="5" required><button>비밀번호 변경</button><small class="muted">변경하면 다른 기기의 로그인은 모두 끊깁니다.</small></form>
+          <form id="password-form"><h3>내 비밀번호 변경</h3><label>현재 비밀번호<input name="current_password" type="password" autocomplete="current-password" required></label><label>새 비밀번호 (5자 이상)<input name="new_password" type="password" autocomplete="new-password" minlength="5" required></label><button>비밀번호 변경</button><small class="muted">변경하면 다른 기기의 로그인은 모두 끊깁니다.</small></form>
         </section>
         <section id="admin-card" class="hidden">
           <p class="muted">관리자는 계정과 수강반을 만들고, 강사는 담당 수강반의 구성원과 채널을 관리합니다.</p>
           <form id="account-form"><h3>새 계정</h3><label>아이디<input name="username" aria-label="아이디" placeholder="아이디" required></label><label>표시 이름<input name="display_name" aria-label="표시 이름" placeholder="표시 이름" required></label><label>임시 비밀번호<input name="password" type="password" aria-label="임시 비밀번호" autocomplete="new-password" placeholder="임시 비밀번호" minlength="5" required></label><small class="muted">새 계정은 첫 로그인 때 임시 비밀번호를 변경해야 수업에 참여할 수 있습니다.</small><label class="check-label"><input id="enroll-new-account" type="checkbox">현재 수강반에도 추가</label><label id="new-account-role-label">수강반 역할<select id="new-account-role"><option value="student">수강생</option><option value="instructor">강사</option></select></label><button>계정 만들기</button></form>
           <form id="cohort-form"><h3>새 수강반</h3><label>수강반 주소 ID (영문 소문자·숫자·하이픈)<input name="slug" aria-label="수강반 주소 ID (영문 소문자·숫자·하이픈)" placeholder="수강반 주소 ID (영문 소문자·숫자·하이픈)" required></label><label>수강반 이름<input name="name" aria-label="수강반 이름" placeholder="수강반 이름" required></label><button>수강반 만들기</button></form>
+          <section id="cohort-checklist" class="cohort-checklist hidden" aria-labelledby="cohort-checklist-title">
+            <h4 id="cohort-checklist-title">현재 수강반 준비 상태</h4>
+            <p id="cohort-checklist-target" class="muted small"></p>
+            <ul id="cohort-checklist-items"></ul>
+          </section>
           <section id="roster-card" class="roster-card" aria-labelledby="roster-title">
             <h3 id="roster-title">명단으로 계정 가져오기</h3>
+            <p id="roster-stage" class="roster-stage" role="status">1. 대상 수강반과 명단 입력</p>
+            <p id="roster-target" class="muted small"></p>
             <p class="muted">CSV 파일을 선택하거나 Excel·스프레드시트에서 제목 행과 함께 복사해 붙여 넣으세요. 한 번에 최대 100명입니다.</p>
             <p class="muted">신규 계정은 첫 로그인 때 비밀번호를 변경합니다. 기존 계정의 이름·비밀번호·기존 역할은 유지됩니다.</p>
             <form id="roster-form">
@@ -308,7 +325,7 @@
         <section id="manage-card" class="hidden">
           <div id="cohort-status" class="hidden"><h3>현재 수강반</h3><p id="cohort-status-text" class="muted"></p><button id="archive-btn" type="button"></button></div>
           <p id="management-cohort" class="muted"></p><label>구성원 검색<input id="member-search" type="search" placeholder="이름 또는 아이디"></label><form id="membership-form"><h3>구성원 추가</h3><label>추가할 계정<input name="username" list="membership-options" aria-label="기존 계정 아이디" placeholder="계정 아이디 입력 또는 검색" required></label><datalist id="membership-options"></datalist><small class="muted">현재 반·미배정 계정이 검색됩니다. 다른 반 계정은 아이디를 직접 입력하세요.</small><select name="role" aria-label="구성원 역할"><option value="student">수강생</option><option value="instructor">강사</option></select><button>추가 또는 변경</button></form>
-          <form id="channel-form"><h3>새 채널</h3><input name="slug" aria-label="채널 주소 ID (영문 소문자·숫자·하이픈)" placeholder="채널 주소 ID (영문 소문자·숫자·하이픈)" required><input name="name" aria-label="채널 이름" placeholder="채널 이름" required><button>채널 만들기</button></form>
+          <form id="channel-form"><h3>새 채널</h3><label>채널 주소 ID (영문 소문자·숫자·하이픈)<input name="slug" placeholder="채널 주소 ID (영문 소문자·숫자·하이픈)" required></label><label>채널 이름<input name="name" placeholder="채널 이름" required></label><button>채널 만들기</button></form>
           <div><h3>구성원 관리</h3><ul id="manage-members" class="manage-list" aria-label="구성원 관리"></ul></div>
         </section>
       </div>

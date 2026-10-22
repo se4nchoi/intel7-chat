@@ -1,6 +1,6 @@
 # Madi UX/UI review and implementation plan — 2026-10-21
 
-Status (2026-10-22): Slice 1 / U01–U04 implemented and verified. U05–U10 remain pending.
+Status (2026-10-22): Slice 1 / U01–U04 is complete. Slice 2 / U05 and U07 is implemented with frontend tests and a production build; browser verification remains. U06 and U08–U10 remain pending.
 Reviewed branch: `edu/discord-piazza-ui`, based on `381b625`; continued as `edu/madi` with the local setup, dependency, and U01 changes.
 
 ## Recommendation
@@ -140,7 +140,7 @@ Acceptance: administrators cannot search nonparticipant DMs; removed memberships
 
 ## Current completion state — 2026-10-22
 
-Slice 1 (U01–U04) is implemented. U05–U10 remain planned.
+Slice 1 (U01–U04) is implemented. U05–U08 are implemented in code with browser verification pending; U09–U10 remain planned.
 
 - **U01:** manual account creation requires first-login password change; the administrator list exposes pending onboarding. Existing accounts, bootstrap-admin behavior, and reset policy are preserved.
 - **U02:** preview action totals exclude invalid rows and return `total_rows` and `invalid_rows`. The UI shows blocking-row counts, an errors-only view, and data-record numbering (excluding header/blank records; quoted multiline cells remain one record). Any invalid row still blocks the entire atomic batch. Corrected previews must be reviewed again.
@@ -154,3 +154,23 @@ Browser checks used the existing synthetic review database (`madi_ux_20261021`) 
 The browser viewport override did not apply, so targeted responsive checks used the actual built control/form markup and CSS inside isolated 390px frames in both themes. Accessible names remained Korean with visible labels hidden, and all three header controls measured 44×44px. This does not complete the full role/theme/viewport matrix, actual phone-keyboard checks, or real screen-reader acceptance.
 
 Evidence: this chat's visualization folder contains `madi-roster-errors.jpg` and `madi-compact-controls.jpg`. The disposable fixture scripts are ignored under `.runtime-tmp/`. No real academy accounts, community data, certificate trust, SFU/LiveKit services, or classroom network settings were modified. No schema migration was needed.
+
+### Slice 2 implementation note — 2026-10-22
+
+- **U05:** Answer notifications now carry a validated answer ID in the board URL. The target is checked against the question's authorized answers, then its rendered row is focused and highlighted. A deleted/missing answer leaves the notification unread and shows a fallback rather than silently landing at the question top. Existing question-only links remain valid.
+- **U07:** The board sidebar keeps stable shortcuts (all questions, my questions, files); the main filter row owns status selection. Summary cards are informational. Question and notification previews use text-only excerpts that remove formatting delimiters and label code examples without injecting HTML.
+- **Related legacy parity:** Madi file uploads now permit PLC formats such as `.gwx` and `.gxw` and other teaching extensions, while rejecting executable/active-web suffixes. Files remain cohort-scoped and are downloaded as attachments; the existing 10 MB per-file limit is unchanged.
+
+Verification for this pass: 36 frontend unit tests, 15 targeted Python upload/route/login-hardening tests, and the Vite production build passed. A live answer-notification browser flow and the PostgreSQL integration suite have not been run in this checkout; use a disposable database for those checks.
+
+### Slice 3A implementation note — 2026-10-22
+
+- **U06:** Question and answer composers now have Write/Preview modes using the same safe rich-text renderer as saved content, plus a code-block insertion action. Both drafts use account/cohort/target-scoped tab storage with the existing memory fallback; the old question draft key is migrated when opened. Explicit discard clears only the current draft, while closing the question composer keeps it.
+- Question attachments have a visible selected-file list with size and remove controls, count/size/blocked-suffix checks before upload, and visible upload/post progress. Failed requests retain text and selected files. Successfully uploaded IDs are reused during a retry, and the submit guard prevents concurrent duplicate submissions.
+- Files are intentionally not restored across reloads, and the UI says so. This does not guarantee idempotency if the server accepts a question but its response is lost; a future idempotency key would be needed for that edge case.
+
+Verification: 38 frontend unit tests, Vite production build, and `git diff --check` passed. The browser role/theme/viewport matrix and slow/failing upload UX remain to be exercised before release.
+
+### Slice 3B progress note — 2026-10-22
+
+Academy management now separates Accounts, Cohorts, and Roster tasks inside the existing permission-gated dialog. The roster workflow shows its current step and target cohort during input, preview, and credential distribution; switching tasks is disabled while an import is applying. Account search remains with the Accounts task. The cohort setup checklist reads saved channels and memberships from the API and links directly to channel, instructor, and roster actions without enrolling anyone automatically. Password and channel setup fields now retain visible labels. Responsive and keyboard/browser verification remain open before considering U08 release-ready.

@@ -214,6 +214,7 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .answers > li { padding: 14px 16px; border-bottom: 1px solid var(--border); display: grid; gap: 6px; }
 .answers > li:last-child { border-bottom: 0; }
 .answers > li.endorsed { background: var(--accent-soft); }
+.answers > li.answer-target { background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px; scroll-margin-block: 64px; }
 .answers .empty-answer { color: var(--faint); font-size: 13px; }
 .answer-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
 .answer-meta strong { color: var(--text); }
@@ -221,6 +222,15 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .
 .answer-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .endorsed-mark { color: var(--ok); font-weight: 700; font-size: 12px; }
 .answer-form textarea { min-height: 110px; }
+.draft-tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.draft-tools button { font-size: 12px; padding: 5px 10px; }
+.draft-tools button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.draft-preview { min-height: 110px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--elev); white-space: pre-wrap; overflow-wrap: anywhere; }
+.draft-preview.post-body { min-height: 210px; }
+.selected-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.selected-files li { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.selected-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; font-size: 13px; }
+.selected-files button { flex: none; font-size: 12px; padding: 4px 8px; }
 .file-form { grid-template-columns: minmax(0, 1fr) auto; align-items: end; padding: 16px; border: 1px dashed var(--border); border-radius: 12px; }
 .file-form > span { grid-column: 1 / -1; font-size: 12px; order: 3; }
 .file-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
@@ -436,9 +446,18 @@ button.member:hover .dm-hint, button.member:focus-visible .dm-hint { visibility:
 .management-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
 .management-tabs button { background: transparent; }
 .management-tabs button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.academy-task-nav { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px 0; }
+.academy-task-nav button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.academy-task-title { margin: 16px 20px 0; font-size: 18px; }
+.roster-stage { font-weight: 650; color: var(--accent); }
+.cohort-checklist { padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--elev); }
+.cohort-checklist h4 { margin: 0 0 6px; }
+.cohort-checklist ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.cohort-checklist li { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: 13px; }
 .management-grid { display: block; }
 .management-grid > section { min-width: 0; }
-#admin-card, #manage-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#admin-card { grid-template-columns: minmax(0, 1fr); }
+#manage-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #admin-card > p, #cohort-status { grid-column: 1 / -1; }
 #self-card { max-width: 440px; }
 .check-label { display: flex; gap: 8px; align-items: center; }
@@ -485,7 +504,7 @@ button.member:hover .dm-hint, button.member:focus-visible .dm-hint { visibility:
 #manage-card > label { grid-column: 1 / -1; }
 #login-message { font-size: 13px; }
 #history-more:focus-visible, .task-nav button:focus-visible { outline-offset: -2px; }
-.roster-card { grid-column: 1 / -1; min-width: 0; border-top: 1px solid var(--border); padding-top: 20px; }
+.roster-card { grid-column: 1 / -1; min-width: 0; }
 .roster-card p { margin: 10px 0; }
 .roster-table-wrap { max-height: 320px; overflow: auto; margin: 16px 0; border: 1px solid var(--border); border-radius: 8px; }
 .roster-card table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; }
