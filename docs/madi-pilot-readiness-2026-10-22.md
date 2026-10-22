@@ -8,11 +8,11 @@ This is an acceptance checklist for a small academy LAN pilot, not a claim that 
 - [x] Windows Python unit suite: 329 passed, 101 skipped. The skips include PostgreSQL integration tests because this checkout has no `MADI_TEST_DATABASE_URL`.
 - [x] Disposable loopback browser smokes (mocked API/database): academy boot/media failure, notification deep link and draft preservation, roster onboarding, presenter handoff, and Q&A queue/composer workflows pass. These are not real PostgreSQL, LAN, or LiveKit tests.
 - [x] Read-only dependency checks: `npm audit` found 0 vulnerabilities; `pip-audit` found no known vulnerabilities in the isolated Windows test environment. The Python environment was resolved from `pyproject.toml`, so this is not a substitute for auditing the exact locked deployment build.
-- [x] CI workflow is configured to run on `edu/madi` and `main` with a disposable PostgreSQL service, frontend tests/build, and backup/restore dependencies. **Its first remote result is still pending** until the workflow is pushed and run.
+- [x] The validation job in [CI run 39793208838](https://github.com/se4nchoi/intel7-chat/actions/runs/39793208838) passed on `edu/madi`: 430 Python tests passed with no skips against disposable PostgreSQL, including backup/restore tests; the frontend tests/build and JavaScript syntax check also passed. The workflow runs on `edu/madi` and `main`.
 
 ## Gate 1 — database-backed release validation
 
-- [ ] Run `.github/workflows/ci.yml` and resolve any PostgreSQL failures, especially the equal-timestamp queue cursor test, role/DM authorization, migrations, and backup/restore round trip. Never point `MADI_TEST_DATABASE_URL` at an academy or personal database; integration fixtures drop all `hub_*` tables.
+- [x] Run `.github/workflows/ci.yml` against disposable PostgreSQL, including the equal-timestamp queue cursor test, role/DM authorization, migrations, and backup/restore round trip. Never point `MADI_TEST_DATABASE_URL` at an academy or personal database; integration fixtures drop all `hub_*` tables.
 - [ ] Run a browser pass against a **separate disposable PostgreSQL database** with synthetic student, instructor, and admin accounts. Cover question/answer drafts, file selection and failed upload retry, notification-to-answer focus/read state, queue sort/pagination, roster review/apply, archived cohort read-only behavior, light/dark themes, and 390px/desktop layouts.
 - [ ] Rehearse backup, verification, and restoration of both PostgreSQL and uploaded bytes into a fresh disposable target. Confirm the restored app can read a question, message, and file. Keep a copy of the backup on another device.
 
