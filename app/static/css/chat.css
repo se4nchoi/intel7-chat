@@ -708,6 +708,10 @@ button.reaction-picker-emoji-btn.active,
 .markdown-body ul + p,
 .markdown-body blockquote + p,
 .markdown-body .code-block + p { margin-top: .65em; }
+.markdown-body :is(p, ul, blockquote) + :is(.code-snippet-group, .code-block),
+.markdown-body :is(.code-snippet-group, .code-block) + :is(p, ul, blockquote) {
+  margin-top: 12px;
+}
 .markdown-body ul {
   padding-left: 1.25rem;
   margin: .2rem 0;
@@ -789,7 +793,11 @@ button.reaction-picker-emoji-btn.active,
   --code-text: #e3e3e8;
   --code-muted: #b6b8c2;
 }
+.code-snippet-group + .code-snippet-group { margin-top: 14px; }
+.msg-row .msg-bubble:not(.code-message):has(.code-snippet-group) { padding: 12px 13px; }
 .msg-row .msg-bubble.code-message { padding: 0; background: transparent; }
+.msg-row.grouped:has(.code-snippet-group),
+.msg-row:has(.code-snippet-group) + .msg-row.grouped { margin-top: 4px; }
 .code-snippet-tools { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 10px; color: var(--text-muted); font-size: .76rem; }
 .code-block {
   position: relative;

@@ -19,7 +19,7 @@ export function initMessageSelectionGuard() {
   installed = true;
   const refresh = () => document.body.classList.toggle('message-selection-active', messageActionsBlocked());
   document.addEventListener('pointerdown', event => {
-    document.querySelectorAll('.message-actions').forEach(el => {
+    document.querySelectorAll?.('.message-actions').forEach(el => {
       const parentRow = el.closest('.msg-row');
       if ((!parentRow || !parentRow.contains(event.target)) && !el.classList.contains('has-open-menu')) {
         el.remove();
