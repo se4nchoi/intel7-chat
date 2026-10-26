@@ -196,13 +196,13 @@ function snippetCopyButton(text, label, className = 'code-copy-btn', visibleLabe
 function createCodeCard(snippet, text, payload, commandNumber = 0) {
   const wrapper = document.createElement('div');
   wrapper.className = 'code-block';
-  const header = document.createElement('div');
-  header.className = 'code-block-header';
-  const label = document.createElement('span');
-  label.className = 'code-language';
-  label.textContent = /^(?:bash|sh|shell|zsh)$/i.test(snippet.language)
+
+
+
+
+  const langLabel = /^(?:bash|sh|shell|zsh)$/i.test(snippet.language)
     ? snippet.language.toLowerCase() : codeLanguageLabel(snippet.language);
-  header.appendChild(label);
+
   const pre = document.createElement('pre');
   const code = document.createElement('code');
   code.textContent = text;
@@ -210,10 +210,10 @@ function createCodeCard(snippet, text, payload, commandNumber = 0) {
   const footer = document.createElement('div');
   footer.className = 'code-block-footer';
   const hint = document.createElement('span');
-  hint.textContent = commandNumber ? `명령어 ${commandNumber}` : codeLanguageLabel(snippet.language);
+  hint.textContent = commandNumber ? `명령어 ${commandNumber}` : langLabel;
   footer.append(hint, snippetCopyButton(payload,
-    commandNumber ? `명령 ${commandNumber} 복사` : snippet.language ? `${label.textContent} 코드 복사` : '코드 복사'));
-  wrapper.append(header, pre, footer);
+    commandNumber ? `명령 ${commandNumber} 복사` : snippet.language ? `${langLabel} 코드 복사` : '코드 복사'));
+  wrapper.append(pre, footer);
   return wrapper;
 }
 
@@ -240,7 +240,7 @@ function appendCodeSnippet(container, snippet) {
     }
     const displayText = [...comments.splice(0), item.text].join('\n');
     group.appendChild(createCodeCard(snippet, displayText, item.text,
-      item.type === 'command' ? ++commandNumber : 0));
+      item.type === 'command' && commandCount > 1 ? ++commandNumber : 0));
   }
   if (comments.length) {
     const notes = document.createElement('pre');
