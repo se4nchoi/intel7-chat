@@ -215,9 +215,9 @@ export function createAttachmentEntry(attachment) {
   card.href = attachment.url;
   card.target = '_blank';
   card.rel = 'noopener';
-  card.download = attachment.name || '';
+  if (!attachment.previewable) card.download = attachment.name || '';
   card.title = attachment.name || '';
-  if (attachment.name) card.setAttribute('download', attachment.name);
+  if (!attachment.previewable && attachment.name) card.setAttribute('download', attachment.name);
 
   if (attachment.previewable) {
     const image = document.createElement('img');
@@ -1267,6 +1267,7 @@ export function openImageLightbox(src, title, meta, serverUrl) {
   const img = document.getElementById('image-lightbox-img');
   const titleEl = document.getElementById('image-lightbox-title');
   const metaEl = document.getElementById('image-lightbox-meta');
+  const viewLink = document.getElementById('image-lightbox-view');
   const downloadLink = document.getElementById('image-lightbox-download');
   if (!modal || !img) return;
 
@@ -1280,6 +1281,9 @@ export function openImageLightbox(src, title, meta, serverUrl) {
   };
   if (titleEl) titleEl.textContent = title || '이미지 미리보기';
   if (metaEl) metaEl.textContent = meta || '';
+  if (viewLink) {
+    viewLink.href = effectiveUrl || '#';
+  }
   if (downloadLink) {
     const dlUrl = serverUrl || effectiveUrl;
     downloadLink.href = dlUrl ? `${dlUrl}${dlUrl.includes('?') ? '&' : '?'}download=1` : '#';

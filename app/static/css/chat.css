@@ -1807,6 +1807,13 @@ kbd {
   white-space: nowrap;
 }
 
+.image-lightbox-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .image-lightbox-btn {
   display: inline-flex;
   align-items: center;
