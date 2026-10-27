@@ -5,7 +5,14 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.db.connection import DB_MAX_BYTES, DB_PATH, get_connection, utc_now
+from app.db.connection import (
+    DB_MAX_BYTES,
+    DB_PATH,
+    get_connection,
+    get_db_max_bytes,
+    get_db_path,
+    utc_now,
+)
 
 
 def _attachment_public(row: sqlite3.Row | Dict[str, Any] | None) -> Optional[Dict[str, Any]]:
@@ -168,9 +175,10 @@ def get_upload_usage(user_id: int) -> Tuple[int, int]:
 
 
 def get_storage_status() -> Dict[str, int]:
+    effective_path = get_db_path()
     db_bytes = sum(
         path.stat().st_size
-        for path in (DB_PATH, Path(str(DB_PATH) + "-wal"), Path(str(DB_PATH) + "-shm"))
+        for path in (effective_path, Path(str(effective_path) + "-wal"), Path(str(effective_path) + "-shm"))
         if path.exists()
     )
     with get_connection() as conn:
@@ -179,6 +187,6 @@ def get_storage_status() -> Dict[str, int]:
         )
     return {
         "database_bytes": db_bytes,
-        "database_limit_bytes": DB_MAX_BYTES,
+        "database_limit_bytes": get_db_max_bytes(),
         "attachment_bytes": attachment_bytes,
     }

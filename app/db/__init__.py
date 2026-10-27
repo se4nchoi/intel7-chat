@@ -17,6 +17,8 @@ from app.db.connection import (
     DB_PATH,
     configure_storage,
     get_connection,
+    get_db_path,
+    get_db_max_bytes,
     utc_now,
 )
 from app.db.games import (
@@ -221,6 +223,8 @@ __all__ = [
     "configure_storage",
     "utc_now",
     "get_connection",
+    "get_db_path",
+    "get_db_max_bytes",
     # streak
     "KOREAN_PUBLIC_HOLIDAYS",
     "_SOLAR_FIXED_HOLIDAYS",

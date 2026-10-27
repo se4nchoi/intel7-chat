@@ -22,6 +22,20 @@ def configure_storage(data_dir: Path | str, max_db_bytes: int) -> None:
     if db_mod is not None:
         db_mod.DB_PATH = DB_PATH
         db_mod.DB_MAX_BYTES = DB_MAX_BYTES
+    att_mod = sys.modules.get("app.db.attachments")
+    if att_mod is not None:
+        att_mod.DB_PATH = DB_PATH
+        att_mod.DB_MAX_BYTES = DB_MAX_BYTES
+
+
+def get_db_path() -> Path:
+    db_mod = sys.modules.get("app.database")
+    return getattr(db_mod, "DB_PATH", DB_PATH) if db_mod else DB_PATH
+
+
+def get_db_max_bytes() -> int:
+    db_mod = sys.modules.get("app.database")
+    return int(getattr(db_mod, "DB_MAX_BYTES", DB_MAX_BYTES) if db_mod else DB_MAX_BYTES)
 
 
 def utc_now() -> str:
