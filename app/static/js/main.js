@@ -7,7 +7,7 @@ import { state, setCurrentUser, setActiveRoom } from './state.js';
 import { showToast } from './utils.js';
 import { initAuthListeners, bootstrapAuth, updateNickBadge, showNicknameHint, refreshStorageWarning, showAuthModal } from './auth.js';
 import { loadChannels, renderChannels, initChannelsListeners, channelsDirectory } from './channels.js';
-import { renderDms, displayNickname, getOrCreateDm, userDirectory, loadGroupDms, loadCandidateUsers } from './dm.js';
+import { renderDms, displayNickname, getOrCreateDm, userDirectory, loadGroupDms, loadCandidateUsers, toggleDmPinnedBottom, hideDmConversation } from './dm.js';
 import {
   loadDrafts,
   saveCurrentDraft,
@@ -813,6 +813,26 @@ function initApp() {
   if (convMuteBtn) convMuteBtn.addEventListener('click', openConvNotificationModal);
   if (convNotificationModalClose) convNotificationModalClose.addEventListener('click', closeConvNotificationModal);
   if (convNotificationModalCancel) convNotificationModalCancel.addEventListener('click', closeConvNotificationModal);
+
+  const dmPrefBottomBtn = document.getElementById('dm-pref-bottom-btn');
+  const dmPrefHideBtn = document.getElementById('dm-pref-hide-btn');
+  if (dmPrefBottomBtn) {
+    dmPrefBottomBtn.addEventListener('click', () => {
+      if (state.activeRoom.type !== 'dm') return;
+      const nowBottom = toggleDmPinnedBottom(state.activeRoom.id);
+      updateConversationNotificationUI();
+      renderDms(switchConversation);
+      showToast(nowBottom ? '1:1 대화를 목록 맨 아래로 내렸습니다.' : '1:1 대화 순서를 복구했습니다.', 'info');
+    });
+  }
+  if (dmPrefHideBtn) {
+    dmPrefHideBtn.addEventListener('click', () => {
+      if (state.activeRoom.type !== 'dm') return;
+      const targetDm = state.activeRoom.id;
+      closeConvNotificationModal();
+      hideDmConversation(targetDm, switchConversation);
+    });
+  }
 
   if (convNotificationToggleBtn) {
     convNotificationToggleBtn.addEventListener('click', async () => {

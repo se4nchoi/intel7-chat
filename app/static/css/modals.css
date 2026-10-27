@@ -621,6 +621,8 @@
 .notification-status-info { flex: 1; }
 .notification-status-info strong { font-size: 0.92rem; color: var(--text); }
 .notification-status-info p { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+.dm-pref-section.hidden { display: none !important; }
+.dm-pref-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 
 /* Group DM Modals & Pickers */
 .group-dm-modal-box {

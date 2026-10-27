@@ -5,6 +5,7 @@
 import { state, isConversationMuted } from './state.js';
 import { getSoundMode, getSoundVolume, setSoundMode, setSoundVolume, playNotificationSound } from './audio.js';
 import { showToast } from './utils.js';
+import { displayNickname, isDmPinnedBottom } from './dm.js';
 
 function getDesktopNotifKey() {
   return state.currentUser ? `bamboochat_desktop_notif_${state.currentUser.id}` : 'bamboochat_desktop_notif';
@@ -320,7 +321,21 @@ export function updateConversationNotificationUI() {
     convMuteBtn.classList.toggle('is-muted', isMuted);
   }
 
-  if (convNotifRoomName) convNotifRoomName.textContent = `# ${state.activeRoom.id}`;
+  if (convNotifRoomName) {
+    convNotifRoomName.textContent = state.activeRoom.type === 'dm'
+      ? `💬 ${displayNickname(state.activeRoom.id)}`
+      : `# ${state.activeRoom.id}`;
+  }
+  const dmPrefSection = document.getElementById('dm-list-pref-section');
+  const dmPrefBottomBtn = document.getElementById('dm-pref-bottom-btn');
+  if (dmPrefSection) {
+    const isOneToOneDm = state.activeRoom.type === 'dm';
+    dmPrefSection.classList.toggle('hidden', !isOneToOneDm);
+    if (isOneToOneDm && dmPrefBottomBtn) {
+      const isBottom = isDmPinnedBottom(state.activeRoom.id);
+      dmPrefBottomBtn.textContent = isBottom ? '↑ 기본 순서로 복구' : '↓ 목록 맨 아래로 내리기';
+    }
+  }
   if (convNotifStatusIcon) convNotifStatusIcon.textContent = isMuted ? '🔕' : '🔔';
   if (convNotifStatusDesc) {
     convNotifStatusDesc.textContent = isMuted

@@ -3,10 +3,91 @@
 // ============================================================
 
 import { state, isConversationMuted } from './state.js';
-import { makeKeyboardClickable } from './utils.js';
+import { makeKeyboardClickable, showToast } from './utils.js';
 import { screenshareState, getDmRoomId } from './screenshare.js';
 
 export const userDirectory = new Map();
+
+let showHiddenDms = false;
+
+function getDmPrefsStorageKey() {
+  return state.currentUser ? `bamboo_dm_prefs_${state.currentUser.id}` : '';
+}
+
+function loadDmPrefs() {
+  const key = getDmPrefsStorageKey();
+  if (!key) return { hidden: [], bottom: [] };
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) || '{}');
+    return {
+      hidden: Array.isArray(raw?.hidden) ? raw.hidden.map(String) : [],
+      bottom: Array.isArray(raw?.bottom) ? raw.bottom.map(String) : [],
+    };
+  } catch {
+    return { hidden: [], bottom: [] };
+  }
+}
+
+function saveDmPrefs(prefs) {
+  const key = getDmPrefsStorageKey();
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      hidden: Array.from(new Set(prefs.hidden || [])),
+      bottom: Array.from(new Set(prefs.bottom || [])),
+    }));
+  } catch { /* ignore storage errors */ }
+}
+
+export function isDmHidden(nick) {
+  if (!nick) return false;
+  return loadDmPrefs().hidden.includes(String(nick));
+}
+
+export function setDmHidden(nick, hidden) {
+  if (!nick) return;
+  const target = String(nick);
+  const prefs = loadDmPrefs();
+  if (hidden) {
+    if (!prefs.hidden.includes(target)) prefs.hidden.push(target);
+  } else {
+    prefs.hidden = prefs.hidden.filter(item => item !== target);
+  }
+  saveDmPrefs(prefs);
+}
+
+export function isDmPinnedBottom(nick) {
+  if (!nick) return false;
+  return loadDmPrefs().bottom.includes(String(nick));
+}
+
+export function toggleDmPinnedBottom(nick) {
+  if (!nick) return false;
+  const target = String(nick);
+  const prefs = loadDmPrefs();
+  const nextPinned = !prefs.bottom.includes(target);
+  if (nextPinned) {
+    prefs.bottom.push(target);
+  } else {
+    prefs.bottom = prefs.bottom.filter(item => item !== target);
+  }
+  saveDmPrefs(prefs);
+  return nextPinned;
+}
+
+export function hideDmConversation(nick, onSwitchConv) {
+  if (!nick) return;
+  setDmHidden(nick, true);
+  if (state.activeRoom.type === 'dm' && String(state.activeRoom.id) === String(nick)) {
+    const fallbackChanId = state.channels?.[0]?.channelId || 1;
+    if (typeof onSwitchConv === 'function') {
+      onSwitchConv('channel', fallbackChanId);
+    }
+  } else if (typeof onSwitchConv === 'function') {
+    renderDms(onSwitchConv);
+  }
+  showToast('1:1 대화를 목록에서 숨겼습니다. (대화 기록은 유지됩니다)', 'info');
+}
 
 export function displayNickname(nick) {
   if (state.currentUser && nick === state.currentUser.username && state.currentUser.display_name) {
@@ -87,6 +168,112 @@ export async function loadCandidateUsers() {
   return list;
 }
 
+function getDmUnreadCount(conv) {
+  const partnerId = conv.partnerUserId || userDirectory.get(conv.name)?.id || conv.name;
+  return state.unreadCounts.dms[partnerId] ?? state.unreadCounts.dms[conv.name] ?? conv.unread ?? 0;
+}
+
+function createOneToOneDmItem(conv, prefs, onSwitchConv, { isHiddenEntry = false } = {}) {
+  const isActive = state.activeRoom.type === 'dm' && state.activeRoom.id === conv.name;
+  const isBottom = prefs.bottom.includes(String(conv.name));
+  const item = document.createElement('li');
+  item.className = `sidebar-item conv-item dm-item${isActive ? ' active' : ''}${isBottom && !isHiddenEntry ? ' is-sunk' : ''}${isHiddenEntry ? ' is-hidden-dm' : ''}`;
+  item.dataset.id = conv.id;
+
+  const icon = document.createElement('span');
+  icon.className = 'conv-icon';
+  icon.textContent = isHiddenEntry ? '🙈' : '👤';
+
+  const name = document.createElement('span');
+  name.className = 'sidebar-item-name conv-name';
+  name.textContent = displayNickname(conv.name);
+
+  item.append(icon, name);
+
+  const partnerId = conv.partnerUserId || userDirectory.get(conv.name)?.id || conv.name;
+  if (isConversationMuted('dm', partnerId)) {
+    const muteIcon = document.createElement('span');
+    muteIcon.className = 'conv-mute-indicator';
+    muteIcon.textContent = '🔕';
+    muteIcon.title = '음소거됨';
+    item.appendChild(muteIcon);
+  }
+
+  const unreadCount = getDmUnreadCount(conv);
+  if (unreadCount > 0 && !isActive) {
+    const badge = document.createElement('span');
+    badge.className = 'sidebar-badge conv-unread dm-unread';
+    badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+    item.appendChild(badge);
+  }
+
+  const dmRoomId = getDmRoomId(state.currentUser?.username, conv.name);
+  if (dmRoomId && screenshareState?.hasSession(dmRoomId)) {
+    const liveBadge = document.createElement('span');
+    liveBadge.className = 'channel-live-badge';
+    liveBadge.textContent = '🔴 LIVE';
+    liveBadge.title = '화면 공유 중';
+    item.appendChild(liveBadge);
+  }
+
+  const actions = document.createElement('span');
+  actions.className = 'dm-item-actions';
+
+  if (isHiddenEntry) {
+    const restoreBtn = document.createElement('button');
+    restoreBtn.type = 'button';
+    restoreBtn.className = 'dm-row-action-btn dm-restore-btn';
+    restoreBtn.textContent = '복구';
+    restoreBtn.title = '1:1 대화 목록으로 복구';
+    restoreBtn.setAttribute('aria-label', `${displayNickname(conv.name)} 대화 목록 복구`);
+    restoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setDmHidden(conv.name, false);
+      renderDms(onSwitchConv);
+      showToast('1:1 대화를 목록에 복구했습니다.', 'info');
+    });
+    actions.appendChild(restoreBtn);
+  } else {
+    const sinkBtn = document.createElement('button');
+    sinkBtn.type = 'button';
+    sinkBtn.className = `dm-row-action-btn dm-sink-btn${isBottom ? ' is-sunk' : ''}`;
+    sinkBtn.textContent = isBottom ? '↑' : '↓';
+    sinkBtn.title = isBottom ? '기본 순서로 복구' : '목록 맨 아래로 내리기';
+    sinkBtn.setAttribute('aria-label', sinkBtn.title);
+    sinkBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const nowBottom = toggleDmPinnedBottom(conv.name);
+      renderDms(onSwitchConv);
+      showToast(nowBottom ? '1:1 대화를 목록 맨 아래로 내렸습니다.' : '1:1 대화 순서를 복구했습니다.', 'info');
+    });
+
+    const hideBtn = document.createElement('button');
+    hideBtn.type = 'button';
+    hideBtn.className = 'dm-row-action-btn dm-hide-btn';
+    hideBtn.textContent = '×';
+    hideBtn.title = '1:1 대화 목록에서 숨기기';
+    hideBtn.setAttribute('aria-label', `${displayNickname(conv.name)} 대화 숨기기`);
+    hideBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hideDmConversation(conv.name, onSwitchConv);
+    });
+
+    actions.append(sinkBtn, hideBtn);
+  }
+
+  item.appendChild(actions);
+
+  const activate = () => {
+    if (isHiddenEntry) {
+      setDmHidden(conv.name, false);
+    }
+    onSwitchConv('dm', conv.name);
+  };
+  item.addEventListener('click', activate);
+  makeKeyboardClickable(item, activate);
+  return item;
+}
+
 export function renderDms(onSwitchConv) {
   const dmListEl = document.getElementById('dm-list');
   if (!dmListEl) return;
@@ -140,61 +327,67 @@ export function renderDms(onSwitchConv) {
     groupDmListEl.appendChild(item);
   });
 
-  // 2. 1:1 DMs
-  const sorted = [...state.dms].sort((a, b) => {
+  // 2. 1:1 DMs (with hide + pin-to-bottom preferences)
+  const prefs = loadDmPrefs();
+  const hiddenSet = new Set(prefs.hidden);
+  const bottomSet = new Set(prefs.bottom);
+
+  const visibleDms = [];
+  const hiddenDms = [];
+  state.dms.forEach(conv => {
+    const isActive = state.activeRoom.type === 'dm' && state.activeRoom.id === conv.name;
+    const hasUnread = getDmUnreadCount(conv) > 0;
+    if (hiddenSet.has(String(conv.name)) && !hasUnread && !isActive) {
+      hiddenDms.push(conv);
+    } else {
+      visibleDms.push(conv);
+    }
+  });
+
+  const byActivityDesc = (a, b) => {
     const timeA = a.lastActivityTime || 0;
     const timeB = b.lastActivityTime || 0;
     if (timeB !== timeA) return timeB - timeA;
     return String(a.name).localeCompare(String(b.name));
+  };
+
+  visibleDms.sort((a, b) => {
+    const bottomA = Number(bottomSet.has(String(a.name)));
+    const bottomB = Number(bottomSet.has(String(b.name)));
+    if (bottomA !== bottomB) return bottomA - bottomB;
+    return byActivityDesc(a, b);
   });
 
-  sorted.forEach(conv => {
-    const isActive = state.activeRoom.type === 'dm' && state.activeRoom.id === conv.name;
-    const item = document.createElement('li');
-    item.className = `sidebar-item conv-item dm-item${isActive ? ' active' : ''}`;
-    item.dataset.id = conv.id;
-
-    const icon = document.createElement('span');
-    icon.className = 'conv-icon';
-    icon.textContent = '👤';
-
-    const name = document.createElement('span');
-    name.className = 'sidebar-item-name conv-name';
-    name.textContent = displayNickname(conv.name);
-
-    item.append(icon, name);
-
-    const partnerId = conv.partnerUserId || userDirectory.get(conv.name)?.id || conv.name;
-    if (isConversationMuted('dm', partnerId)) {
-      const muteIcon = document.createElement('span');
-      muteIcon.className = 'conv-mute-indicator';
-      muteIcon.textContent = '🔕';
-      muteIcon.title = '음소거됨';
-      item.appendChild(muteIcon);
-    }
-
-    const unreadCount = state.unreadCounts.dms[partnerId] ?? state.unreadCounts.dms[conv.name] ?? conv.unread ?? 0;
-    if (unreadCount > 0 && !isActive) {
-      const badge = document.createElement('span');
-      badge.className = 'sidebar-badge conv-unread dm-unread';
-      badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
-      item.appendChild(badge);
-    }
-
-    const dmRoomId = getDmRoomId(state.currentUser?.username, conv.name);
-    if (dmRoomId && screenshareState?.hasSession(dmRoomId)) {
-      const liveBadge = document.createElement('span');
-      liveBadge.className = 'channel-live-badge';
-      liveBadge.textContent = '🔴 LIVE';
-      liveBadge.title = '화면 공유 중';
-      item.appendChild(liveBadge);
-    }
-
-    const activate = () => onSwitchConv('dm', conv.name);
-    item.addEventListener('click', activate);
-    makeKeyboardClickable(item, activate);
-    dmListEl.appendChild(item);
+  visibleDms.forEach(conv => {
+    dmListEl.appendChild(createOneToOneDmItem(conv, prefs, onSwitchConv));
   });
+
+  if (hiddenDms.length > 0) {
+    hiddenDms.sort(byActivityDesc);
+    const toggleItem = document.createElement('li');
+    toggleItem.className = 'dm-hidden-toggle-row';
+    const toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'dm-hidden-toggle-btn';
+    toggleBtn.setAttribute('aria-expanded', String(showHiddenDms));
+    toggleBtn.textContent = showHiddenDms
+      ? `🙈 숨긴 대화 ${hiddenDms.length}개 접기 ▴`
+      : `🙈 숨긴 대화 ${hiddenDms.length}개 ▾`;
+    toggleBtn.addEventListener('click', () => {
+      showHiddenDms = !showHiddenDms;
+      renderDms(onSwitchConv);
+    });
+    toggleItem.appendChild(toggleBtn);
+    dmListEl.appendChild(toggleItem);
+
+    if (showHiddenDms) {
+      hiddenDms.forEach(conv => {
+        dmListEl.appendChild(createOneToOneDmItem(conv, prefs, onSwitchConv, { isHiddenEntry: true }));
+      });
+    }
+  } else {
+    showHiddenDms = false;
+  }
 }
 
 export function renderOnlineList(users, onOpenDm) {
@@ -242,6 +435,7 @@ export function renderOnlineList(users, onOpenDm) {
 
     if (nick !== myNick) {
       const openDm = () => {
+        setDmHidden(nick, false);
         getOrCreateDm(nick, user.id);
         onOpenDm(nick);
       };
@@ -250,6 +444,5 @@ export function renderOnlineList(users, onOpenDm) {
       makeKeyboardClickable(item, openDm);
     }
     onlineListEl.appendChild(item);
-
   });
 }

@@ -7,7 +7,7 @@ import { showToast } from './utils.js';
 import { updateMessageReactionsInDOM } from './reactions.js';
 import { fetchActivePinnedMessages } from './pins.js';
 import { emitAttention, updateDocumentTitle, isChatActiveAndFocused } from './notifications.js';
-import { displayNickname, renderOnlineList, getOrCreateDm, userDirectory } from './dm.js';
+import { displayNickname, renderOnlineList, getOrCreateDm, setDmHidden, userDirectory } from './dm.js';
 
 import { getOrCreateChannel, channelsDirectory, updateChannelLastNotification } from './channels.js';
 import { appendMessageNode, setMentionUsers, refreshRenderedAuthorNames } from './chat.js';
@@ -253,6 +253,7 @@ export function initWebSocket(callbacks = {}) {
         const partner = data.from_nick === myNick ? data.to_nick : data.from_nick;
         const partnerUserId = data.from_nick === myNick ? data.to_user_id : data.from_user_id;
         const conv = getOrCreateDm(partner, partnerUserId);
+        if (!data.history) setDmHidden(partner, false);
         conv.lastActivityTime = Math.max(conv.lastActivityTime || 0, new Date(data.created_at || Date.now()).getTime());
 
         const dmMessage = {
