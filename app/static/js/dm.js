@@ -8,6 +8,13 @@ import { screenshareState, getDmRoomId } from './screenshare.js';
 
 export const userDirectory = new Map();
 
+export const DM_ICONS = {
+  tripleDown: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7 3 12 8 17 3"/><polyline points="7 9.5 12 14.5 17 9.5"/><polyline points="7 16 12 21 17 16"/></svg>`,
+  eye: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  eyeOff: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c6.4 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.52 13.52 0 0 0 2 12s3.6 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/></svg>`,
+  chevronDown: `<svg class="dm-hidden-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>`,
+};
+
 let showHiddenDms = false;
 
 function getDmPrefsStorageKey() {
@@ -182,7 +189,12 @@ function createOneToOneDmItem(conv, prefs, onSwitchConv, { isHiddenEntry = false
 
   const icon = document.createElement('span');
   icon.className = 'conv-icon';
-  icon.textContent = isHiddenEntry ? '🙈' : '👤';
+  if (isHiddenEntry) {
+    icon.classList.add('dm-hidden-icon');
+    icon.innerHTML = DM_ICONS.eyeOff;
+  } else {
+    icon.textContent = '👤';
+  }
 
   const name = document.createElement('span');
   name.className = 'sidebar-item-name conv-name';
@@ -223,21 +235,21 @@ function createOneToOneDmItem(conv, prefs, onSwitchConv, { isHiddenEntry = false
     const restoreBtn = document.createElement('button');
     restoreBtn.type = 'button';
     restoreBtn.className = 'dm-row-action-btn dm-restore-btn';
-    restoreBtn.textContent = '복구';
-    restoreBtn.title = '1:1 대화 목록으로 복구';
-    restoreBtn.setAttribute('aria-label', `${displayNickname(conv.name)} 대화 목록 복구`);
+    restoreBtn.innerHTML = DM_ICONS.eye;
+    restoreBtn.title = '숨김 해제 (목록에 표시)';
+    restoreBtn.setAttribute('aria-label', `${displayNickname(conv.name)} 숨김 해제`);
     restoreBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       setDmHidden(conv.name, false);
       renderDms(onSwitchConv);
-      showToast('1:1 대화를 목록에 복구했습니다.', 'info');
+      showToast('1:1 대화 숨김을 해제했습니다.', 'info');
     });
     actions.appendChild(restoreBtn);
   } else {
     const sinkBtn = document.createElement('button');
     sinkBtn.type = 'button';
     sinkBtn.className = `dm-row-action-btn dm-sink-btn${isBottom ? ' is-sunk' : ''}`;
-    sinkBtn.textContent = isBottom ? '↑' : '↓';
+    sinkBtn.innerHTML = DM_ICONS.tripleDown;
     sinkBtn.title = isBottom ? '기본 순서로 복구' : '목록 맨 아래로 내리기';
     sinkBtn.setAttribute('aria-label', sinkBtn.title);
     sinkBtn.addEventListener('click', (e) => {
@@ -250,7 +262,7 @@ function createOneToOneDmItem(conv, prefs, onSwitchConv, { isHiddenEntry = false
     const hideBtn = document.createElement('button');
     hideBtn.type = 'button';
     hideBtn.className = 'dm-row-action-btn dm-hide-btn';
-    hideBtn.textContent = '×';
+    hideBtn.innerHTML = DM_ICONS.eyeOff;
     hideBtn.title = '1:1 대화 목록에서 숨기기';
     hideBtn.setAttribute('aria-label', `${displayNickname(conv.name)} 대화 숨기기`);
     hideBtn.addEventListener('click', (e) => {
@@ -368,11 +380,22 @@ export function renderDms(onSwitchConv) {
     toggleItem.className = 'dm-hidden-toggle-row';
     const toggleBtn = document.createElement('button');
     toggleBtn.type = 'button';
-    toggleBtn.className = 'dm-hidden-toggle-btn';
+    toggleBtn.className = `dm-hidden-toggle-btn${showHiddenDms ? ' is-open' : ''}`;
     toggleBtn.setAttribute('aria-expanded', String(showHiddenDms));
-    toggleBtn.textContent = showHiddenDms
-      ? `🙈 숨긴 대화 ${hiddenDms.length}개 접기 ▴`
-      : `🙈 숨긴 대화 ${hiddenDms.length}개 ▾`;
+
+    const toggleIcon = document.createElement('span');
+    toggleIcon.className = 'dm-hidden-toggle-icon';
+    toggleIcon.innerHTML = DM_ICONS.eyeOff;
+
+    const toggleLabel = document.createElement('span');
+    toggleLabel.className = 'dm-hidden-toggle-label';
+    toggleLabel.textContent = `숨긴 대화 ${hiddenDms.length}개`;
+
+    const toggleChevron = document.createElement('span');
+    toggleChevron.className = 'dm-hidden-toggle-chevron';
+    toggleChevron.innerHTML = DM_ICONS.chevronDown;
+
+    toggleBtn.append(toggleIcon, toggleLabel, toggleChevron);
     toggleBtn.addEventListener('click', () => {
       showHiddenDms = !showHiddenDms;
       renderDms(onSwitchConv);

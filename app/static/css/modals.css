@@ -623,6 +623,9 @@
 .notification-status-info p { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
 .dm-pref-section.hidden { display: none !important; }
 .dm-pref-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.dm-pref-btn { display: inline-flex; align-items: center; gap: 6px; }
+.dm-pref-btn-icon { display: inline-flex; align-items: center; justify-content: center; }
+.dm-pref-btn-icon.is-up svg { transform: rotate(180deg); }
 
 /* Group DM Modals & Pickers */
 .group-dm-modal-box {

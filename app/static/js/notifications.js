@@ -5,7 +5,7 @@
 import { state, isConversationMuted } from './state.js';
 import { getSoundMode, getSoundVolume, setSoundMode, setSoundVolume, playNotificationSound } from './audio.js';
 import { showToast } from './utils.js';
-import { displayNickname, isDmPinnedBottom } from './dm.js';
+import { displayNickname, isDmPinnedBottom, DM_ICONS } from './dm.js';
 
 function getDesktopNotifKey() {
   return state.currentUser ? `bamboochat_desktop_notif_${state.currentUser.id}` : 'bamboochat_desktop_notif';
@@ -333,7 +333,9 @@ export function updateConversationNotificationUI() {
     dmPrefSection.classList.toggle('hidden', !isOneToOneDm);
     if (isOneToOneDm && dmPrefBottomBtn) {
       const isBottom = isDmPinnedBottom(state.activeRoom.id);
-      dmPrefBottomBtn.textContent = isBottom ? '↑ 기본 순서로 복구' : '↓ 목록 맨 아래로 내리기';
+      dmPrefBottomBtn.innerHTML = isBottom
+        ? `<span class="dm-pref-btn-icon is-up">${DM_ICONS.tripleDown}</span><span>기본 순서로 복구</span>`
+        : `<span class="dm-pref-btn-icon">${DM_ICONS.tripleDown}</span><span>목록 맨 아래로 내리기</span>`;
     }
   }
   if (convNotifStatusIcon) convNotifStatusIcon.textContent = isMuted ? '🔕' : '🔔';

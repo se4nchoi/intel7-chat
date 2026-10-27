@@ -516,6 +516,12 @@
 .dm-item.is-hidden-dm:not(.active) {
   opacity: 0.62;
 }
+.dm-hidden-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
 .dm-item-actions {
   display: inline-flex;
   align-items: center;
@@ -523,15 +529,13 @@
   flex-shrink: 0;
 }
 .dm-row-action-btn {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 700;
   line-height: 1;
   cursor: pointer;
   display: inline-flex;
@@ -540,34 +544,40 @@
   opacity: 0;
   transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease;
 }
+.dm-row-action-btn svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transition: transform 0.16s ease;
+}
 .dm-item:hover .dm-row-action-btn,
 .dm-item:focus-within .dm-row-action-btn,
 .dm-row-action-btn.is-sunk {
   opacity: 0.72;
 }
 .dm-row-action-btn.is-sunk {
+  opacity: 0.88;
   color: var(--accent);
+}
+.dm-sink-btn.is-sunk:hover svg {
+  transform: rotate(180deg);
 }
 .dm-row-action-btn:hover {
   opacity: 1 !important;
   color: var(--text);
   background: var(--surface3);
 }
-.dm-hide-btn {
-  font-size: 14px;
-}
 .dm-hide-btn:hover {
   color: var(--danger);
   background: rgba(249, 115, 22, 0.14);
 }
 .dm-restore-btn {
-  opacity: 0.85;
-  width: auto;
-  height: auto;
-  padding: 2px 6px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  border: 1px solid var(--border);
+  opacity: 0.8;
+}
+.dm-restore-btn:hover {
+  color: var(--accent);
+  background: rgba(79, 142, 247, 0.14);
 }
 .dm-hidden-toggle-row {
   list-style: none;
@@ -575,16 +585,35 @@
 }
 .dm-hidden-toggle-btn {
   width: 100%;
-  padding: 5px 10px;
+  padding: 6px 10px;
   border-radius: 6px;
   border: 1px dashed var(--border);
   background: transparent;
   color: var(--text-dim);
   font-size: 0.74rem;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   text-align: left;
   cursor: pointer;
   transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+.dm-hidden-toggle-icon,
+.dm-hidden-toggle-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.dm-hidden-toggle-label {
+  flex: 1;
+}
+.dm-hidden-chevron {
+  transition: transform 0.16s ease;
+}
+.dm-hidden-toggle-btn.is-open .dm-hidden-chevron {
+  transform: rotate(180deg);
 }
 .dm-hidden-toggle-btn:hover {
   color: var(--text);
